@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { SearchOutlined } from '@ant-design/icons';
 import { useAuth } from '@/contexts/useAuth';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, addDoc } from 'firebase/firestore';
 import dayjs from 'dayjs';
 import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal } from 'antd';
 import * as XLSX from 'xlsx';
@@ -113,12 +114,67 @@ function getTodayString(): string {
 }
 
 const SalesPage: React.FC = () => {
+  // --- Add Customer Modal State (fix: must be inside component, before return) ---
+  const businessTypes = ["شركة", "مؤسسة", "فرد"];
+  const initialAddCustomer = {
+    nameAr: '',
+    phone: '',
+    businessType: '',
+    commercialReg: '',
+    taxFileNumber: ''
+  };
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
+  const [addCustomerForm, setAddCustomerForm] = useState(initialAddCustomer);
+  const [addCustomerLoading, setAddCustomerLoading] = useState(false);
+  const handleAddCustomerChange = (field, value) => {
+    setAddCustomerForm(prev => ({ ...prev, [field]: value }));
+  };
+  const handleAddCustomer = async () => {
+    if (!addCustomerForm.nameAr || !addCustomerForm.phone || !addCustomerForm.businessType) {
+      message.error('يرجى ملء جميع الحقول المطلوبة');
+      return;
+    }
+    if ((addCustomerForm.businessType === 'شركة' || addCustomerForm.businessType === 'مؤسسة') && (!addCustomerForm.commercialReg || !addCustomerForm.taxFileNumber)) {
+      message.error('يرجى ملء السجل التجاري والملف الضريبي');
+      return;
+    }
+    setAddCustomerLoading(true);
+    try {
+      const maxNum = customers
+        .map(c => {
+          const match = /^c-(\d{4})$/.exec(c.id);
+          return match ? parseInt(match[1], 10) : 0;
+        })
+        .reduce((a, b) => Math.max(a, b), 0);
+      const nextNum = maxNum + 1;
+      const newId = `c-${nextNum.toString().padStart(4, '0')}`;
+      const docData = {
+        id: newId,
+        nameAr: addCustomerForm.nameAr,
+        phone: addCustomerForm.phone,
+        businessType: addCustomerForm.businessType,
+        commercialReg: addCustomerForm.businessType === 'فرد' ? '' : addCustomerForm.commercialReg,
+        taxFileNumber: addCustomerForm.businessType === 'فرد' ? '' : addCustomerForm.taxFileNumber,
+        status: 'نشط',
+        createdAt: new Date().toISOString(),
+      };
+      await addDoc(collection(db, 'customers'), docData);
+      message.success('تم إضافة العميل بنجاح! يمكنك تعديل باقي البيانات من صفحة العملاء.');
+      setShowAddCustomerModal(false);
+      setAddCustomerForm(initialAddCustomer);
+      // Optionally, you can refresh the customers list here if you have a fetchCustomers function available
+    } catch (err) {
+      message.error('حدث خطأ أثناء إضافة العميل');
+    } finally {
+      setAddCustomerLoading(false);
+    }
+  };
   // بيانات الشركة
   const [companyData, setCompanyData] = useState<any>({});
   // دالة تصدير سجل الفواتير إلى ملف Excel
   const exportInvoicesToExcel = () => {
     if (!invoices.length) {
-      message.warning('لا يوجد بيانات للتصدير');
+      message.info('لا يوجد بيانات للتصدير');
       return;
     }
     // تجهيز البيانات
@@ -492,17 +548,17 @@ const SalesPage: React.FC = () => {
 
   const addItem = () => {
     if (!item.itemName || !item.quantity || !item.price) {
-      message.warning('يجب إدخال اسم الصنف، الكمية والسعر');
+      message.info('يجب إدخال اسم الصنف، الكمية والسعر');
       return;
     }
 
     if (isNaN(Number(item.quantity)) || isNaN(Number(item.price))) {
-      message.warning('يجب أن تكون الكمية والسعر أرقاماً صحيحة');
+      message.info('يجب أن تكون الكمية والسعر أرقاماً صحيحة');
       return;
     }
 
     if (warehouseMode === 'multiple' && !item.warehouseId) {
-      message.warning('يرجى اختيار المخزن لهذا الصنف');
+      message.info('يرجى اختيار المخزن لهذا الصنف');
       return;
     }
 
@@ -946,6 +1002,25 @@ const SalesPage: React.FC = () => {
 
   // حالة إظهار/إخفاء جدول سجل الفواتير
   const [showInvoicesTable, setShowInvoicesTable] = useState(false);
+
+  // حالة مودال البحث عن عميل
+  const [showCustomerSearch, setShowCustomerSearch] = useState(false);
+  const [customerSearchText, setCustomerSearchText] = useState('');
+
+  // تصفية العملاء حسب البحث
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearchText) return customers;
+    const search = customerSearchText.toLowerCase();
+    return customers.filter(c =>
+      (c.nameAr && c.nameAr.toLowerCase().includes(search)) ||
+      (c.nameEn && c.nameEn.toLowerCase().includes(search)) ||
+      (c.phone && c.phone.toLowerCase().includes(search)) ||
+      (c.mobile && c.mobile.toLowerCase().includes(search)) ||
+      (c.phoneNumber && c.phoneNumber.toLowerCase().includes(search)) ||
+      (c.commercialReg && c.commercialReg.toLowerCase().includes(search)) ||
+      (c.taxFile && c.taxFile.toLowerCase().includes(search))
+    );
+  }, [customerSearchText, customers]);
 
   // دالة طباعة الفاتورة
 const handlePrint = () => {
@@ -1785,40 +1860,238 @@ const handlePrint = () => {
             </Col>
             <Col xs={24} sm={12} md={6}>
               <Form.Item label="رقم العميل">
-                <Input 
-                  name="customerNumber"
-                  value={invoiceData.customerNumber} 
-                  onChange={handleInvoiceChange} 
-                  placeholder="رقم العميل" 
+                <Input
+                  id="customerNumber"
+                  value={invoiceData.customerNumber}
+                  placeholder="رقم العميل"
+                  disabled
                 />
               </Form.Item>
             </Col>
-            <Col xs={24} sm={12} md={6}>
+          </Row>
+          <Row gutter={16} className="mb-4">
+            <Col xs={24} sm={24} md={24}>
               <Form.Item label="اسم العميل">
-                <Select
-                  showSearch
-                  value={invoiceData.customerName}
-                  placeholder="اسم العميل"
-                  onChange={(value) => {
-                    const selected = customers.find(c => c.nameAr === value);
-                    setInvoiceData({
-                      ...invoiceData,
-                      customerName: value || '',
-                      customerNumber: selected ? (selected.phone || selected.mobile || selected.phoneNumber || '') : '',
-                      commercialRecord: selected ? (selected.commercialReg || '') : '',
-                      taxFile: selected ? (selected.taxFileNumber || selected.taxFile || '') : ''
-                    });
-                  }}
-                  style={{ fontFamily: 'Cairo, sans-serif' }}
-                  filterOption={(input, option) =>
-                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  allowClear
-                  options={customers.map(customer => ({ 
-                    label: customer.nameAr, 
-                    value: customer.nameAr 
-                  }))}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <Select
+                    showSearch
+                    value={invoiceData.customerName}
+                    placeholder="اسم العميل"
+                    onChange={(value) => {
+                      const selected = customers.find(c => c.nameAr === value);
+                      setInvoiceData({
+                        ...invoiceData,
+                        customerName: value || '',
+                        customerNumber: selected ? (selected.phone || selected.mobile || selected.phoneNumber || '') : '',
+                        commercialRecord: selected ? (selected.commercialReg || '') : '',
+                        taxFile: selected ? (selected.taxFileNumber || selected.taxFile || '') : ''
+                      });
+                    }}
+                    style={{ fontFamily: 'Cairo, sans-serif', fontWeight: 500, fontSize: 16, width: '100%' }}
+                    filterOption={(input, option) =>
+                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                    }
+                    allowClear
+                    options={customers.map(customer => ({ 
+                      label: customer.nameAr, 
+                      value: customer.nameAr 
+                    }))}
+                  />
+                  <Button
+                    type="primary"
+                    style={{ minWidth: 40, padding: '0 8px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    onClick={() => setShowAddCustomerModal(true)}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    </span>
+                  </Button>
+      {/* Add Customer Modal */}
+      <Modal
+        open={showAddCustomerModal}
+        onCancel={() => setShowAddCustomerModal(false)}
+        footer={null}
+        title={<span style={{fontFamily:'Cairo',fontWeight:700}}>إضافة عميل جديد</span>}
+        width={420}
+        bodyStyle={{ background: '#f8fafc', borderRadius: 12, padding: 24 }}
+      >
+        <div style={{ marginBottom: 12, padding: 8, background: '#e0e7ef', borderRadius: 8, textAlign: 'center', fontWeight: 500, color: '#305496', fontFamily: 'Cairo', fontSize: 15 }}>
+          يرجى تعبئة بيانات العميل بدقة
+        </div>
+        <Form layout="vertical" onFinish={handleAddCustomer} style={{ gap: 0 }}>
+          <Form.Item label={<span style={{fontWeight:600}}>اسم العميل</span>} required style={{ marginBottom: 14 }}>
+            <input
+              className="ant-input"
+              value={addCustomerForm.nameAr}
+              onChange={e => handleAddCustomerChange('nameAr', e.target.value)}
+              placeholder="اسم العميل"
+              style={{
+                fontFamily: 'Cairo',
+                fontWeight: 500,
+                fontSize: 15,
+                borderRadius: 6,
+                border: '1.5px solid #b6c2d6',
+                background: '#fff',
+                width: '100%',
+                display: 'block',
+                padding: '6px 12px',
+                boxSizing: 'border-box'
+              }}
+              required
+              autoFocus
+            />
+          </Form.Item>
+          <Form.Item label={<span style={{fontWeight:600}}>رقم الهاتف</span>} required style={{ marginBottom: 14 }}>
+            <input
+              className="ant-input"
+              value={addCustomerForm.phone}
+              onChange={e => handleAddCustomerChange('phone', e.target.value)}
+              placeholder="رقم الهاتف"
+              
+                 style={{
+                fontFamily: 'Cairo',
+                fontWeight: 500,
+                fontSize: 15,
+                borderRadius: 6,
+                border: '1.5px solid #b6c2d6',
+                background: '#fff',
+                width: '100%',
+                display: 'block',
+                padding: '6px 12px',
+                boxSizing: 'border-box'
+              }}
+              required
+            />
+          </Form.Item>
+          <Form.Item label={<span style={{fontWeight:600}}>نوع العمل</span>} required style={{ marginBottom: 14 }}>
+            <select
+              className="ant-select"
+              value={addCustomerForm.businessType || 'فرد'}
+              onChange={e => handleAddCustomerChange('businessType', e.target.value)}
+              style={{ fontFamily: 'Cairo', fontWeight: 500, fontSize: 15, width: '100%', borderRadius: 6, border: '1.5px solid #b6c2d6', background: '#fff', padding: '6px 8px' }}
+              required
+            >
+              <option value="">اختر نوع العمل</option>
+              {businessTypes.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </Form.Item>
+          {(addCustomerForm.businessType === 'شركة' || addCustomerForm.businessType === 'مؤسسة') && (
+            <div style={{ background: '#f1f5f9', borderRadius: 8, padding: 12, marginBottom: 10, border: '1px solid #e0e7ef' }}>
+              <Form.Item label={<span style={{fontWeight:600}}>السجل التجاري</span>} required style={{ marginBottom: 12 }}>
+                <input
+                  className="ant-input"
+                  value={addCustomerForm.commercialReg}
+                  onChange={e => handleAddCustomerChange('commercialReg', e.target.value)}
+                  placeholder="السجل التجاري"
+              style={{
+                fontFamily: 'Cairo',
+                fontWeight: 500,
+                fontSize: 15,
+                borderRadius: 6,
+                border: '1.5px solid #b6c2d6',
+                background: '#fff',
+                width: '100%',
+                display: 'block',
+                padding: '6px 12px',
+                boxSizing: 'border-box'
+              }}
+                                required
                 />
+              </Form.Item>
+              <Form.Item label={<span style={{fontWeight:600}}>الملف الضريبي</span>} required style={{ marginBottom: 0 }}>
+                <input
+                  className="ant-input"
+                  value={addCustomerForm.taxFileNumber}
+                  onChange={e => handleAddCustomerChange('taxFileNumber', e.target.value)}
+                  placeholder="الملف الضريبي"
+              style={{
+                fontFamily: 'Cairo',
+                fontWeight: 500,
+                fontSize: 15,
+                borderRadius: 6,
+                border: '1.5px solid #b6c2d6',
+                background: '#fff',
+                width: '100%',
+                display: 'block',
+                padding: '6px 12px',
+                boxSizing: 'border-box'
+              }}                  required
+                />
+              </Form.Item>
+            </div>
+          )}
+          <Form.Item style={{ marginTop: 18, marginBottom: 0 }}>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={addCustomerLoading}
+              style={{ width: '100%', fontFamily: 'Cairo', fontWeight: 700, fontSize: 16, borderRadius: 8, height: 44, boxShadow: '0 2px 8px #e0e7ef' }}
+            >
+              إضافة
+            </Button>
+          </Form.Item>
+        </Form>
+        <div style={{fontSize:13, color:'#6b7280', marginTop:14, textAlign:'center'}}>
+          بعد الإضافة يمكنك تعديل باقي بيانات العميل من صفحة العملاء.
+        </div>
+      </Modal>
+                  <Button
+                    type="default"
+                    icon={<SearchOutlined />}
+                    style={{ minWidth: 40 }}
+                    onClick={() => setShowCustomerSearch(true)}
+                  />
+      {/* مودال البحث عن عميل */}
+      <Modal
+        open={showCustomerSearch}
+        onCancel={() => setShowCustomerSearch(false)}
+        footer={null}
+        title={<span style={{fontFamily:'Cairo',fontWeight:700}}>بحث عن عميل</span>}
+        width={600}
+      >
+        <Input
+          placeholder="ابحث بالاسم أو رقم الهاتف أو أي معلومة..."
+          value={customerSearchText}
+          onChange={e => setCustomerSearchText(e.target.value)}
+          style={{ marginBottom: 16, fontFamily: 'Cairo' }}
+          allowClear
+          prefix={<SearchOutlined />}
+        />
+        <Table
+          dataSource={filteredCustomers}
+          rowKey={row => row.id || row.nameAr}
+          columns={[
+            { title: 'الاسم', dataIndex: 'nameAr', key: 'nameAr' },
+            { title: 'الجوال', dataIndex: 'mobile', key: 'mobile' },
+            { title: 'الهاتف', dataIndex: 'phone', key: 'phone' },
+            { title: 'السجل التجاري', dataIndex: 'commercialReg', key: 'commercialReg' },
+            { title: 'الملف الضريبي', dataIndex: 'taxFile', key: 'taxFile' },
+            {
+              title: 'اختيار',
+              key: 'select',
+              render: (_, record) => (
+                <Button type="link" onClick={() => {
+                  setInvoiceData({
+                    ...invoiceData,
+                    customerName: record.nameAr || '',
+                    customerNumber: record.phone || record.mobile || record.phoneNumber || '',
+                    commercialRecord: record.commercialReg || '',
+                    taxFile: record.taxFileNumber || record.taxFile || ''
+                  });
+                  setShowCustomerSearch(false);
+                }}>اختيار</Button>
+              )
+            }
+          ]}
+          pagination={{ pageSize: 8 }}
+          size="small"
+        />
+      </Modal>
+                </div>
               </Form.Item>
             </Col>
             {invoiceType === 'ضريبة' && (
@@ -1826,20 +2099,20 @@ const handlePrint = () => {
                 <Col xs={24} sm={12} md={6}>
                   <Form.Item label="السجل التجاري">
                     <Input
-                      name="commercialRecord"
+                      id="commercialRecord"
                       value={invoiceData.commercialRecord}
-                      onChange={handleInvoiceChange}
                       placeholder="السجل التجاري"
+                      disabled
                     />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12} md={6}>
                   <Form.Item label="الملف الضريبي">
                     <Input
-                      name="taxFile"
+                      id="taxFile"
                       value={invoiceData.taxFile}
-                      onChange={handleInvoiceChange}
                       placeholder="الملف الضريبي"
+                      disabled
                     />
                   </Form.Item>
                 </Col>
@@ -1859,38 +2132,39 @@ const handlePrint = () => {
                 disabled
               />
             </Col>
-            <Col xs={24} sm={12} md={4}>
+            <Col xs={24} sm={12} md={8}>
+
               <div style={{ marginBottom: 4, fontWeight: 500 }}>اسم الصنف</div>
-              <Select
-                showSearch
-                value={item.itemName}
-                placeholder="اسم الصنف"
-                style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
-                onChange={async (value) => {
-                  const selected = itemNames.find(i => i.name === value);
-                  let price = selected && selected.salePrice ? String(selected.salePrice) : '';
-                  if (priceType === 'آخر سعر العميل' && invoiceData.customerName) {
-                    const lastPrice = await fetchLastCustomerPrice(invoiceData.customerName, value);
-                    if (lastPrice) price = String(lastPrice);
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Select
+                  showSearch
+                  value={item.itemName}
+                  placeholder="اسم الصنف"
+                  style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
+                  onChange={async (value) => {
+                    const selected = itemNames.find(i => i.name === value);
+                    let price = selected && selected.salePrice ? String(selected.salePrice) : '';
+                    if (priceType === 'آخر سعر العميل' && invoiceData.customerName) {
+                      const lastPrice = await fetchLastCustomerPrice(invoiceData.customerName, value);
+                      if (lastPrice) price = String(lastPrice);
+                    }
+                    setItem({
+                      ...item,
+                      itemName: value,
+                      itemNumber: selected ? (selected.itemCode || '') : item.itemNumber,
+                      price,
+                      discountPercent: selected && selected.discount ? String(selected.discount) : '0',
+                      taxPercent: selected && selected.isVatIncluded ? taxRate : '0'
+                    });
+                  }}
+                  filterOption={(input, option) =>
+                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                   }
-                  setItem({
-                    ...item,
-                    itemName: value,
-                    itemNumber: selected ? (selected.itemCode || '') : item.itemNumber,
-                    price,
-                    discountPercent: selected && selected.discount ? String(selected.discount) : '0',
-                    taxPercent: selected && selected.isVatIncluded ? taxRate : '0'
-                  });
-                }}
-                filterOption={(input, option) =>
-                  String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                }
-                allowClear
-                options={itemNames.map(i => ({ 
-                  label: i.name, 
-                  value: i.name 
-                }))}
-              />
+                  allowClear
+                  options={itemNames.map(i => ({ label: i.name, value: i.name }))}
+                />
+  
+              </div>
             </Col>
             {warehouseMode === 'multiple' && (
               <Col xs={24} sm={12} md={4}>
@@ -1912,15 +2186,16 @@ const handlePrint = () => {
                 />
               </Col>
             )}
-            <Col xs={24} sm={12} md={3}>
+            <Col xs={24} sm={12} md={2}>
               <div style={{ marginBottom: 4, fontWeight: 500 }}>الكمية</div>
-              <Input 
+              <Input
                 name="quantity"
-                value={item.quantity} 
-                onChange={handleItemChange} 
-                placeholder="الكمية" 
-                type="number" 
+                value={item.quantity}
+                onChange={handleItemChange}
+                placeholder="الكمية"
+                type="number"
                 min={1}
+                style={{  paddingLeft: 6, paddingRight: 6, fontSize: 15 }}
               />
             </Col>
             <Col xs={24} sm={12} md={3}>
@@ -1937,7 +2212,7 @@ const handlePrint = () => {
                 }))}
               />
             </Col>
-            <Col xs={24} sm={12} md={3}>
+            <Col xs={24} sm={12} md={2}>
               <div style={{ marginBottom: 4, fontWeight: 500 }}>السعر</div>
               <Input 
                 name="price"
@@ -1949,26 +2224,27 @@ const handlePrint = () => {
                 step={0.01}
               />
             </Col>
-          <Col xs={24} sm={12} md={3}>
+          <Col xs={24} sm={12} md={2}>
             <div style={{ marginBottom: 4, fontWeight: 500 }}>% الخصم</div>
             <Input
               name="discountPercent"
               value={item.discountPercent}
               onChange={handleItemChange}
               placeholder="% الخصم"
-              style={{ fontFamily: 'Cairo' }}
+              style={{ fontFamily: 'Cairo', paddingLeft: 4, paddingRight: 4, fontSize: 15 }}
               type="number"
               min={0}
               max={100}
             />
           </Col>
-          <Col xs={24} sm={12} md={3}>
+          <Col xs={24} sm={12} md={2}>
             <div style={{ marginBottom: 4, fontWeight: 500 }}>% الضريبة</div>
             <Input 
               name="taxPercent"
               value={item.taxPercent} 
               onChange={handleItemChange} 
               placeholder="% الضريبة" 
+              style={{ fontFamily: 'Cairo',  paddingLeft: 4, paddingRight: 4, fontSize: 15 }}
               type="number" 
               min={0}
             />
@@ -1976,18 +2252,35 @@ const handlePrint = () => {
           <Col xs={24} sm={12} md={1}>
             <div style={{ marginBottom: 4, fontWeight: 500, visibility: 'hidden' }}>إضافة</div>
             <Button 
-              type="primary" 
+              type="primary"
               onClick={addItem}
-              block={true}
-            >
-              إضافة
-            </Button>
+              disabled={
+                !invoiceData.paymentMethod ||
+                !invoiceData.branch ||
+                (warehouseMode !== 'multiple' && !invoiceData.warehouse) ||
+                !invoiceData.customerName
+              }
+              icon={
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8m4-4H8" />
+                </svg>
+              }
+            />
           </Col>
           </Row>
 
           {/* Items Table */}
           <div className="mb-4">
+            <style>{`
+              .custom-items-table .ant-table-thead > tr > th {
+                background: #2563eb !important;
+                color: #fff !important;
+                font-weight: bold;
+              }
+            `}</style>
             <Table 
+              className="custom-items-table"
               columns={itemColumns} 
               dataSource={items} 
               pagination={false} 
@@ -1999,7 +2292,7 @@ const handlePrint = () => {
           </div>
 
           {/* Totals */}
-          <Row gutter={16} justify="end" className="mb-4">
+          <Row gutter={16} justify="end" className="mb-4 ">
             <Col xs={24} sm={12} md={6}>
               <Card size="small">
                 <div className="flex justify-between">
@@ -2030,19 +2323,62 @@ const handlePrint = () => {
           </Row>
 
           {/* Save Button */}
-          <Row justify="center">
+          <Row justify="center" gutter={12}>
             <Col>
               <Button 
                 type="primary" 
                 size="large" 
                 icon={<SaveOutlined />} 
-                onClick={handleSave}
+                onClick={() => {
+                  if (Number(totalsDisplay.net) <= 0) {
+                    if (typeof message !== 'undefined' && message.error) {
+                      message.error('لا يمكن حفظ الفاتورة إذا كان الإجمالي النهائي صفر أو أقل');
+                    } else {
+                      alert('لا يمكن حفظ الفاتورة إذا كان الإجمالي النهائي صفر أو أقل');
+                    }
+                    return;
+                  }
+                  handleSave();
+                }}
                 style={{ width: 150 }}
                 loading={loading}
               >
                 حفظ الفاتورة 
               </Button>
-
+            </Col>
+            <Col>
+              <Button
+                type="default"
+                size="large"
+                icon={
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 9V2h12v7" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18H5a2 2 0 01-2-2V7a2 2 0 012-2h14a2 2 0 012 2v9a2 2 0 01-2 2h-1" />
+                    <rect x="6" y="14" width="12" height="8" rx="2" />
+                  </svg>
+                }
+                onClick={handlePrint}
+                disabled={loading || !lastSavedInvoice}
+                style={{ width: 150 }}
+              >
+                طباعة الفاتورة
+              </Button>
+            </Col>
+            <Col>
+              <Button
+                type="default"
+                size="large"
+                icon={
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h8M8 12h8M8 18h8M4 6h.01M4 12h.01M4 18h.01" />
+                  </svg>
+                }
+                onClick={() => {/* TODO: implement print entry logic */}}
+                disabled={loading}
+                style={{ width: 150 }}
+              >
+                طباعة القيد
+              </Button>
             </Col>
           </Row>
 
