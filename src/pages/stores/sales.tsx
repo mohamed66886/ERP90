@@ -935,7 +935,7 @@ const SalesPage: React.FC = () => {
   const [showInvoicesTable, setShowInvoicesTable] = useState(false);
 
   return (
-    <div className="p-4">
+    <div className="p-2 sm:p-6 w-full max-w-none">
       <style>{`
         body, .ant-typography, .ant-input, .ant-select, .ant-btn, .ant-card, .ant-table, .ant-form, .ant-row, .ant-col, .ant-picker, .ant-spin {
           font-family: 'Cairo', 'sans-serif' !important;

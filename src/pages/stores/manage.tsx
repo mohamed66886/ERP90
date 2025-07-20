@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Plus, Edit, Trash2, MapPin, Search, Eye, AlertCircle, CheckCircle } from 'lucide-react';
+import { Package, Plus, Edit, Trash2, MapPin, Search, CheckCircle, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { 
   collection, 
@@ -8,17 +8,24 @@ import {
   doc, 
   updateDoc, 
   deleteDoc, 
-  serverTimestamp, 
-  query, 
+  serverTimestamp,
+  query,
   orderBy,
-  where,
-  getFirestore,
-  Timestamp
+  where
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/useAuth';
-import { TenantDatabase } from '@/lib/tenant-database';
 import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface Warehouse {
   id: string;
@@ -28,8 +35,8 @@ interface Warehouse {
   description?: string;
   location?: string;
   isActive: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt: import('firebase/firestore').Timestamp | null;
+  updatedAt: import('firebase/firestore').Timestamp | null;
 }
 
 interface Branch {
@@ -39,14 +46,15 @@ interface Branch {
   isActive: boolean;
 }
 
-const WarehouseManagement: React.FC = () => {
+const WarehouseManagement = () => {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null);
-  const [selectedBranch, setSelectedBranch] = useState<string>('');
+  const [selectedBranch, setSelectedBranch] = useState('all');
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [currentWarehouse, setCurrentWarehouse] = useState<Warehouse | null>(null);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -80,7 +88,7 @@ const WarehouseManagement: React.FC = () => {
         variant: "destructive"
       });
     }
-  }, [db, toast]);
+  }, [toast]);
 
   const fetchWarehouses = React.useCallback(async () => {
     try {
@@ -93,35 +101,31 @@ const WarehouseManagement: React.FC = () => {
       );
       
       const warehousesData = await Promise.all(
-        warehousesSnapshot.docs.map(async (warehouseDoc) => {
-          const warehouseData = warehouseDoc.data();
+        warehousesSnapshot.docs.map(async (doc) => {
+          const data = doc.data();
           let branchName = 'غير محدد';
           
-          if (warehouseData.branchId) {
-            try {
-              const branchDoc = await getDocs(
-                query(
-                  collection(db, 'branches'),
-                  where('__name__', '==', warehouseData.branchId)
-                )
-              );
-              if (!branchDoc.empty) {
-                branchName = branchDoc.docs[0].data().name;
-              }
-            } catch (error) {
-              console.error('Error fetching branch name:', error);
+          if (data.branchId) {
+            const branchDoc = await getDocs(
+              query(
+                collection(db, 'branches'),
+                where('__name__', '==', data.branchId)
+              )
+            );
+            if (!branchDoc.empty) {
+              branchName = branchDoc.docs[0].data().name;
             }
           }
           
           return {
-            id: warehouseDoc.id,
-            ...warehouseData,
+            id: doc.id,
+            ...data,
             branchName
-          };
+          } as Warehouse;
         })
       );
       
-      setWarehouses(warehousesData as Warehouse[]);
+      setWarehouses(warehousesData);
     } catch (error) {
       console.error('Error fetching warehouses:', error);
       toast({
@@ -132,7 +136,7 @@ const WarehouseManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [db, toast]);
+  }, [toast]);
 
   useEffect(() => {
     fetchBranches();
@@ -166,12 +170,11 @@ const WarehouseManagement: React.FC = () => {
         updatedAt: serverTimestamp()
       };
 
-      if (editingWarehouse) {
-        await updateDoc(doc(db, 'warehouses', editingWarehouse.id), warehouseData);
+      if (currentWarehouse) {
+        await updateDoc(doc(db, 'warehouses', currentWarehouse.id), warehouseData);
         toast({
-          title: "تم بنجاح",
+          title: "تم التحديث",
           description: "تم تحديث بيانات المخزن بنجاح",
-          variant: "default"
         });
       } else {
         await addDoc(collection(db, 'warehouses'), {
@@ -179,9 +182,8 @@ const WarehouseManagement: React.FC = () => {
           createdAt: serverTimestamp()
         });
         toast({
-          title: "تم بنجاح",
+          title: "تم الإضافة",
           description: "تم إضافة المخزن بنجاح",
-          variant: "default"
         });
       }
 
@@ -198,7 +200,7 @@ const WarehouseManagement: React.FC = () => {
   };
 
   const handleEdit = (warehouse: Warehouse) => {
-    setEditingWarehouse(warehouse);
+    setCurrentWarehouse(warehouse);
     setFormData({
       name: warehouse.name,
       branchId: warehouse.branchId,
@@ -206,27 +208,29 @@ const WarehouseManagement: React.FC = () => {
       location: warehouse.location || '',
       isActive: warehouse.isActive
     });
-    setShowAddForm(true);
+    setIsDialogOpen(true);
   };
 
-  const handleDelete = async (warehouseId: string) => {
-    if (window.confirm('هل أنت متأكد من حذف هذا المخزن؟')) {
-      try {
-        await deleteDoc(doc(db, 'warehouses', warehouseId));
-        toast({
-          title: "تم بنجاح",
-          description: "تم حذف المخزن بنجاح",
-          variant: "default"
-        });
-        fetchWarehouses();
-      } catch (error) {
-        console.error('Error deleting warehouse:', error);
-        toast({
-          title: "خطأ",
-          description: "فشل في حذف المخزن",
-          variant: "destructive"
-        });
-      }
+  const handleDelete = async () => {
+    if (!currentWarehouse) return;
+    
+    try {
+      await deleteDoc(doc(db, 'warehouses', currentWarehouse.id));
+      toast({
+        title: "تم الحذف",
+        description: "تم حذف المخزن بنجاح",
+      });
+      fetchWarehouses();
+    } catch (error) {
+      console.error('Error deleting warehouse:', error);
+      toast({
+        title: "خطأ",
+        description: "فشل في حذف المخزن",
+        variant: "destructive"
+      });
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setCurrentWarehouse(null);
     }
   };
 
@@ -238,276 +242,321 @@ const WarehouseManagement: React.FC = () => {
       location: '',
       isActive: true
     });
-    setEditingWarehouse(null);
-    setShowAddForm(false);
+    setCurrentWarehouse(null);
+    setIsDialogOpen(false);
   };
 
   const filteredWarehouses = warehouses.filter(warehouse => {
     const matchesSearch = warehouse.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          warehouse.branchName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesBranch = selectedBranch === '' || warehouse.branchId === selectedBranch;
+    const matchesBranch = selectedBranch === 'all' || warehouse.branchId === selectedBranch;
     return matchesSearch && matchesBranch;
   });
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+      <div className="p-6 space-y-4">
+        <div className="flex justify-between items-center">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-10 w-40" />
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-28 rounded-lg" />
+          ))}
+        </div>
+        <div className="space-y-2">
+          <Skeleton className="h-12 w-full" />
+          {[...Array(5)].map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full" />
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-3 bg-custom-purple rounded-xl shadow-lg">
-              <Package className="h-8 w-8 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">إدارة المخازن</h1>
-              <p className="text-gray-600 mt-1">إدارة المخازن والفروع المختلفة</p>
-            </div>
-          </div>
+    <div className="p-2 sm:p-6 w-full max-w-none space-y-6">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 w-full">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">إدارة المخازن</h1>
+          <p className="text-gray-600">إدارة وتنظيم المخازن والفروع</p>
+        </div>
+        <Button onClick={() => setIsDialogOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          إضافة مخزن
+        </Button>
+      </div>
 
-          {/* Controls */}
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-              <input
-                type="text"
-                placeholder="البحث في المخازن..."
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 w-full">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">إجمالي المخازن</CardTitle>
+            <Package className="h-4 w-4 text-gray-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{warehouses.length}</div>
+            <p className="text-xs text-gray-500">+12% عن الشهر الماضي</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">مخازن نشطة</CardTitle>
+            <CheckCircle className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{warehouses.filter(w => w.isActive).length}</div>
+            <p className="text-xs text-gray-500">+8% عن الشهر الماضي</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">مخازن غير نشطة</CardTitle>
+            <XCircle className="h-4 w-4 text-red-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{warehouses.filter(w => !w.isActive).length}</div>
+            <p className="text-xs text-gray-500">-4% عن الشهر الماضي</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">عدد الفروع</CardTitle>
+            <MapPin className="h-4 w-4 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{branches.length}</div>
+            <p className="text-xs text-gray-500">لتعيين المخازن</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search and Filters */}
+      <Card className="w-full">
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row justify-between gap-4">
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Input
+                placeholder="ابحث عن مخزن..."
+                className="pl-10"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-custom-purple focus:border-transparent"
               />
             </div>
-            
-            <select
-              value={selectedBranch}
-              onChange={(e) => setSelectedBranch(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-custom-purple focus:border-transparent"
-            >
-              <option value="">جميع الفروع</option>
-              {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name}
-                </option>
-              ))}
-            </select>
-
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="flex items-center gap-2 px-6 py-2 bg-custom-purple text-white rounded-lg hover:bg-custom-purple/90 transition-colors"
-            >
-              <Plus className="h-5 w-5" />
-              إضافة مخزن
-            </button>
-          </div>
-        </div>
-
-        {/* Add/Edit Form */}
-        {showAddForm && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-6 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">
-                  {editingWarehouse ? 'تعديل المخزن' : 'إضافة مخزن جديد'}
-                </h2>
-              </div>
-              
-              <form onSubmit={handleSubmit} className="p-6 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      اسم المخزن *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-custom-purple focus:border-transparent"
-                      placeholder="أدخل اسم المخزن"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      الفرع *
-                    </label>
-                    <select
-                      value={formData.branchId}
-                      onChange={(e) => setFormData({ ...formData, branchId: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-custom-purple focus:border-transparent"
-                      required
-                    >
-                      <option value="">اختر الفرع</option>
-                      {branches.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      الموقع
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.location}
-                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-custom-purple focus:border-transparent"
-                      placeholder="أدخل موقع المخزن"
-                    />
-                  </div>
-
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="isActive"
-                      checked={formData.isActive}
-                      onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                      className="h-4 w-4 text-custom-purple focus:ring-custom-purple border-gray-300 rounded"
-                    />
-                    <label htmlFor="isActive" className="mr-3 text-sm font-medium text-gray-700">
-                      مخزن نشط
-                    </label>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    الوصف
-                  </label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    rows={3}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-custom-purple focus:border-transparent"
-                    placeholder="أدخل وصف المخزن"
-                  />
-                </div>
-
-                <div className="flex gap-4 pt-4">
-                  <button
-                    type="submit"
-                    className="flex-1 bg-custom-purple text-white py-2 px-4 rounded-lg hover:bg-custom-purple/90 transition-colors"
-                  >
-                    {editingWarehouse ? 'حفظ التعديلات' : 'إضافة المخزن'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={resetForm}
-                    className="flex-1 bg-gray-500 text-white py-2 px-4 rounded-lg hover:bg-gray-600 transition-colors"
-                  >
-                    إلغاء
-                  </button>
-                </div>
-              </form>
+            <div className="w-full sm:w-64">
+              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                <SelectTrigger>
+                  <SelectValue placeholder="جميع الفروع" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">جميع الفروع</SelectItem>
+                  {branches.map((branch) => (
+                    <SelectItem key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
-        )}
-
-        {/* Warehouses List */}
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-4 text-right text-sm font-medium text-gray-500">اسم المخزن</th>
-                  <th className="px-6 py-4 text-right text-sm font-medium text-gray-500">الفرع</th>
-                  <th className="px-6 py-4 text-right text-sm font-medium text-gray-500">الموقع</th>
-                  <th className="px-6 py-4 text-right text-sm font-medium text-gray-500">الحالة</th>
-                  <th className="px-6 py-4 text-right text-sm font-medium text-gray-500">الإجراءات</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
+        </CardHeader>
+        <CardContent className="w-full">
+          {filteredWarehouses.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Package className="h-12 w-12 text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900">لا توجد مخازن</h3>
+              <p className="text-sm text-gray-500">
+                {searchTerm || selectedBranch ? 'لا توجد نتائج مطابقة للبحث' : 'لم يتم إضافة أي مخازن بعد'}
+              </p>
+              {!searchTerm && selectedBranch === 'all' && (
+                <Button 
+                  className="mt-4"
+                  onClick={() => setIsDialogOpen(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  إضافة مخزن جديد
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto w-full">
+              <Table className="min-w-full w-full">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>اسم المخزن</TableHead>
+                  <TableHead>الفرع</TableHead>
+                  <TableHead>الموقع</TableHead>
+                  <TableHead>الحالة</TableHead>
+                  <TableHead className="text-right">الإجراءات</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {filteredWarehouses.map((warehouse) => (
-                  <tr key={warehouse.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-10 w-10">
-                          <div className="h-10 w-10 rounded-full bg-custom-purple/10 flex items-center justify-center">
-                            <Package className="h-5 w-5 text-custom-purple" />
-                          </div>
+                  <TableRow key={warehouse.id}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-blue-100 p-2 rounded-full">
+                          <Package className="h-4 w-4 text-blue-600" />
                         </div>
-                        <div className="mr-4">
-                          <div className="text-sm font-medium text-gray-900">{warehouse.name}</div>
-                          {warehouse.description && (
-                            <div className="text-sm text-gray-500">{warehouse.description}</div>
-                          )}
-                        </div>
+                        {warehouse.name}
                       </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center">
-                        <MapPin className="h-4 w-4 text-gray-400 ml-1" />
-                        <span className="text-sm text-gray-900">{warehouse.branchName}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-sm text-gray-900">
-                        {warehouse.location || 'غير محدد'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={cn(
-                        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
-                        warehouse.isActive
-                          ? "bg-green-100 text-green-800"
-                          : "bg-red-100 text-red-800"
-                      )}>
+                    </TableCell>
+                    <TableCell>{warehouse.branchName}</TableCell>
+                    <TableCell>{warehouse.location || '-'}</TableCell>
+                    <TableCell>
+                      <Badge variant={warehouse.isActive ? "default" : "destructive"}>
                         {warehouse.isActive ? (
                           <>
-                            <CheckCircle className="h-3 w-3 ml-1" />
+                            <CheckCircle className="h-3 w-3 mr-1" />
                             نشط
                           </>
                         ) : (
                           <>
-                            <AlertCircle className="h-3 w-3 ml-1" />
+                            <XCircle className="h-3 w-3 mr-1" />
                             غير نشط
                           </>
                         )}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <button
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={() => handleEdit(warehouse)}
-                          className="text-blue-600 hover:text-blue-800 transition-colors"
-                          title="تعديل"
                         >
                           <Edit className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(warehouse.id)}
-                          className="text-red-600 hover:text-red-800 transition-colors"
-                          title="حذف"
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            setCurrentWarehouse(warehouse);
+                            setIsDeleteDialogOpen(true);
+                          }}
                         >
                           <Trash2 className="h-4 w-4" />
-                        </button>
+                        </Button>
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-        {filteredWarehouses.length === 0 && (
-          <div className="text-center py-12">
-            <Package className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">لا توجد مخازن</h3>
-            <p className="text-gray-500">ابدأ بإضافة مخزن جديد</p>
-          </div>
-        )}
-      </div>
+      {/* Add/Edit Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>{currentWarehouse ? 'تعديل المخزن' : 'إضافة مخزن جديد'}</DialogTitle>
+            <DialogDescription>
+              {currentWarehouse ? 'تحديث بيانات المخزن المحدد' : 'أدخل بيانات المخزن الجديد'}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="name" className="text-right">
+                اسم المخزن *
+              </Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData({...formData, name: e.target.value})}
+                className="col-span-3"
+                required
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="branch" className="text-right">
+                الفرع *
+              </Label>
+              <Select 
+                value={formData.branchId} 
+                onValueChange={(value) => setFormData({...formData, branchId: value})}
+                required
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="اختر الفرع" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((branch) => (
+                    <SelectItem key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="location" className="text-right">
+                الموقع
+              </Label>
+              <Input
+                id="location"
+                value={formData.location}
+                onChange={(e) => setFormData({...formData, location: e.target.value})}
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="description" className="text-right">
+                الوصف
+              </Label>
+              <Input
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({...formData, description: e.target.value})}
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="isActive" className="text-right">
+                الحالة
+              </Label>
+              <div className="col-span-3 flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="isActive"
+                  checked={formData.isActive}
+                  onChange={(e) => setFormData({...formData, isActive: e.target.checked})}
+                  className="h-4 w-4 text-primary"
+                />
+                <label htmlFor="isActive" className="text-sm font-medium leading-none">
+                  مخزن نشط
+                </label>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="submit">
+                {currentWarehouse ? 'حفظ التغييرات' : 'إضافة المخزن'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>هل أنت متأكد؟</AlertDialogTitle>
+            <AlertDialogDescription>
+              سيتم حذف المخزن "{currentWarehouse?.name}" نهائياً ولا يمكن التراجع عن هذا الإجراء
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>حذف</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
