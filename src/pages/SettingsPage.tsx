@@ -7,6 +7,7 @@ import "react-toastify/dist/ReactToastify.css";
 const initialData = {
   arabicName: "",
   englishName: "",
+  logoUrl: "",
   commercialRegistration: "",
   taxFile: "",
   registrationDate: "",
@@ -121,6 +122,18 @@ const SettingsPage = () => {
                   value={formData.englishName} 
                   disabled={!editMode} 
                   onChange={e => handleInputChange("englishName", e.target.value)}
+                />
+              </div>
+              {/* حقل رابط لوجو الشركة */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 font-arabic">رابط لوجو الشركة</label>
+                <input
+                  type="url"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={formData.logoUrl || ""}
+                  disabled={!editMode}
+                  onChange={e => handleInputChange("logoUrl", e.target.value)}
+                  placeholder="https://example.com/logo.png"
                 />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

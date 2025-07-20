@@ -46,6 +46,8 @@ interface Customer {
   mobile: string;
   email: string;
   status: "نشط" | "متوقف";
+  taxFileNumber?: string;
+  taxFileExpiry?: string;
   docId?: string;
 }
 
@@ -85,7 +87,9 @@ const initialForm: Customer = {
   phone: "",
   mobile: "",
   email: "",
-  status: "نشط"
+  status: "نشط",
+  taxFileNumber: "",
+  taxFileExpiry: ""
 };
 
 const businessTypes = ["شركة", "مؤسسة", "فرد"];
@@ -231,7 +235,9 @@ const CustomersPage = () => {
     
     try {
       if (isEditing && form.docId) {
-        await updateDoc(doc(db, "customers", form.docId), form);
+        // استبعاد docId من التحديث
+        const { docId, ...updateData } = form;
+        await updateDoc(doc(db, "customers", form.docId), updateData);
         toast({
           title: "تم التحديث",
           description: "تم تحديث بيانات العميل بنجاح",
@@ -560,10 +566,28 @@ const CustomersPage = () => {
                       </div>
                     </div>
 
-                    {/* تفاصيل العنوان */}
+                    {/* تفاصيل الملف الضريبي والعنوان */}
                     <Card className="p-4 mt-4">
-                      <h3 className="font-medium mb-3">تفاصيل العنوان</h3>
+                      <h3 className="font-medium mb-3">تفاصيل الملف الضريبي والعنوان</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">رقم الملف الضريبي</label>
+                          <Input
+                            name="taxFileNumber"
+                            value={form.taxFileNumber}
+                            onChange={handleChange}
+                            placeholder="أدخل رقم الملف الضريبي"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">تاريخ انتهاء الملف الضريبي</label>
+                          <Input
+                            name="taxFileExpiry"
+                            value={form.taxFileExpiry}
+                            onChange={handleChange}
+                            type="date"
+                          />
+                        </div>
                         <div>
                           <label className="block text-sm font-medium mb-1">المنطقة</label>
                           <Input 

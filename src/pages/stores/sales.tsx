@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/useAuth';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import dayjs from 'dayjs';
-import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin } from 'antd';
+import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal } from 'antd';
 import * as XLSX from 'xlsx';
 import Divider from 'antd/es/divider';
 import Card from 'antd/es/card';
@@ -28,6 +28,7 @@ interface InvoiceItem {
   price: string;
   discountPercent: string;
   discountValue: number;
+  extraDiscount?: number; // خصم اضافي
   taxPercent: string;
   taxValue: number;
   total: number;
@@ -89,6 +90,7 @@ const initialItem: InvoiceItem = {
   price: '',
   discountPercent: '0',
   discountValue: 0,
+  extraDiscount: 0,
   taxPercent: '15',
   taxValue: 0,
   total: 0
@@ -110,6 +112,8 @@ function getTodayString(): string {
 }
 
 const SalesPage: React.FC = () => {
+  // بيانات الشركة
+  const [companyData, setCompanyData] = useState<any>({});
   // دالة تصدير سجل الفواتير إلى ملف Excel
   const exportInvoicesToExcel = () => {
     if (!invoices.length) {
@@ -341,6 +345,9 @@ const SalesPage: React.FC = () => {
   const [priceType, setPriceType] = useState<'سعر البيع' | 'آخر سعر العميل'>('سعر البيع');
   const [invoices, setInvoices] = useState<(InvoiceRecord & { firstLevelCategory?: string })[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState<boolean>(false);
+  // حالة المودال بعد الحفظ
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [lastSavedInvoice, setLastSavedInvoice] = useState<any>(null);
 
   // جلب الفواتير من Firebase
   const fetchInvoices = async () => {
@@ -466,10 +473,11 @@ const SalesPage: React.FC = () => {
     const quantity = Math.max(0, Number(item.quantity) || 0);
     const price = Math.max(0, Number(item.price) || 0);
     const discountPercent = Math.min(100, Math.max(0, Number(item.discountPercent) || 0));
+    const extraDiscount = Number(item.extraDiscount ?? 0);
     const taxPercent = Math.max(0, Number(item.taxPercent) || 0);
     
     const subtotal = price * quantity;
-    const discountValue = subtotal * (discountPercent / 100);
+    const discountValue = subtotal * (discountPercent / 100) + extraDiscount;
     const taxableAmount = subtotal - discountValue;
     const taxValue = taxableAmount * (taxPercent / 100);
     
@@ -580,6 +588,9 @@ const SalesPage: React.FC = () => {
       });
       // تحديث سجل الفواتير
       await fetchInvoices();
+      // حفظ بيانات الفاتورة الأخيرة للمودال
+      setLastSavedInvoice({ ...invoice });
+      setShowPrintModal(true);
     } catch (err) {
       console.error('Error saving invoice:', err);
       message.error(err.message || 'حدث خطأ أثناء الحفظ');
@@ -927,12 +938,408 @@ const SalesPage: React.FC = () => {
   const totalsDisplay = useMemo(() => ({
     total: totals.total.toFixed(2),
     discount: (totals.total - totals.afterDiscount).toFixed(2),
+    afterDiscount: totals.afterDiscount.toFixed(2),
     tax: (totals.afterTax - totals.afterDiscount).toFixed(2),
     net: totals.afterTax.toFixed(2)
   }), [totals]);
 
   // حالة إظهار/إخفاء جدول سجل الفواتير
   const [showInvoicesTable, setShowInvoicesTable] = useState(false);
+
+  // دالة طباعة الفاتورة
+const handlePrint = () => {
+    // جلب بيانات الشركة من الإعدادات
+    (async () => {
+      let companyData: any = {
+        arabicName: '',
+        englishName: '',
+        logoUrl: '',
+        commercialRegistration: '',
+        taxFile: '',
+        registrationDate: '',
+        issuingAuthority: '',
+        companyType: '',
+        activityType: '',
+        nationality: '',
+        city: '',
+        region: '',
+        street: '',
+        district: '',
+        buildingNumber: '',
+        postalCode: '',
+        countryCode: '',
+        phone: '',
+        mobile: '',
+        fiscalYear: '',
+        taxRate: '',
+        website: '',
+      };
+      try {
+        const { getDocs, collection } = await import('firebase/firestore');
+        const companiesSnap = await getDocs(collection(db, 'companies'));
+        if (!companiesSnap.empty) {
+          companyData = { ...companyData, ...companiesSnap.docs[0].data() };
+        }
+      } catch {}
+
+      const invoice = lastSavedInvoice;
+      if (!invoice) return;
+
+      // Generate QR code data URL (using qrcode library)
+      let qrDataUrl = '';
+      try {
+        // Dynamically import qrcode library
+        const QRCode = (await import('qrcode')).default;
+        // You can customize the QR content as needed (e.g., invoice number, company, total, date)
+        const qrContent = JSON.stringify({
+          invoiceNumber: invoice.invoiceNumber,
+          company: companyData.arabicName,
+          date: invoice.date,
+          total: invoice.totals?.afterTax
+        });
+        qrDataUrl = await QRCode.toDataURL(qrContent, { width: 120, margin: 1 });
+      } catch (e) {
+        qrDataUrl = '';
+      }
+
+      const printWindow = window.open('', '', 'height=900,width=800');
+      printWindow?.document.write(`
+        <html>
+        <head>
+          <title>فاتورة ضريبية | Tax Invoice</title>
+          <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+          <style>
+            @page { size: A4; margin: 10mm; }
+            body {
+              font-family: 'Tajawal', sans-serif;
+              direction: rtl;
+              padding: 5mm;
+              color: #000;
+              font-size: 12px;
+              line-height: 1.4;
+            }
+            .header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 5mm;
+              border-bottom: 1px solid #000;
+              padding-bottom: 3mm;
+            }
+            .header-section {
+              flex: 1;
+              min-width: 0;
+              padding: 0 8px;
+              box-sizing: border-box;
+            }
+            .header-section.center {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              flex: 0 0 120px;
+              max-width: 120px;
+              min-width: 100px;
+            }
+            .logo {
+              width: 80px;
+              height: auto;
+              margin-bottom: 4px;
+            }
+            .company-info-ar {
+              text-align: right;
+              font-size: 13px;
+              font-weight: 500;
+              line-height: 1.5;
+            }
+            .company-info-en {
+              text-align: left;
+              font-family: Arial, sans-serif;
+              direction: ltr;
+              font-size: 12px;
+              font-weight: 500;
+              line-height: 1.5;
+            }
+            .info-row-table {
+              border: 1px solid #bbb;
+              border-radius: 4px;
+              margin-bottom: 0;
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 12px;
+              margin-top: 0;
+            }
+            .info-row-table td {
+              border: none;
+              padding: 2px 8px;
+              vertical-align: middle;
+              font-weight: 500;
+            }
+            .info-row-table .label {
+              color: #444;
+              font-weight: bold;
+              min-width: 80px;
+              text-align: right;
+            }
+            .info-row-table .value {
+              color: #222;
+              text-align: left;
+            }
+            .info-row-container {
+              display: flex;
+              flex-direction: row;
+              justify-content: space-between;
+              align-items: flex-start;
+              margin-bottom: 10px;
+              gap: 16px;
+            }
+            .info-row-table.left {
+              direction: rtl;
+            }
+            .info-row-table.right {
+              direction: rtl;
+            }
+            .qr-center {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              min-width: 100px;
+              max-width: 120px;
+              flex: 0 0 120px;
+            }
+            .qr-code {
+              width: 80px;
+              height: 80px;
+              border: 1px solid #ddd;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-family: Arial;
+              font-size: 8px;
+              text-align: center;
+              margin-top: 4px;
+            }
+            .invoice-title { text-align: center; font-size: 16px; font-weight: bold; margin: 5mm 0; border: 1px solid #000; padding: 2mm; background-color: #f3f3f3; }
+            .customer-info { margin-bottom: 5mm; border: 1px solid #ddd; padding: 3mm; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 5mm; font-size: 11px; }
+            th, td { border: 1px solid #000; padding: 2mm; text-align: center; }
+            th {
+              background-color: #305496;
+              color: #fff;
+              font-weight: bold;
+              font-size: 12.5px;
+              letter-spacing: 0.5px;
+            }
+            .totals { margin-top: 5mm; border-top: 1px solid #000; padding-top: 3mm; font-weight: bold; }
+            .policy { margin-top: 5mm; font-size: 10px; border: 1px solid #ddd; padding: 3mm; }
+            .policy-title { font-weight: bold; margin-bottom: 2mm; }
+            .signature { margin-top: 5mm; display: flex; justify-content: space-between; }
+            .signature-box { width: 45%; border-top: 1px solid #000; padding-top: 3mm; }
+            .footer { margin-top: 5mm; text-align: center; font-size: 10px; }
+          </style>
+        </head>
+        <body>
+          <!-- Header Section: Arabic (right), Logo (center), English (left) -->
+          <div class="header">
+            <div class="header-section company-info-ar">
+              <div>${companyData.arabicName || ''}</div>
+              <div>${companyData.companyType || ''}</div>
+              <div>السجل التجاري: ${companyData.commercialRegistration || ''}</div>
+              <div>الملف الضريبي: ${companyData.taxFile || ''}</div>
+              <div>العنوان: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+              <div>الرمز البريدي: ${companyData.postalCode || ''}</div>
+              <div>الهاتف: ${companyData.phone || ''}</div>
+              <div>الجوال: ${companyData.mobile || ''}</div>
+            </div>
+            <div class="header-section center">
+              <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
+            </div>
+            <div class="header-section company-info-en">
+              <div>${companyData.englishName || ''}</div>
+              <div>${companyData.companyType || ''}</div>
+              <div>Commercial Reg.: ${companyData.commercialRegistration || ''}</div>
+              <div>Tax File: ${companyData.taxFile || ''}</div>
+              <div>Address: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+              <div>Postal Code: ${companyData.postalCode || ''}</div>
+              <div>Phone: ${companyData.phone || ''}</div>
+              <div>Mobile: ${companyData.mobile || ''}</div>
+            </div>
+          </div>
+          <!-- Info Row Section: Invoice info (right), QR (center), Customer info (left) -->
+          <div class="info-row-container">
+            <table class="info-row-table right">
+              <tr><td class="label">طريقة الدفع</td><td class="value">${invoice.paymentMethod || ''}</td></tr>
+              <tr><td class="label">رقم الفاتورة</td><td class="value">${invoice.invoiceNumber || ''}</td></tr>
+              <tr><td class="label">تاريخ الفاتورة</td><td class="value">${invoice.date || ''}</td></tr>
+              <tr><td class="label">تاريخ الاستحقاق</td><td class="value">${invoice.dueDate || ''}</td></tr>
+            </table>
+            <div class="qr-center">
+              <div style="font-size:13px;font-weight:bold;margin-bottom:4px;">
+                ${(() => {
+                  const branch = (typeof branches !== 'undefined' && Array.isArray(branches))
+                    ? branches.find(b => b.id === invoice.branch)
+                    : null;
+                  return branch ? (branch.name || branch.id) : (invoice.branch || '');
+                })()}
+              </div>
+              <div class="qr-code">
+                <img src="${qrDataUrl}" alt="QR Code" style="width:60px;height:60px;" /><br>
+                <span style="font-size:10px">${invoice.invoiceNumber || ''}</span>
+              </div>
+            </div>
+            <table class="info-row-table left">
+              <tr><td class="label">اسم العميل</td><td class="value">${invoice.customerName || ''}</td></tr>
+              <tr><td class="label">رقم الجوال</td><td class="value">${invoice.customerNumber || ''}</td></tr>
+              <tr><td class="label">م.ض</td><td class="value">${invoice.taxFile || ''}</td></tr>
+              <tr><td class="label">عنوان العميل</td><td class="value">${invoice.customerAddress || ''}</td></tr>
+            </table>
+          </div>
+          <!-- Items Table -->
+          <table>
+            <thead>
+              <tr>
+                <th>الرقم</th>
+                <th>كود الصنف</th>
+                <th>اسم الصنف</th>
+                <th>الكمية</th>
+                <th>السعر</th>
+                <th>نسبة الخصم %</th>
+                <th>مبلغ الخصم</th>
+                <th>الإجمالي قبل الضريبة</th>
+                <th>قيمة الضريبة</th>
+                <th>الإجمالي شامل الضريبة</th>
+                <th>المخزن</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(invoice.items || []).map((it: any, idx: number) => {
+                const subtotal = Number(it.price) * Number(it.quantity);
+                const discountValue = Number(it.discountValue) || 0;
+                const taxValue = Number(it.taxValue) || 0;
+                const net = subtotal - discountValue + taxValue;
+                return `<tr>
+                  <td>${idx + 1}</td>
+                  <td>${it.itemNumber || ''}</td>
+                  <td>${it.itemName || ''}</td>
+                  <td>${it.quantity || ''}</td>
+                  <td>${Number(it.price).toFixed(2)}</td>
+                  <td>${it.discountPercent || '0'}</td>
+                  <td>${discountValue.toFixed(2)}</td>
+                  <td>${subtotal.toFixed(2)}</td>
+                  <td>${taxValue.toFixed(2)}</td>
+
+                  <td>${net.toFixed(2)}</td>
+                                    <td>${
+                    (() => {
+                      // الأولوية: warehouseId من الصنف، ثم warehouse من الفاتورة
+                      const warehouseId = it.warehouseId || invoice.warehouse;
+                      const warehouseObj = warehouses.find(w => w.id === warehouseId);
+                      return warehouseObj ? (warehouseObj.name || warehouseObj.id) : (warehouseId || '');
+                    })()
+                  }</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+          <!-- Totals Section as vertical table left aligned -->
+          <div style="display: flex; justify-content: flex-end; margin-top: 5mm;">
+            <table style="border:1.5px solid #000; border-radius:6px; font-size:13px; min-width:220px; max-width:320px; margin-left:0; margin-right:0; border-collapse:collapse; box-shadow:none;">
+              <tbody>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">إجمالى الفاتورة</td>
+                  <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.total?.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">مبلغ الخصم</td>
+                  <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.total - invoice.totals?.afterDiscount).toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى بعد الخصم</td>
+                  <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.afterDiscount?.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الضريبة (${invoice.items && invoice.items[0] ? (invoice.items[0].taxPercent || 0) : 0}%)</td>
+                  <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.afterTax - invoice.totals?.afterDiscount).toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى النهايي</td>
+                  <td style="text-align:left; font-weight:700; border:1px solid #000; background:#fff;">${invoice.totals?.afterTax?.toFixed(2)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <!-- Policies Section -->
+          <div class="policy">
+            <div class="policy-title">سياسة الاستبدال والاسترجاع:</div>
+            <div>1- يستوجب أن يكون المنتج بحالته الأصلية بدون أي استعمال وبكامل اكسسواراته وبالتعبئة الأصلية.</div>
+            <div>2- البضاعة المباعة ترد أو تستبدل خلال ثلاثة أيام من تاريخ استلام العميل للمنتج مع إحضار أصل الفاتورة وتكون البضاعة بحالة سليمة ومغلقة.</div>
+            <div>3- يتحمل العميل قيمة التوصيل في حال إرجاع الفاتورة ويتم إعادة المبلغ خلال 3 أيام عمل.</div>
+            <div>4- ${companyData.arabicName || 'الشركة'} غير مسؤولة عن تسليم البضاعة بعد 10 أيام من تاريخ الفاتورة.</div>
+            <div class="policy-title" style="margin-top: 3mm;">سياسة التوصيل:</div>
+            <div>1- توصيل الطلبات من 5 أيام إلى 10 أيام عمل.</div>
+            <div>2- الحد المسموح به للتوصيل هو الدور الأرضي كحد أقصى، وفي حال رغبة العميل بالتوصيل لأعلى من الحد المسموح به، يتم ذلك بواسطة العميل.</div>
+            <div>3- يتم التوصيل حسب جدول المواعيد المحدد من ${companyData.arabicName || 'الشركة'}، كما أن ${companyData.arabicName || 'الشركة'} غير مسؤولة عن أي أضرار ناتجه بسبب التأخير او تأجيل موعد التوصيل.</div>
+            <div>4- يستوجب فحص المنتج أثناء استلامه مع التوقيع باستلامه، وعدم الفحص يسقط حق العميل في المطالبة بالاسترجاع او الاستبدال في حال وجود كسر.</div>
+            <div>5- لايوجد لدينا تركيب الضمان هو ضمان ${companyData.arabicName || 'الشركة'}، كما أن الضمان لا يشمل سوء الاستخدام الناتج من العميل.</div>
+          </div>
+          <!-- Signature Section -->
+          <div class="signature">
+            <div class="signature-box">
+              <div>اسم العميل: ${invoice.customerName || ''}</div>
+              <div>التوقيع: ___________________</div>
+            </div>
+            <div class="signature-box" style="position:relative;">
+              <div>البائع: ${invoice.delegate || ''}</div>
+              <div>التاريخ: ${invoice.date || ''}</div>
+              <!-- Decorative Stamp -->
+              <div style="
+                margin-top:18px;
+                display:flex;
+                justify-content:center;
+                align-items:center;
+                width:160px;
+                height:60px;
+                border:2.5px dashed #888;
+                border-radius:50%;
+                box-shadow:0 2px 8px 0 rgba(0,0,0,0.08);
+                opacity:0.85;
+                background: repeating-linear-gradient(135deg, #f8f8f8 0 8px, #fff 8px 16px);
+                font-family: 'Cairo', 'Tajawal', Arial, sans-serif;
+                font-size:15px;
+                font-weight:bold;
+                color:#222;
+                letter-spacing:1px;
+                text-align:center;
+                position:absolute;
+                left:50%;
+                transform:translateX(-50%);
+                bottom:-80px;
+                z-index:2;
+              ">
+                <div style="width:100%;">
+                  <div style="font-size:16px; font-weight:700;">${companyData.arabicName || 'الشركة'}</div>
+                  <div style="font-size:13px; font-weight:500; margin-top:2px;">${companyData.phone ? 'هاتف: ' + companyData.phone : ''}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Footer -->
+          <div class="footer">
+            ${companyData.website ? `لزيارة متجرنا الإلكتروني / Visit our e-shop: ${companyData.website}` : ''}
+          </div>
+        </body>
+        </html>
+      `);
+    
+      printWindow?.document.close();
+      printWindow?.focus();
+      setTimeout(() => {
+        printWindow?.print();
+        printWindow?.close();
+      }, 500);
+    })();
+};
 
   return (
     <div className="p-2 sm:p-6 w-full max-w-none">
@@ -942,6 +1349,171 @@ const SalesPage: React.FC = () => {
         }
       `}</style>
       <Spin spinning={fetchingItems}>
+        {/* مودال الطباعة بعد الحفظ */}
+<Modal
+  open={showPrintModal}
+  onCancel={() => setShowPrintModal(false)}
+  footer={[
+    <Button key="close" onClick={() => setShowPrintModal(false)}>
+      إغلاق
+    </Button>,
+    <Button key="print" type="primary" onClick={handlePrint}>
+      طباعة الفاتورة
+    </Button>
+  ]}
+  width={800}
+  style={{ maxWidth: '95vw' }} // لجعلها متجاوبة مع الهاتف
+  title={<span style={{fontFamily:'Tajawal',fontWeight:700}}>فاتورة مبيعات محفوظة</span>}
+>
+  <div id="print-invoice-content" style={{fontFamily:'Tajawal', direction:'rtl', padding:10}}>
+    {lastSavedInvoice && (
+      <div style={{ overflowX: 'auto' }}> {/* لجعل الجداول قابلة للتمرير أفقيًا على الهاتف */}
+        {/* Header Section - مصمم للهاتف */}
+
+
+
+
+ 
+
+        {/* Items Table - قابل للتمرير أفقيًا على الهاتف */}
+        <div style={{overflowX: 'auto', marginBottom: 16}}>
+          <table style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+            fontSize: 11,
+            minWidth: window.innerWidth < 768 ? '700px' : '100%' // يجبر الجدول على التمرير الأفقي على الهاتف
+          }}>
+            <thead>
+              <tr>
+                <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>الرقم</th>
+                <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>اسم الصنف</th>
+                <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>الكمية</th>
+                <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>السعر</th>
+                <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>الخصم</th>
+                <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>الإجمالي</th>
+                {window.innerWidth >= 768 && ( // إخفاء بعض الأعمدة على الهاتف
+                  <>
+                    <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>الضريبة</th>
+                    <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>المخزن</th>
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {lastSavedInvoice.items && lastSavedInvoice.items.map((it:any, idx:number) => {
+                const subtotal = Number(it.price) * Number(it.quantity);
+                const discountValue = Number(it.discountValue) || 0;
+                const taxValue = Number(it.taxValue) || 0;
+                const net = subtotal - discountValue + taxValue;
+                return (
+                  <tr key={idx}>
+                    <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{idx + 1}</td>
+                    <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{it.itemName || ''}</td>
+                    <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{it.quantity || ''}</td>
+                    <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{Number(it.price).toFixed(2)}</td>
+                    <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{discountValue.toFixed(2)}</td>
+                    <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{net.toFixed(2)}</td>
+                    {window.innerWidth >= 768 && (
+                      <>
+                        <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{taxValue.toFixed(2)}</td>
+                        <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>
+                          {(() => {
+                            const warehouseId = it.warehouseId || lastSavedInvoice.warehouse;
+                            const warehouseObj = warehouses.find(w => w.id === warehouseId);
+                            return warehouseObj ? (warehouseObj.name || warehouseObj.id) : (warehouseId || '');
+                          })()}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Totals Section */}
+        <div style={{display:'flex', justifyContent:'flex-end', marginTop:16}}>
+          <table style={{
+            border:'1.5px solid #000',
+            borderRadius:6,
+            fontSize:13,
+            minWidth:220,
+            maxWidth:320,
+            marginLeft:0,
+            marginRight:0,
+            borderCollapse:'collapse'
+          }}>
+            <tbody>
+              <tr>
+                <td style={{fontWeight:'bold', color:'#000', textAlign:'right', padding:'7px 12px', border:'1px solid #000', background:'#fff'}}>إجمالى الفاتورة</td>
+                <td style={{textAlign:'left', fontWeight:500, border:'1px solid #000', background:'#fff'}}>{lastSavedInvoice.totals?.total?.toFixed(2)}</td>
+              </tr>
+              <tr>
+                <td style={{fontWeight:'bold', color:'#000', textAlign:'right', padding:'7px 12px', border:'1px solid #000', background:'#fff'}}>مبلغ الخصم</td>
+                <td style={{textAlign:'left', fontWeight:500, border:'1px solid #000', background:'#fff'}}>{(lastSavedInvoice.totals?.total - lastSavedInvoice.totals?.afterDiscount).toFixed(2)}</td>
+              </tr>
+              <tr>
+                <td style={{fontWeight:'bold', color:'#000', textAlign:'right', padding:'7px 12px', border:'1px solid #000', background:'#fff'}}>الاجمالى بعد الخصم</td>
+                <td style={{textAlign:'left', fontWeight:500, border:'1px solid #000', background:'#fff'}}>{lastSavedInvoice.totals?.afterDiscount?.toFixed(2)}</td>
+              </tr>
+              <tr>
+                <td style={{fontWeight:'bold', color:'#000', textAlign:'right', padding:'7px 12px', border:'1px solid #000', background:'#fff'}}>الضريبة</td>
+                <td style={{textAlign:'left', fontWeight:500, border:'1px solid #000', background:'#fff'}}>{(lastSavedInvoice.totals?.afterTax - lastSavedInvoice.totals?.afterDiscount).toFixed(2)}</td>
+              </tr>
+              <tr>
+                <td style={{fontWeight:'bold', color:'#000', textAlign:'right', padding:'7px 12px', border:'1px solid #000', background:'#fff'}}>الاجمالى النهائي</td>
+                <td style={{textAlign:'left', fontWeight:700, border:'1px solid #000', background:'#fff'}}>{lastSavedInvoice.totals?.afterTax?.toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Policies Section - مخفية على الهاتف */}
+        {window.innerWidth >= 768 && (
+          <div style={{marginTop:16, border:'1px solid #ddd', padding:12, fontSize:10}}>
+            <div style={{fontWeight:'bold', marginBottom:8}}>سياسة الاستبدال والاسترجاع:</div>
+            <div>1- يستوجب أن يكون المنتج بحالته الأصلية بدون أي استعمال وبكامل اكسسواراته وبالتعبئة الأصلية.</div>
+            <div>2- البضاعة المباعة ترد أو تستبدل خلال ثلاثة أيام من تاريخ استلام العميل للمنتج مع إحضار أصل الفاتورة وتكون البضاعة بحالة سليمة ومغلقة.</div>
+          </div>
+        )}
+
+        {/* Signature Section - مبسطة للهاتف */}
+        <div style={{
+          marginTop: 16,
+          display: 'flex',
+          flexDirection: window.innerWidth < 768 ? 'column' : 'row',
+          justifyContent: 'space-between',
+          gap: 16
+        }}>
+          <div style={{
+            width: window.innerWidth < 768 ? '100%' : '45%',
+            borderTop: '1px solid #000',
+            paddingTop: 12
+          }}>
+            <div>اسم العميل: {lastSavedInvoice.customerName || ''}</div>
+            <div>التوقيع: ___________________</div>
+          </div>
+          <div style={{
+            width: window.innerWidth < 768 ? '100%' : '45%',
+            borderTop: '1px solid #000',
+            paddingTop: 12
+          }}>
+            <div>البائع: {lastSavedInvoice.delegate || ''}</div>
+            <div>التاريخ: {lastSavedInvoice.date || ''}</div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        {window.innerWidth >= 768 && (
+          <div style={{marginTop:16, textAlign:'center', fontSize:10}}>
+            {companyData.website ? `لزيارة متجرنا الإلكتروني: ${companyData.website}` : ''}
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+</Modal>
         <Card 
           title={
             <div className="flex items-center gap-4">
@@ -1126,7 +1698,7 @@ const SalesPage: React.FC = () => {
                       customerName: value || '',
                       customerNumber: selected ? (selected.phone || selected.mobile || selected.phoneNumber || '') : '',
                       commercialRecord: selected ? (selected.commercialReg || '') : '',
-                      taxFile: selected ? (selected.taxFile || '') : ''
+                      taxFile: selected ? (selected.taxFileNumber || selected.taxFile || '') : ''
                     });
                   }}
                   style={{ fontFamily: 'Cairo, sans-serif' }}
@@ -1172,6 +1744,7 @@ const SalesPage: React.FC = () => {
           {/* Item Entry */}
           <Row gutter={16} className="mb-4">
             <Col xs={24} sm={12} md={4}>
+              <div style={{ marginBottom: 4, fontWeight: 500 }}>كود الصنف</div>
               <Input
                 value={item.itemNumber}
                 placeholder="كود الصنف"
@@ -1179,6 +1752,7 @@ const SalesPage: React.FC = () => {
               />
             </Col>
             <Col xs={24} sm={12} md={4}>
+              <div style={{ marginBottom: 4, fontWeight: 500 }}>اسم الصنف</div>
               <Select
                 showSearch
                 value={item.itemName}
@@ -1212,6 +1786,7 @@ const SalesPage: React.FC = () => {
             </Col>
             {warehouseMode === 'multiple' && (
               <Col xs={24} sm={12} md={4}>
+                <div style={{ marginBottom: 4, fontWeight: 500 }}>المخزن</div>
                 <Select
                   showSearch
                   value={item.warehouseId}
@@ -1230,6 +1805,7 @@ const SalesPage: React.FC = () => {
               </Col>
             )}
             <Col xs={24} sm={12} md={3}>
+              <div style={{ marginBottom: 4, fontWeight: 500 }}>الكمية</div>
               <Input 
                 name="quantity"
                 value={item.quantity} 
@@ -1240,6 +1816,7 @@ const SalesPage: React.FC = () => {
               />
             </Col>
             <Col xs={24} sm={12} md={3}>
+              <div style={{ marginBottom: 4, fontWeight: 500 }}>الوحدة</div>
               <Select
                 showSearch
                 value={item.unit}
@@ -1253,6 +1830,7 @@ const SalesPage: React.FC = () => {
               />
             </Col>
             <Col xs={24} sm={12} md={3}>
+              <div style={{ marginBottom: 4, fontWeight: 500 }}>السعر</div>
               <Input 
                 name="price"
                 value={item.price} 
@@ -1263,19 +1841,33 @@ const SalesPage: React.FC = () => {
                 step={0.01}
               />
             </Col>
+          <Col xs={24} sm={12} md={3}>
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>% الخصم</div>
+            <Input
+              name="discountPercent"
+              value={item.discountPercent}
+              onChange={handleItemChange}
+              placeholder="% الخصم"
+              style={{ fontFamily: 'Cairo' }}
+              type="number"
+              min={0}
+              max={100}
+            />
+          </Col>
+          <Col xs={24} sm={12} md={3}>
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>خصم اضافي</div>
+            <Input
+              name="extraDiscount"
+              value={item.extraDiscount ?? 0}
+              onChange={e => setItem({ ...item, extraDiscount: Number(e.target.value) })}
+              placeholder="خصم اضافي"
+              style={{ fontFamily: 'Cairo' }}
+              type="number"
+              min={0}
+            />
+          </Col>
             <Col xs={24} sm={12} md={3}>
-              <Input
-                name="discountPercent"
-                value={item.discountPercent}
-                onChange={handleItemChange}
-                placeholder="% الخصم"
-                style={{ fontFamily: 'Cairo' }}
-                type="number"
-                min={0}
-                max={100}
-              />
-            </Col>
-            <Col xs={24} sm={12} md={3}>
+              <div style={{ marginBottom: 4, fontWeight: 500 }}>% الضريبة</div>
               <Input 
                 name="taxPercent"
                 value={item.taxPercent} 
@@ -1286,6 +1878,7 @@ const SalesPage: React.FC = () => {
               />
             </Col>
             <Col xs={24} sm={12} md={1}>
+              <div style={{ marginBottom: 4, fontWeight: 500, visibility: 'hidden' }}>إضافة</div>
               <Button 
                 type="primary" 
                 icon={<PlusOutlined />} 
@@ -1313,21 +1906,25 @@ const SalesPage: React.FC = () => {
             <Col xs={24} sm={12} md={6}>
               <Card size="small">
                 <div className="flex justify-between">
-                  <span>الإجمالي:</span>
-                  <span className="font-bold">{totalsDisplay.total}</span>
+                  <span style={{ color: '#2563eb', fontWeight: 600 }}>الإجمالي:</span>
+                  <span className="font-bold" style={{ color: '#2563eb' }}>{totalsDisplay.total}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>الخصم:</span>
-                  <span className="font-bold">{totalsDisplay.discount}</span>
+                  <span style={{ color: '#dc2626', fontWeight: 600 }}>الخصم:</span>
+                  <span className="font-bold" style={{ color: '#dc2626' }}>{totalsDisplay.discount}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>الضريبة:</span>
-                  <span className="font-bold">{totalsDisplay.tax}</span>
+                  <span style={{ color: '#ea580c', fontWeight: 600 }}>الإجمالي بعد الخصم:</span>
+                  <span className="font-bold" style={{ color: '#ea580c' }}>{totalsDisplay.afterDiscount}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{ color: '#9333ea', fontWeight: 600 }}>قيمة الضريبة:</span>
+                  <span className="font-bold" style={{ color: '#9333ea' }}>{totalsDisplay.tax}</span>
                 </div>
                 <Divider className="my-2" />
                 <div className="flex justify-between">
-                  <span>صافي الفاتورة:</span>
-                  <span className="font-bold text-lg">{totalsDisplay.net}</span>
+                  <span style={{ color: '#059669', fontWeight: 700 }}>الإجمالي النهائي:</span>
+                  <span className="font-bold text-lg" style={{ color: '#059669' }}>{totalsDisplay.net}</span>
                 </div>
               </Card>
             </Col>
@@ -1344,8 +1941,9 @@ const SalesPage: React.FC = () => {
                 style={{ width: 150 }}
                 loading={loading}
               >
-                حفظ فاتورة مبيعات
+                حفظ الفاتورة 
               </Button>
+
             </Col>
           </Row>
 
