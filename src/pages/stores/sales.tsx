@@ -1893,15 +1893,18 @@ const handlePrint = () => {
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <Button
                     type="default"
-                    style={{ padding: '0 8px', fontWeight: 700, background: 'transparent', boxShadow: 'none', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-
+                    style={{ padding: '0 8px', fontWeight: 700, background: 'transparent', boxShadow: 'none', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}
                     onClick={() => setShowAddCustomerModal(true)}
                   >
                     <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24">
-                        <circle cx="12" cy="6" r="2" fill="#000" />
-                        <circle cx="12" cy="12" r="2" fill="#000" />
-                        <circle cx="12" cy="18" r="2" fill="#000" />
+                      {/* Modern Add User Icon */}
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="10" cy="8" r="4" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5" />
+                        <path d="M4 20c0-2.5 3.5-4.5 8-4.5s8 2 8 4.5" stroke="#2563eb" strokeWidth="1.5" fill="none" />
+                        <g>
+                          <circle cx="17.5" cy="7.5" r="2.5" fill="#22c55e" stroke="#2563eb" strokeWidth="1.2" />
+                          <path d="M17.5 6v3M16 7.5h3" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" />
+                        </g>
                       </svg>
                     </span>
                   </Button>
