@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 
 interface Branch {
   id?: string;
+  code: string; // رقم الفرع
   name: string;
   address: string;
   taxFile: string;
@@ -20,7 +21,7 @@ interface Branch {
 const Branches: React.FC = () => {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<Branch>({ name: '', address: '', taxFile: '', commercialReg: '', postalCode: '', poBox: '', manager: '' });
+  const [form, setForm] = useState<Branch>({ code: '', name: '', address: '', taxFile: '', commercialReg: '', postalCode: '', poBox: '', manager: '' });
   const [editId, setEditId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [managers, setManagers] = useState<{ id: string; name: string }[]>([]);
@@ -53,14 +54,13 @@ const Branches: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // التحقق من عدم تكرار اسم الفرع
-    const existingBranch = branches.find(branch => 
-      branch.name.toLowerCase() === form.name.toLowerCase() && 
-      branch.id !== editId
+    // التحقق من عدم تكرار اسم أو رقم الفرع
+    const existingBranch = branches.find(b =>
+      (b.name.toLowerCase() === form.name.toLowerCase() || b.code === form.code) &&
+      b.id !== editId
     );
-    
     if (existingBranch) {
-      alert('اسم الفرع موجود بالفعل، يرجى اختيار اسم آخر');
+      alert('اسم الفرع أو رقم الفرع موجود بالفعل، يرجى اختيار اسم/رقم آخر');
       return;
     }
     
@@ -72,7 +72,7 @@ const Branches: React.FC = () => {
         await addDoc(collection(db, 'branches'), form);
       }
       setShowForm(false);
-      setForm({ name: '', address: '', taxFile: '', commercialReg: '', postalCode: '', poBox: '', manager: '' });
+      setForm({ code: '', name: '', address: '', taxFile: '', commercialReg: '', postalCode: '', poBox: '', manager: '' });
       setEditId(null);
       fetchBranches();
     } catch (error) {
@@ -82,6 +82,16 @@ const Branches: React.FC = () => {
   };
 
   const handleEdit = (branch: Branch) => {
+    setForm({
+      code: branch.code || '',
+      name: branch.name,
+      address: branch.address,
+      taxFile: branch.taxFile,
+      commercialReg: branch.commercialReg,
+      postalCode: branch.postalCode,
+      poBox: branch.poBox,
+      manager: branch.manager
+    });
     setForm(branch);
     setEditId(branch.id!);
     setShowForm(true);
@@ -114,8 +124,10 @@ const Branches: React.FC = () => {
             </div>
             <Button 
               onClick={() => { 
+                // توليد رقم الفرع تلقائيًا (أكبر رقم موجود + 1)
+                const maxCode = branches.length > 0 ? Math.max(...branches.map(b => parseInt(b.code, 10) || 0)) : 100;
+                setForm({ code: String(maxCode + 1), name: '', address: '', taxFile: '', commercialReg: '', postalCode: '', poBox: '', manager: '' });
                 setShowForm(true); 
-                setForm({ name: '', address: '', taxFile: '', commercialReg: '', postalCode: '', poBox: '', manager: '' });
                 setEditId(null); 
               }} 
               className="text-white backdrop-blur-sm transition-all duration-300 hover:scale-105 flex items-center gap-2"
@@ -152,6 +164,20 @@ const Branches: React.FC = () => {
             <div className="p-6 border-b border-gray-200/50">
               <h3 className="text-xl font-bold text-gray-800 mb-6">{editId ? 'تعديل الفرع' : 'إضافة فرع جديد'}</h3>
               <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gradient-to-r from-gray-50/80 to-gray-100/80 p-6 rounded-xl ring-1 ring-gray-200/50 backdrop-blur-sm">
+                <div>
+                  <Label className="block text-sm font-medium text-gray-800 mb-2">رقم الفرع</Label>
+                  <Input
+                    name="code"
+                    value={form.code}
+                    disabled
+                    required
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="يتم توليده تلقائيًا"
+                    className="border-gray-300/50 focus:ring-2 bg-gray-50/80 text-gray-800 backdrop-blur-sm"
+                    style={{'--tw-ring-color': '#635ca8'} as React.CSSProperties}
+                  />
+                </div>
                 <div>
                   <Label className="block text-sm font-medium text-gray-800 mb-2">اسم الفرع</Label>
                   <Input 

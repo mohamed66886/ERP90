@@ -28,7 +28,7 @@ interface InvoiceItem {
   price: string;
   discountPercent: string;
   discountValue: number;
-  extraDiscount?: number; // خصم اضافي
+  // تم حذف الخصم الإضافي
   taxPercent: string;
   taxValue: number;
   total: number;
@@ -79,6 +79,7 @@ interface InvoiceRecord {
   seller: string;
   paymentMethod: string;
   invoiceType: string;
+  extraDiscount?: number;
   itemData?: any; // لإظهار بيانات الصنف المؤقتة
 }
 
@@ -90,7 +91,7 @@ const initialItem: InvoiceItem = {
   price: '',
   discountPercent: '0',
   discountValue: 0,
-  extraDiscount: 0,
+  // تم حذف الخصم الإضافي
   taxPercent: '15',
   taxValue: 0,
   total: 0
@@ -341,6 +342,7 @@ const SalesPage: React.FC = () => {
     afterTax: 0,
     total: 0
   });
+
   const [taxRate, setTaxRate] = useState<string>('15');
   const [priceType, setPriceType] = useState<'سعر البيع' | 'آخر سعر العميل'>('سعر البيع');
   const [invoices, setInvoices] = useState<(InvoiceRecord & { firstLevelCategory?: string })[]>([]);
@@ -473,11 +475,11 @@ const SalesPage: React.FC = () => {
     const quantity = Math.max(0, Number(item.quantity) || 0);
     const price = Math.max(0, Number(item.price) || 0);
     const discountPercent = Math.min(100, Math.max(0, Number(item.discountPercent) || 0));
-    const extraDiscount = Number(item.extraDiscount ?? 0);
+    // تم حذف الخصم الإضافي
     const taxPercent = Math.max(0, Number(item.taxPercent) || 0);
     
     const subtotal = price * quantity;
-    const discountValue = subtotal * (discountPercent / 100) + extraDiscount;
+    const discountValue = subtotal * (discountPercent / 100);
     const taxableAmount = subtotal - discountValue;
     const taxValue = taxableAmount * (taxPercent / 100);
     
@@ -527,19 +529,17 @@ const SalesPage: React.FC = () => {
     updateTotals(newItems);
   };
 
+  // تحديث الإجماليات بدون خصم إضافي
   const updateTotals = (itemsList: InvoiceItem[]) => {
     const calculated = itemsList.reduce((acc, item) => {
       const lineTotal = item.total || 0;
       const discount = item.discountValue || 0;
-      const tax = item.taxValue || 0;
-      
       return {
         afterDiscount: acc.afterDiscount + (lineTotal - discount),
-        afterTax: acc.afterTax + (lineTotal - discount + tax),
+        afterTax: acc.afterTax + (lineTotal - discount),
         total: acc.total + lineTotal
       };
     }, { afterDiscount: 0, afterTax: 0, total: 0 });
-    
     setTotals({
       afterDiscount: parseFloat(calculated.afterDiscount.toFixed(2)),
       afterTax: parseFloat(calculated.afterTax.toFixed(2)),
@@ -560,7 +560,9 @@ const SalesPage: React.FC = () => {
     const invoice = {
       ...cleanInvoiceData,
       items,
-      totals,
+      totals: {
+        ...totals
+      },
       type: invoiceType,
       createdAt: new Date().toISOString()
     };
@@ -624,19 +626,18 @@ const SalesPage: React.FC = () => {
       align: 'center' as const
     },
     // إظهار عمود المخزن فقط إذا كان وضع المخزن multiple
-    ...(warehouseMode === 'multiple' ? [
-      {
-        title: 'المخزن',
-        dataIndex: 'warehouseId',
-        width: 120,
-        align: 'center' as const,
-        render: (warehouseId: string | undefined) => {
-          if (!warehouseId) return '';
-          const warehouse = warehouses.find(w => w.id === warehouseId);
-          return warehouse ? warehouse.name || warehouse.id : warehouseId;
-        }
+    {
+      title: 'المخزن',
+      dataIndex: 'warehouseId',
+      width: 120,
+      align: 'center' as const,
+      render: (_: string | undefined, record: { warehouseId?: string }) => {
+        const warehouseId = record.warehouseId || invoiceData.warehouse;
+        if (!warehouseId) return '';
+        const warehouse = warehouses.find(w => w.id === warehouseId);
+        return warehouse ? warehouse.name || warehouse.id : warehouseId;
       }
-    ] : []),
+    },
     { 
       title: 'السعر', 
       dataIndex: 'price',
@@ -939,8 +940,8 @@ const SalesPage: React.FC = () => {
     total: totals.total.toFixed(2),
     discount: (totals.total - totals.afterDiscount).toFixed(2),
     afterDiscount: totals.afterDiscount.toFixed(2),
-    tax: (totals.afterTax - totals.afterDiscount).toFixed(2),
-    net: totals.afterTax.toFixed(2)
+    tax: (0).toFixed(2), // الضريبة صفر
+    net: totals.afterDiscount.toFixed(2) // الصافي = الاجمالي بعد الخصم
   }), [totals]);
 
   // حالة إظهار/إخفاء جدول سجل الفواتير
@@ -1217,7 +1218,11 @@ const handlePrint = () => {
                 const subtotal = Number(it.price) * Number(it.quantity);
                 const discountValue = Number(it.discountValue) || 0;
                 const taxValue = Number(it.taxValue) || 0;
-                const net = subtotal - discountValue + taxValue;
+                const afterDiscount = subtotal - discountValue;
+                const net = afterDiscount + taxValue;
+                let warehouseId = it.warehouseId || invoice.warehouse;
+                let warehouseObj = Array.isArray(warehouses) ? warehouses.find(w => w.id === warehouseId) : null;
+                let warehouseName = warehouseObj ? (warehouseObj.name || warehouseObj.id) : (warehouseId || '');
                 return `<tr>
                   <td>${idx + 1}</td>
                   <td>${it.itemNumber || ''}</td>
@@ -1226,21 +1231,65 @@ const handlePrint = () => {
                   <td>${Number(it.price).toFixed(2)}</td>
                   <td>${it.discountPercent || '0'}</td>
                   <td>${discountValue.toFixed(2)}</td>
-                  <td>${subtotal.toFixed(2)}</td>
+                  <td>${afterDiscount.toFixed(2)}</td>
                   <td>${taxValue.toFixed(2)}</td>
-
                   <td>${net.toFixed(2)}</td>
-                                    <td>${
-                    (() => {
-                      // الأولوية: warehouseId من الصنف، ثم warehouse من الفاتورة
-                      const warehouseId = it.warehouseId || invoice.warehouse;
-                      const warehouseObj = warehouses.find(w => w.id === warehouseId);
-                      return warehouseObj ? (warehouseObj.name || warehouseObj.id) : (warehouseId || '');
-                    })()
-                  }</td>
+                  <td>${warehouseName}</td>
                 </tr>`;
               }).join('')}
             </tbody>
+            <!-- Summary Row -->
+            <tfoot>
+              <tr style="background:#f3f3f3; font-weight:bold;">
+                <td colspan="6" style="text-align:right; font-weight:bold; color:#000;">الإجماليات:</td>
+                <td style="color:#dc2626; font-weight:bold;">
+                  ${(() => {
+                    // إجمالي الخصم
+                    if (!invoice.items) return '0.00';
+                    let total = 0;
+                    invoice.items.forEach((it:any) => { total += Number(it.discountValue) || 0; });
+                    return total.toFixed(2);
+                  })()}
+                </td>
+                <td style="color:#ea580c; font-weight:bold;">
+                  ${(() => {
+                    // إجمالي قبل الضريبة
+                    if (!invoice.items) return '0.00';
+                    let total = 0;
+                    invoice.items.forEach((it:any) => {
+                      const subtotal = Number(it.price) * Number(it.quantity);
+                      const discountValue = Number(it.discountValue) || 0;
+                      total += subtotal - discountValue;
+                    });
+                    return total.toFixed(2);
+                  })()}
+                </td>
+                <td style="color:#9333ea; font-weight:bold;">
+                  ${(() => {
+                    // إجمالي الضريبة
+                    if (!invoice.items) return '0.00';
+                    let total = 0;
+                    invoice.items.forEach((it:any) => { total += Number(it.taxValue) || 0; });
+                    return total.toFixed(2);
+                  })()}
+                </td>
+                <td style="color:#059669; font-weight:bold;">
+                  ${(() => {
+                    // إجمالي النهائي
+                    if (!invoice.items) return '0.00';
+                    let total = 0;
+                    invoice.items.forEach((it:any) => {
+                      const subtotal = Number(it.price) * Number(it.quantity);
+                      const discountValue = Number(it.discountValue) || 0;
+                      const taxValue = Number(it.taxValue) || 0;
+                      total += (subtotal - discountValue + taxValue);
+                    });
+                    return total.toFixed(2);
+                  })()}
+                </td>
+                <td></td>
+              </tr>
+            </tfoot>
           </table>
           <!-- Totals Section as vertical table left aligned -->
           <div style="display: flex; justify-content: flex-end; margin-top: 5mm;">
@@ -1516,50 +1565,72 @@ const handlePrint = () => {
 </Modal>
         <Card 
           title={
-            <div className="flex items-center gap-4">
-              <span>فاتورة مبيعات</span>
-              <Select
-                value={invoiceType}
-                style={{ minWidth: 140 }}
-                onChange={setInvoiceType}
-                size="small"
-                options={[
-                  { label: 'ضريبة مبسطة', value: 'ضريبة مبسطة' },
-                  { label: 'ضريبة', value: 'ضريبة' }
-                ]}
-              />
-              <Select
-                value={warehouseMode}
-                style={{ minWidth: 150 }}
-                onChange={setWarehouseMode}
-                size="small"
-                options={[
-                  { label: 'مخزن واحد', value: 'single' },
-                  { label: 'مخازن متعددة', value: 'multiple' }
-                ]}
-              />
-              <Select
-                value={priceType}
-                style={{ minWidth: 150, fontFamily: 'Cairo, sans-serif' }}
-                onChange={async (value) => {
-                  setPriceType(value);
-                  if (value === 'آخر سعر العميل' && item.itemName && invoiceData.customerName) {
-                    const lastPrice = await fetchLastCustomerPrice(invoiceData.customerName, item.itemName);
-                    if (lastPrice) setItem(prev => ({ ...prev, price: String(lastPrice) }));
-                  } else if (value === 'سعر البيع' && item.itemName) {
-                    const selected = itemNames.find(i => i.name === item.itemName);
-                    setItem(prev => ({
-                      ...prev,
-                      price: selected && selected.salePrice ? String(selected.salePrice) : ''
-                    }));
-                  }
-                }}
-                options={[
-                  { label: 'سعر البيع', value: 'سعر البيع' },
-                  { label: 'آخر سعر العميل', value: 'آخر سعر العميل' }
-                ]}
-              />
-            </div>
+<div className="flex items-center gap-4 px-3 py-2 bg-gray-50 rounded-lg">
+<span className="flex items-center gap-2 text-xl font-extrabold text-blue-700 tracking-wide drop-shadow-sm">
+  <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2a2 2 0 012-2h2a2 2 0 012 2v2m-6 4h6a2 2 0 002-2V7a2 2 0 00-2-2h-1V3.5A1.5 1.5 0 0012.5 2h-1A1.5 1.5 0 0010 3.5V5H9a2 2 0 00-2 2v12a2 2 0 002 2z" />
+  </svg>
+  فاتورة مبيعات
+</span>
+  
+
+
+  <Select
+    value={invoiceType}
+    style={{ minWidth: 170, height: 38 }}
+    onChange={setInvoiceType}
+    size="middle"
+    placeholder="نوع الفاتورة"
+    options={[
+      { label: 'ضريبة مبسطة', value: 'ضريبة مبسطة' },
+      { label: 'ضريبة', value: 'ضريبة' }
+    ]}
+  />
+
+  <Select
+    value={warehouseMode}
+    style={{ minWidth: 170, height: 38 }}
+    onChange={setWarehouseMode}
+    size="middle"
+    placeholder="نظام المخزن"
+    options={[
+      { label: 'مخزن واحد', value: 'single' },
+      { label: 'مخازن متعددة', value: 'multiple' }
+    ]}
+  />
+
+  <Select
+    value={priceType}
+    style={{ minWidth: 170, height: 38, fontFamily: 'sans-serif' }}
+    onChange={async (value) => {
+      setPriceType(value);
+      if (value === 'آخر سعر العميل' && item.itemName && invoiceData.customerName) {
+        try {
+          const lastPrice = await fetchLastCustomerPrice(invoiceData.customerName, item.itemName);
+          if (lastPrice) {
+            setItem(prev => ({ ...prev, price: String(lastPrice) }));
+            message.success('تم تطبيق آخر سعر للعميل بنجاح');
+          }
+        } catch (error) {
+          console.error('فشل في جلب آخر سعر:', error);
+          message.error('حدث خطأ أثناء جلب آخر سعر للعميل');
+        }
+      } else if (value === 'سعر البيع' && item.itemName) {
+        const selected = itemNames.find(i => i.name === item.itemName);
+        setItem(prev => ({
+          ...prev,
+          price: selected?.salePrice ? String(selected.salePrice) : ''
+        }));
+      }
+    }}
+    size="middle"
+    placeholder="نوع السعر"
+    options={[
+      { label: 'سعر البيع', value: 'سعر البيع' },
+      { label: 'آخر سعر العميل', value: 'آخر سعر العميل' }
+    ]}
+  />
+</div>
           }
           className="shadow-md"
         >
@@ -1568,8 +1639,21 @@ const handlePrint = () => {
             {/* تم حذف حقل البائع (المستخدم الحالي) */}
             <Col xs={24} sm={12} md={6}>
               <Form.Item label="رقم الفاتورة">
+                {/* إظهار رقم الفاتورة للمستخدم مع استبدال id بـ code */}
                 <Input
-                  value={invoiceData.invoiceNumber}
+                  value={(() => {
+                    if (!invoiceData.invoiceNumber) return '';
+                    const parts = invoiceData.invoiceNumber.split('-');
+                    if (parts.length !== 4) return invoiceData.invoiceNumber;
+                    const branchId = parts[1];
+                    const branchObj = branches.find(b => b.id === branchId);
+                    let code = branchObj?.code || branchObj?.branchCode || branchId;
+                    if (typeof code === 'string') {
+                      const match = code.match(/\d+/);
+                      if (match) code = match[0];
+                    }
+                    return `INV-${code}-${parts[2]}-${parts[3]}`;
+                  })()}
                   placeholder="رقم الفاتورة"
                   disabled
                 />
@@ -1627,20 +1711,41 @@ const handlePrint = () => {
                   showSearch
                   value={invoiceData.branch}
                   onChange={(value) => {
-                    // جلب كود الفرع عند تغييره
+                    // استخدم branch.id في التوليد والبحث (لضمان التفرد)، وcode للعرض فقط
                     const selectedBranch = branches.find(b => b.id === value);
-                    // استخدم أول رقم صحيح موجود (code أو branchCode أو id)
                     let code = selectedBranch?.code || selectedBranch?.branchCode || value;
-                    // إذا كان الكود نصي فيه أرقام وحروف، استخرج الرقم فقط
                     if (typeof code === 'string') {
                       const match = code.match(/\d+/);
                       if (match) code = match[0];
                     }
                     setBranchCode(code);
+                    // توليد رقم الفاتورة الجديد
+                    const today = new Date();
+                    const yyyymmdd = today.getFullYear().toString() +
+                      String(today.getMonth() + 1).padStart(2, '0') +
+                      String(today.getDate()).padStart(2, '0');
+                    // ابحث عن آخر فاتورة لنفس الفرع ونفس اليوم باستخدام branch.id
+                    let branchInvoices = invoices.filter(inv => {
+                      if (!inv.invoiceNumber) return false;
+                      const parts = inv.invoiceNumber.split('-');
+                      return parts[1] === String(value) && parts[2] === yyyymmdd;
+                    });
+                    let serial = 1;
+                    if (branchInvoices.length > 0) {
+                      // استخرج آخر رقم تسلسلي
+                      const last = branchInvoices.map(inv => {
+                        const parts = inv.invoiceNumber.split('-');
+                        return parseInt(parts[3], 10) || 0;
+                      }).sort((a, b) => b - a)[0];
+                      serial = last + 1;
+                    }
+                    const serialStr = String(serial).padStart(4, '0');
+                    // رقم الفاتورة يظهر للمستخدم برقم الفرع الصحيح (code)
+                    const invoiceNumber = `INV-${code}-${yyyymmdd}-${serialStr}`;
                     setInvoiceData(prev => ({
                       ...prev,
                       branch: value,
-                      invoiceNumber: generateInvoiceNumber(code)
+                      invoiceNumber
                     }));
                   }}
                   disabled={branches.length === 0}
@@ -1657,23 +1762,26 @@ const handlePrint = () => {
               </Form.Item>
             </Col>
             <Col xs={24} sm={12} md={6}>
-              <Form.Item label="المخزن">
-                <Select
-                  showSearch
-                  value={invoiceData.warehouse}
-                  onChange={(value) => setInvoiceData({...invoiceData, warehouse: value})}
-                  disabled={warehouses.length === 0}
-                  placeholder="اختر المخزن"
-                  style={{ fontFamily: 'Cairo, sans-serif' }}
-                  filterOption={(input, option) =>
-                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  options={warehouses.map(warehouse => ({ 
-                    label: warehouse.name || warehouse.id, 
-                    value: warehouse.id 
-                  }))}
-                />
-              </Form.Item>
+              {/* إخفاء حقل المخزن إذا كان warehouseMode === 'multiple' */}
+              {warehouseMode !== 'multiple' && (
+                <Form.Item label="المخزن">
+                  <Select
+                    showSearch
+                    value={invoiceData.warehouse}
+                    onChange={(value) => setInvoiceData({...invoiceData, warehouse: value})}
+                    disabled={warehouses.length === 0}
+                    placeholder="اختر المخزن"
+                    style={{ fontFamily: 'Cairo, sans-serif' }}
+                    filterOption={(input, option) =>
+                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                    }
+                    options={warehouses.map(warehouse => ({ 
+                      label: warehouse.name || warehouse.id, 
+                      value: warehouse.id 
+                    }))}
+                  />
+                </Form.Item>
+              )}
             </Col>
             <Col xs={24} sm={12} md={6}>
               <Form.Item label="رقم العميل">
@@ -1855,37 +1963,26 @@ const handlePrint = () => {
             />
           </Col>
           <Col xs={24} sm={12} md={3}>
-            <div style={{ marginBottom: 4, fontWeight: 500 }}>خصم اضافي</div>
-            <Input
-              name="extraDiscount"
-              value={item.extraDiscount ?? 0}
-              onChange={e => setItem({ ...item, extraDiscount: Number(e.target.value) })}
-              placeholder="خصم اضافي"
-              style={{ fontFamily: 'Cairo' }}
-              type="number"
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>% الضريبة</div>
+            <Input 
+              name="taxPercent"
+              value={item.taxPercent} 
+              onChange={handleItemChange} 
+              placeholder="% الضريبة" 
+              type="number" 
               min={0}
             />
           </Col>
-            <Col xs={24} sm={12} md={3}>
-              <div style={{ marginBottom: 4, fontWeight: 500 }}>% الضريبة</div>
-              <Input 
-                name="taxPercent"
-                value={item.taxPercent} 
-                onChange={handleItemChange} 
-                placeholder="% الضريبة" 
-                type="number" 
-                min={0}
-              />
-            </Col>
-            <Col xs={24} sm={12} md={1}>
-              <div style={{ marginBottom: 4, fontWeight: 500, visibility: 'hidden' }}>إضافة</div>
-              <Button 
-                type="primary" 
-                icon={<PlusOutlined />} 
-                onClick={addItem}
-                block
-              />
-            </Col>
+          <Col xs={24} sm={12} md={1}>
+            <div style={{ marginBottom: 4, fontWeight: 500, visibility: 'hidden' }}>إضافة</div>
+            <Button 
+              type="primary" 
+              onClick={addItem}
+              block={true}
+            >
+              إضافة
+            </Button>
+          </Col>
           </Row>
 
           {/* Items Table */}
@@ -1913,6 +2010,8 @@ const handlePrint = () => {
                   <span style={{ color: '#dc2626', fontWeight: 600 }}>الخصم:</span>
                   <span className="font-bold" style={{ color: '#dc2626' }}>{totalsDisplay.discount}</span>
                 </div>
+                {/* تم حذف مدخل الخصم الإضافي */}
+
                 <div className="flex justify-between">
                   <span style={{ color: '#ea580c', fontWeight: 600 }}>الإجمالي بعد الخصم:</span>
                   <span className="font-bold" style={{ color: '#ea580c' }}>{totalsDisplay.afterDiscount}</span>
