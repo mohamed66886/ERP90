@@ -1868,6 +1868,23 @@ const handlePrint = () => {
                 />
               </Form.Item>
             </Col>
+            {/* إضافة حقل البائع بجانب رقم العميل */}
+            <Col xs={24} sm={12} md={6}>
+              <Form.Item label="البائع">
+                <Select
+                  showSearch
+                  value={invoiceData.delegate}
+                  onChange={value => setInvoiceData({ ...invoiceData, delegate: value })}
+                  placeholder="اختر البائع"
+                  style={{ fontFamily: 'Cairo, sans-serif' }}
+                  filterOption={(input, option) =>
+                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  options={delegates?.map(d => ({ label: d.name || d.id, value: d.name || d.id })) || []}
+                  allowClear
+                />
+              </Form.Item>
+            </Col>
           </Row>
           <Row gutter={16} className="mb-4">
             <Col xs={24} sm={24} md={24}>
