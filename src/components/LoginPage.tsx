@@ -91,7 +91,9 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
 
   return (
     <div 
-      className="min-h-screen w-full bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center p-4 rtl"
+      className={
+        `min-h-screen w-full bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center rtl ${isMobile ? 'p-0' : 'p-4'}`
+      }
       dir="rtl"
     >
       <div className="container mx-auto flex items-center justify-center">
@@ -157,14 +159,14 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
           transition={{ duration: 0.6 }}
           className={
             isMobile
-              ? 'w-full max-w-sm flex items-center justify-center p-2'
+              ? 'w-full flex items-center justify-center p-0'
               : 'w-1/2 flex items-center justify-center p-4 md:p-8'
           }
         >
           <Card
             className={
               isMobile
-                ? 'w-full max-w-sm relative z-10 shadow-2xl border-0 bg-white/95 backdrop-blur-md rounded-2xl px-4 py-6'
+                ? 'w-full relative z-10 shadow-2xl border-0 bg-white/95 backdrop-blur-md rounded-2xl py-6'
                 : 'w-full max-w-md relative z-10 shadow-xl border-0 bg-white/95 backdrop-blur-sm'
             }
           >

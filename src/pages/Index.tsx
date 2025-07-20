@@ -29,7 +29,7 @@ type AppState = "login" | "data-completion" | "dashboard";
 
 
 const Index = () => {
-  const { loading } = useAuth();
+  const { user, loading } = useAuth();
   const [appState, setAppState] = useState<AppState>("login");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [companyData, setCompanyData] = useState<any>(null);
@@ -89,7 +89,8 @@ const Index = () => {
     );
   }
 
-  if (appState === "login") {
+  // إذا لم يوجد مستخدم، اعرض صفحة تسجيل الدخول
+  if (!user) {
     return <LoginPage onLogin={handleLogin} />;
   }
 
