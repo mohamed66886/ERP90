@@ -1889,7 +1889,22 @@ const handlePrint = () => {
           <Row gutter={16} className="mb-4">
             <Col xs={24} sm={24} md={24}>
               <Form.Item label="اسم العميل">
+                
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Button
+                    type="default"
+                    style={{ padding: '0 8px', fontWeight: 700, background: 'transparent', boxShadow: 'none', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+
+                    onClick={() => setShowAddCustomerModal(true)}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24">
+                        <circle cx="12" cy="6" r="2" fill="#000" />
+                        <circle cx="12" cy="12" r="2" fill="#000" />
+                        <circle cx="12" cy="18" r="2" fill="#000" />
+                      </svg>
+                    </span>
+                  </Button>
                   <Select
                     showSearch
                     value={invoiceData.customerName}
@@ -1914,17 +1929,7 @@ const handlePrint = () => {
                       value: customer.nameAr 
                     }))}
                   />
-                  <Button
-                    type="primary"
-                    style={{ minWidth: 40, padding: '0 8px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                    onClick={() => setShowAddCustomerModal(true)}
-                  >
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
-                    </span>
-                  </Button>
+
       {/* Add Customer Modal */}
       <Modal
         open={showAddCustomerModal}
