@@ -381,7 +381,7 @@ const SalesPage: React.FC = () => {
   const [branchCode, setBranchCode] = useState<string>('');
   const [invoiceData, setInvoiceData] = useState<InvoiceData>({
     invoiceNumber: '',
-    entryNumber: '',
+    entryNumber: generateEntryNumber(),
     date: getTodayString(),
     paymentMethod: '',
     branch: '',
@@ -395,9 +395,15 @@ const SalesPage: React.FC = () => {
   });
 
   // توليد رقم فاتورة جديد عند كل إعادة تعيين أو تغيير الفرع
+  // دالة توليد رقم قيد تلقائي
+  function generateEntryNumber() {
+    // رقم عشوائي بين 100000 و 999999
+    return 'EN-' + Math.floor(100000 + Math.random() * 900000);
+  }
+
   const generateAndSetInvoiceNumber = async (branchCodeValue: string) => {
     const invoiceNumber = await generateInvoiceNumberAsync(branchCodeValue);
-    setInvoiceData(prev => ({ ...prev, invoiceNumber }));
+    setInvoiceData(prev => ({ ...prev, invoiceNumber, entryNumber: generateEntryNumber() }));
   };
 
   // توليد رقم فاتورة عند تحميل الصفحة لأول مرة إذا كان رقم الفرع موجود
@@ -667,7 +673,7 @@ const SalesPage: React.FC = () => {
         setInvoiceData(prev => ({
           ...prev,
           invoiceNumber: '',
-          entryNumber: '',
+          entryNumber: generateEntryNumber(),
           date: getTodayString(),
           paymentMethod: '',
           branch: '',
@@ -780,7 +786,19 @@ const SalesPage: React.FC = () => {
       dataIndex: 'total',
       width: 100,
       align: 'center' as const,
-      render: (text: number) => `${text.toFixed(2)}`
+      // الإجمالي النهائي = (السعر * الكمية - قيمة الخصم) + قيمة الضريبة
+      render: (_: any, record: any) => {
+        const quantity = Number(record.quantity) || 0;
+        const price = Number(record.price) || 0;
+        const discountPercent = Number(record.discountPercent) || 0;
+        const subtotal = price * quantity;
+        const discountValue = subtotal * discountPercent / 100;
+        const taxableAmount = subtotal - discountValue;
+        const taxPercent = Number(record.taxPercent) || 0;
+        const taxValue = taxableAmount * taxPercent / 100;
+        const finalTotal = taxableAmount + taxValue;
+        return finalTotal.toFixed(2);
+      }
     },
     {
       title: 'إجراءات',
@@ -1801,8 +1819,8 @@ const handlePrint = () => {
               <Form.Item label="رقم القيد">
                 <Input 
                   name="entryNumber"
-                  value={invoiceData.entryNumber} 
-                  onChange={handleInvoiceChange} 
+                  value={invoiceData.entryNumber}
+                  disabled
                   placeholder="رقم القيد" 
                 />
               </Form.Item>

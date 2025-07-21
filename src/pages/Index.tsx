@@ -20,6 +20,7 @@ import SettingsPage from "./SettingsPage";
 import ItemCardPage from "./stores/item";
 import SalesPage from "./stores/sales";
 import WarehouseManagement from "./stores/manage";
+import SalesReturnPage from "./stores/sales-return";
 import Branches from "./business/branches";
 import PaymentMethodsPage from "./business/payment-methods";
 import Suppliers from "./suppliers";
@@ -125,6 +126,7 @@ const Index = () => {
               <Route path="/stores/item" element={<ItemCardPage />} />
               <Route path="/stores/sales" element={<SalesPage />} />
               <Route path="/stores/manage" element={<WarehouseManagement />} />
+              <Route path="/stores/sales-return" element={<SalesReturnPage />} />
               <Route path="/business/branches" element={<Branches />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/admin/admins" element={<Managers />} />

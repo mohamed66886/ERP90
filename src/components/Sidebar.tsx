@@ -52,6 +52,7 @@ const menuItems = [
     children: [
       { title: "إدارة المخازن", href: "/stores/manage" },
       { title: "الأصناف", href: "/stores/item" },
+      { title: "مرتجع المبيعات", href: "/stores/sales-return" },
     ],
   },
   {
