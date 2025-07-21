@@ -29,8 +29,8 @@ interface InvoiceData {
   date: string;
   warehouse: string;
   branch: string;
-  customerNumber: string;
-  customerName: string;
+  supplierNumber: string;
+  supplierName: string;
   reason: string;
   seller: string;
   customReason?: string;
@@ -51,8 +51,8 @@ const initialInvoiceData: InvoiceData = {
   date: '',
   warehouse: '',
   branch: '',
-  customerNumber: '',
-  customerName: '',
+  supplierNumber: '',
+  supplierName: '',
   reason: '',
   seller: '',
   customReason: '',
@@ -65,14 +65,14 @@ const initialTotals: InvoiceTotals = {
   taxValue: 0,
   net: 0
 };
-const SalesReturnPage: React.FC = () => {
+const PurchasesReturnPage: React.FC = () => {
   // حفظ معرف المخزن الأصلي من الفاتورة
   const [originalWarehouseId, setOriginalWarehouseId] = useState<string>('');
 
   // حفظ المرتجع
   const handleSaveReturn = async () => {
     if (!invoiceData.invoiceNumber) {
-      message.error('يجب اختيار الفاتورة أولاً');
+      message.error('يجب اختيار فاتورة المشتريات أولاً');
       return;
     }
     if (!paymentMethod) {
@@ -115,7 +115,7 @@ const SalesReturnPage: React.FC = () => {
           returnedQty: Number(item.returnedQty) || 0
         }))
         .filter(item => item.returnedQty > 0);
-      await addDoc(collection(db, 'sales_returns'), {
+      await addDoc(collection(db, 'purchases_returns'), {
         referenceNumber,
         invoiceNumber: invoiceData.invoiceNumber,
         entryNumber: invoiceData.entryNumber,
@@ -123,8 +123,8 @@ const SalesReturnPage: React.FC = () => {
         date: invoiceData.date,
         warehouse: originalWarehouseId,
         branch: invoiceData.branch,
-        customerNumber: invoiceData.customerNumber,
-        customerName: invoiceData.customerName,
+        supplierNumber: invoiceData.supplierNumber,
+        supplierName: invoiceData.supplierName,
         reason: invoiceData.reason,
         seller: invoiceData.seller,
         customReason: invoiceData.customReason || '',
@@ -133,7 +133,7 @@ const SalesReturnPage: React.FC = () => {
         totals,
         createdAt: new Date().toISOString()
       });
-      message.success('تم حفظ المرتجع بنجاح');
+      message.success('تم حفظ مرتجع المشتريات بنجاح');
     } catch (err) {
       message.error('حدث خطأ أثناء حفظ المرتجع');
     }
@@ -230,10 +230,10 @@ const SalesReturnPage: React.FC = () => {
       // جلب بيانات الفاتورة من Firebase
       const { getDocs, collection, query, where } = await import('firebase/firestore');
       const { db } = await import('../../lib/firebase');
-      const q = query(collection(db, 'sales_invoices'), where('invoiceNumber', '==', number));
+      const q = query(collection(db, 'purchases_invoices'), where('invoiceNumber', '==', number));
       const snap = await getDocs(q);
       if (snap.empty) {
-        message.error('لم يتم العثور على الفاتورة');
+      message.error('لم يتم العثور على فاتورة المشتريات');
         setInvoiceData(initialInvoiceData);
         setTotals(initialTotals);
         setItems([]);
@@ -260,8 +260,8 @@ const SalesReturnPage: React.FC = () => {
         date: doc.date || '',
         warehouse: warehouseName,
         branch: branchName,
-        customerNumber: doc.customerNumber || '',
-        customerName: doc.customerName || '',
+        supplierNumber: doc.supplierNumber || '',
+        supplierName: doc.supplierName || '',
         reason: '',
         seller: doc.delegate || doc.seller || ''
       });
@@ -290,7 +290,7 @@ const SalesReturnPage: React.FC = () => {
           previousReturns: 0
         }))
       );
-      message.success('تم تحميل بيانات الفاتورة بنجاح');
+      message.success('تم تحميل بيانات فاتورة المشتريات بنجاح');
     } catch (err) {
       message.error('حدث خطأ أثناء جلب البيانات');
       setInvoiceData(initialInvoiceData);
@@ -446,7 +446,7 @@ const SalesReturnPage: React.FC = () => {
     >
             <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] animate-[bounce_2s_infinite] relative overflow-hidden">
         <div className="flex items-center">
-          <h1 className="text-2xl font-bold  text-gray-800">مرتجع المبيعات </h1>
+          <h1 className="text-2xl font-bold  text-gray-800">مرتجع مشتريات </h1>
           {/* إيموجي متحركة باي باي */}
           <span className="animate-[wave_2s_infinite] text-3xl mr-3">👋</span>
         </div>
@@ -488,7 +488,7 @@ const SalesReturnPage: React.FC = () => {
             <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "مرتجع مبيعات" }
+          { label: "مرتجع مشتريات" }
         ]}
       />
 
@@ -624,8 +624,8 @@ const SalesReturnPage: React.FC = () => {
                               { id: 'invDate', label: 'تاريخ الفاتورة', value: invoiceData.date },
                               { id: 'warehouse', label: 'المخزن', value: invoiceData.warehouse },
                               { id: 'branch', label: 'الفرع', value: invoiceData.branch },
-                              { id: 'custNum', label: 'رقم العميل', value: invoiceData.customerNumber },
-                              { id: 'custName', label: 'اسم العميل', value: invoiceData.customerName },
+                            { id: 'suppNum', label: 'رقم المورد', value: invoiceData.supplierNumber },
+                            { id: 'suppName', label: 'اسم المورد', value: invoiceData.supplierName },
                             ].map((field, index) => (
                               <Col key={field.id} span={8}>
                                 <motion.div
@@ -688,8 +688,9 @@ const SalesReturnPage: React.FC = () => {
                               >
                                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                                   <label htmlFor="seller" style={{ marginBottom: 6, fontWeight: 600, color: '#555' }}>
-                                    البائع
+                                    المستلم
                                   </label>
+
                                   <Input 
                                     id="seller" 
                                     value={invoiceData.seller} 
@@ -736,7 +737,7 @@ const SalesReturnPage: React.FC = () => {
                       <Card
                         title={
                           <motion.div layout style={{ fontWeight: 'bold', color: '#305496' }}>
-                            بيانات الفاتورة
+                            بيانات فاتورة المشتريات
                           </motion.div>
                         }
                         bordered={false}
@@ -867,7 +868,7 @@ const SalesReturnPage: React.FC = () => {
                                     fontSize: 16
                                   }}
                                 >
-                                  الإجمالي
+                                  إجمالي فاتورة المشتريات
                                 </label>
                                 <Input 
                                   id="total" 
@@ -914,7 +915,7 @@ const SalesReturnPage: React.FC = () => {
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h2 style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#305496' }}>الأصناف</h2>
+            <h2 style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#305496' }}>أصناف فاتورة المشتريات</h2>
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -931,7 +932,7 @@ const SalesReturnPage: React.FC = () => {
                   }}
                   onClick={handleSaveReturn}
                 >
-                  حفظ المرتجع
+                  حفظ مرتجع المشتريات
                 </Button>
               </motion.div>
             </div>
@@ -1129,4 +1130,5 @@ const SalesReturnPage: React.FC = () => {
   );
 };
 
-export default SalesReturnPage;
+
+export default PurchasesReturnPage;

@@ -13,7 +13,11 @@ import { Menu } from "lucide-react";
 import ProfilePage from "./ProfilePage";
 import Header from "@/components/Header";
 import Managers from "./admin/admins";
+import PurchasesPage from "./stores/purchases";
+import HelpPage from "./help";
 import { Routes, Route } from "react-router-dom";
+import PurchasesReturnPage from "./stores/purchases-return";
+import Stockpage from "./stores/stock";
 
 
 import SettingsPage from "./SettingsPage";
@@ -32,7 +36,7 @@ type AppState = "login" | "data-completion" | "dashboard";
 const Index = () => {
   const { user, loading } = useAuth();
   const [appState, setAppState] = useState<AppState>("login");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [companyData, setCompanyData] = useState<any>(null);
   const [companyLoading, setCompanyLoading] = useState(true);
 
@@ -102,6 +106,14 @@ const Index = () => {
   // بعد تسجيل الدخول وإتمام البيانات، استخدم الراوتر
   return (
     <div className="min-h-screen bg-background rtl" dir="rtl">
+      {/* الهيدر بعرض الشاشة بالكامل */}
+      <Header
+        onLogout={handleLogout}
+        onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+        isSidebarCollapsed={sidebarCollapsed}
+        companyName={companyData?.arabicName}
+      />
+      {/* صف فيه السايدبار بجانب المحتوى الرئيسي */}
       <div className="flex">
         <Sidebar 
           isCollapsed={sidebarCollapsed}
@@ -109,18 +121,7 @@ const Index = () => {
           onLogout={handleLogout}
         />
         <div className="flex-1 flex flex-col h-screen overflow-y-auto">
-          {/* Top bar */}
-          <Header
-            onLogout={handleLogout}
-            onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
-            isSidebarCollapsed={sidebarCollapsed}
-            companyName={companyData?.arabicName}
-            commercialRegistration={companyData?.commercialRegistration}
-            activityType={companyData?.activityType}
-            mobile={companyData?.mobile}
-          />
-          {/* Main content */}
-          <main className="flex-1 p-6 lg:p-8">
+          <main className="flex-1">
             <Routes>
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/stores/item" element={<ItemCardPage />} />
@@ -129,10 +130,14 @@ const Index = () => {
               <Route path="/stores/sales-return" element={<SalesReturnPage />} />
               <Route path="/business/branches" element={<Branches />} />
               <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/stores/stock" element={<Stockpage />} />
+              <Route path="/stores/purchases" element={<PurchasesPage />} />
+              <Route path="/stores/purchases-return" element={<PurchasesReturnPage />} />
+              <Route path="/help" element={<HelpPage />} />
               <Route path="/admin/admins" element={<Managers />} />
               <Route path="/business/payment-methods" element={<PaymentMethodsPage />} />
               <Route path="/suppliers" element={<Suppliers />} />
-
+              
               <Route path="*" element={<Dashboard />} />
             </Routes>
           </main>

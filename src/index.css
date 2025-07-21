@@ -120,7 +120,7 @@ All colors MUST be HSL. Arabic fonts and RTL layout optimized.
   }
 
   body, * {
-    font-family: 'Cairo', 'Tajawal', Arial, sans-serif !important;
+    font-family: 'Changa', 'Tajawal', 'Cairo', Arial, sans-serif !important;
   }
   body {
     @apply bg-background text-foreground font-arabic;

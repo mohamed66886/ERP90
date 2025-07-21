@@ -51,6 +51,25 @@ const Header = ({
   const [mounted, setMounted] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
 
+  // Company logo state
+  const [logoUrl, setLogoUrl] = useState<string>("");
+
+  useEffect(() => {
+    const fetchLogo = async () => {
+      try {
+        const companyQuery = query(collection(db, "companies"));
+        const companySnapshot = await getDocs(companyQuery);
+        if (!companySnapshot.empty) {
+          const docData = companySnapshot.docs[0].data();
+          setLogoUrl(docData.logoUrl || "");
+        }
+      } catch (error) {
+        console.error("Error fetching company logo:", error);
+      }
+    };
+    fetchLogo();
+  }, []);
+
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -157,19 +176,31 @@ const Header = ({
             {/* Logo and Company Name */}
             <div className="flex items-center gap-3 flex-1 sm:flex-none">
               <Link to="/dashboard" className="flex items-center gap-3">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0 dark:from-blue-800 dark:to-blue-900">
-                  <img
-                    src="/logo.png"
-                    alt="شعار الشركة"
-                    width={20}
-                    height={20}
-                    className="object-contain"
-                    loading="eager"
-                  />
+                <div className="w-8 h-8 sm:w-10 sm:h-10rounded-lg flex items-center justify-center shadow-sm flex-shrink-0 dark:from-blue-800 dark:to-blue-900">
+                  {theme === "dark" ? (
+                    <img
+                      src={logoUrl ? logoUrl.replace(/(\.png|\.jpg|\.jpeg)/, "-dark$1") : "/logo.png"}
+                      alt="شعار الشركة"
+                      width={120}
+                      
+                      height={64}
+                      className="object-contain rounded-md"
+                      loading="eager"
+                    />
+                  ) : (
+                    <img
+                      src={logoUrl || "/logo.png"}
+                      alt="شعار الشركة"
+                      width={80}
+                      height={64}
+                      className="object-contain rounded-md"
+                      loading="eager"
+                    />
+                  )}
                 </div>
                 <div className="flex flex-col justify-center">
                   <h1 className="font-bold text-gray-900 dark:text-white text-right text-base sm:text-lg leading-tight">
-                    نظام المحاسبة
+                    نظام | ERP90
                   </h1>
                   {companyName && (
                     <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 text-right truncate max-w-[120px] sm:max-w-[200px]">

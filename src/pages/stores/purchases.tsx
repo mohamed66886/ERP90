@@ -43,8 +43,8 @@ interface InvoiceData {
   paymentMethod: string;
   branch: string;
   warehouse: string;
-  customerNumber: string;
-  customerName: string;
+  supplierNumber: string;
+  supplierName: string;
   delegate: string;
   priceRule: string;
   commercialRecord: string;
@@ -77,8 +77,8 @@ interface InvoiceRecord {
   cost: number;
   profit: number;
   warehouse: string;
-  customer: string;
-  customerPhone: string;
+  supplier: string;
+  supplierPhone: string;
   seller: string;
   paymentMethod: string;
   invoiceType: string;
@@ -112,7 +112,7 @@ async function generateInvoiceNumberAsync(branchCode: string): Promise<string> {
   // جلب عدد الفواتير لنفس الفرع في نفس اليوم
   const { getDocs, collection, query, where } = await import('firebase/firestore');
   const q = query(
-    collection(db, 'sales_invoices'),
+    collection(db, 'purchases_invoices'),
     where('branch', '==', branchCode),
     where('date', '==', `${y}-${m}-${d}`)
   );
@@ -126,62 +126,64 @@ function getTodayString(): string {
   return dayjs().format('YYYY-MM-DD');
 }
 
-const SalesPage: React.FC = () => {
+const PurchasesPage: React.FC = () => {
+  // متغير حالة خاص بفواتير المشتريات فقط
+  const [purchaseInvoices, setPurchaseInvoices] = useState<InvoiceRecord[]>([]);
   // --- Add Customer Modal State (fix: must be inside component, before return) ---
   const businessTypes = ["شركة", "مؤسسة", "فرد"];
-  const initialAddCustomer = {
-    nameAr: '',
-    phone: '',
-    businessType: '',
-    commercialReg: '',
-    taxFileNumber: ''
-  };
-  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
-  const [addCustomerForm, setAddCustomerForm] = useState(initialAddCustomer);
-  const [addCustomerLoading, setAddCustomerLoading] = useState(false);
-  const handleAddCustomerChange = (field, value) => {
-    setAddCustomerForm(prev => ({ ...prev, [field]: value }));
-  };
-  const handleAddCustomer = async () => {
-    if (!addCustomerForm.nameAr || !addCustomerForm.phone || !addCustomerForm.businessType) {
-      message.error('يرجى ملء جميع الحقول المطلوبة');
-      return;
-    }
-    if ((addCustomerForm.businessType === 'شركة' || addCustomerForm.businessType === 'مؤسسة') && (!addCustomerForm.commercialReg || !addCustomerForm.taxFileNumber)) {
-      message.error('يرجى ملء السجل التجاري والملف الضريبي');
-      return;
-    }
-    setAddCustomerLoading(true);
-    try {
-      const maxNum = customers
-        .map(c => {
-          const match = /^c-(\d{4})$/.exec(c.id);
-          return match ? parseInt(match[1], 10) : 0;
-        })
-        .reduce((a, b) => Math.max(a, b), 0);
-      const nextNum = maxNum + 1;
-      const newId = `c-${nextNum.toString().padStart(4, '0')}`;
-      const docData = {
-        id: newId,
-        nameAr: addCustomerForm.nameAr,
-        phone: addCustomerForm.phone,
-        businessType: addCustomerForm.businessType,
-        commercialReg: addCustomerForm.businessType === 'فرد' ? '' : addCustomerForm.commercialReg,
-        taxFileNumber: addCustomerForm.businessType === 'فرد' ? '' : addCustomerForm.taxFileNumber,
-        status: 'نشط',
-        createdAt: new Date().toISOString(),
-      };
-      await addDoc(collection(db, 'customers'), docData);
-      message.success('تم إضافة العميل بنجاح! يمكنك تعديل باقي البيانات من صفحة العملاء.');
-      setShowAddCustomerModal(false);
-      setAddCustomerForm(initialAddCustomer);
-      // Optionally, you can refresh the customers list here if you have a fetchCustomers function available
-    } catch (err) {
-      message.error('حدث خطأ أثناء إضافة العميل');
-    } finally {
-      setAddCustomerLoading(false);
-    }
-  };
+const initialAddSupplier = {
+  nameAr: '',
+  phone: '',
+  businessType: '',
+  commercialReg: '',
+  taxFileNumber: ''
+};
+const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
+const [addSupplierForm, setAddSupplierForm] = useState(initialAddSupplier);
+const [addSupplierLoading, setAddSupplierLoading] = useState(false);
+const handleAddSupplierChange = (field, value) => {
+  setAddSupplierForm(prev => ({ ...prev, [field]: value }));
+};
+const handleAddSupplier = async () => {
+  if (!addSupplierForm.nameAr || !addSupplierForm.phone || !addSupplierForm.businessType) {
+    message.error('يرجى ملء جميع الحقول المطلوبة');
+    return;
+  }
+  if ((addSupplierForm.businessType === 'شركة' || addSupplierForm.businessType === 'مؤسسة') && (!addSupplierForm.commercialReg || !addSupplierForm.taxFileNumber)) {
+    message.error('يرجى ملء السجل التجاري والملف الضريبي');
+    return;
+  }
+  setAddSupplierLoading(true);
+  try {
+    const maxNum = suppliers
+      .map(s => {
+        const match = /^s-(\d{4})$/.exec(s.id);
+        return match ? parseInt(match[1], 10) : 0;
+      })
+      .reduce((a, b) => Math.max(a, b), 0);
+    const nextNum = maxNum + 1;
+    const newId = `s-${nextNum.toString().padStart(4, '0')}`;
+    const docData = {
+      id: newId,
+      nameAr: addSupplierForm.nameAr,
+      phone: addSupplierForm.phone,
+      businessType: addSupplierForm.businessType,
+      commercialReg: addSupplierForm.businessType === 'فرد' ? '' : addSupplierForm.commercialReg,
+      taxFileNumber: addSupplierForm.businessType === 'فرد' ? '' : addSupplierForm.taxFileNumber,
+      status: 'نشط',
+      createdAt: new Date().toISOString(),
+    };
+    await addDoc(collection(db, 'suppliers'), docData);
+    message.success('تم إضافة المورد بنجاح! يمكنك تعديل باقي البيانات من صفحة الموردين.');
+    setShowAddSupplierModal(false);
+    setAddSupplierForm(initialAddSupplier);
+    // Optionally, you can refresh the suppliers list here if you have a fetchSuppliers function available
+  } catch (err) {
+    message.error('حدث خطأ أثناء إضافة المورد');
+  } finally {
+    setAddSupplierLoading(false);
+  }
+};
   // بيانات الشركة
   const [companyData, setCompanyData] = useState<any>({});
   // دالة تصدير سجل الفواتير إلى ملف Excel
@@ -223,8 +225,8 @@ const SalesPage: React.FC = () => {
         'التكلفة': inv.cost,
         'ربح الصنف': inv.profit,
         'المخزن': warehouseName,
-        'العميل': inv.customer,
-        'تليفون العميل': inv.customerPhone,
+        'المورد': inv.customer,
+        'تليفون المورد': inv.customerPhone,
         'البائع': inv.seller,
         'طريقة الدفع': inv.paymentMethod,
         'نوع الفاتورة': inv.invoiceType
@@ -257,8 +259,8 @@ const SalesPage: React.FC = () => {
       'التكلفة': data.reduce((sum, r) => sum + Number(r['التكلفة'] || 0), 0),
       'ربح الصنف': data.reduce((sum, r) => sum + Number(r['ربح الصنف'] || 0), 0),
       'المخزن': '',
-      'العميل': '',
-      'تليفون العميل': '',
+      'المورد': '',
+      'تليفون المورد': '',
       'البائع': '',
       'طريقة الدفع': '',
       'نوع الفاتورة': ''
@@ -420,7 +422,7 @@ const SalesPage: React.FC = () => {
   const [priceRules, setPriceRules] = useState<string[]>([]);
   const [units, setUnits] = useState<string[]>([]);
   const [itemNames, setItemNames] = useState<InventoryItem[]>([]);
-  const [customers, setCustomers] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [fetchingItems, setFetchingItems] = useState<boolean>(false);
   const [item, setItem] = useState<InvoiceItem & { warehouseId?: string }>(initialItem);
@@ -444,7 +446,7 @@ const SalesPage: React.FC = () => {
   const fetchInvoices = async () => {
     try {
       setInvoicesLoading(true);
-      const invoicesSnap = await getDocs(collection(db, 'sales_invoices'));
+      const invoicesSnap = await getDocs(collection(db, 'purchases_invoices'));
       const invoicesData: (InvoiceRecord & { firstLevelCategory?: string })[] = [];
       // جلب الأصناف لتعريف المستويات
       let inventoryItems: any[] = [];
@@ -490,8 +492,8 @@ const SalesPage: React.FC = () => {
               cost: Number(item.cost) || 0,
               profit: (Number(item.total) - Number(item.discountValue) - Number(item.cost)) || 0,
               warehouse: data.warehouse || '',
-              customer: data.customerName || '',
-              customerPhone: data.customerNumber || '',
+              customer: data.supplierName || '',
+              customerPhone: data.supplierNumber || '',
               seller: data.delegate || '',
               paymentMethod: data.paymentMethod || '',
               invoiceType: data.type || '',
@@ -545,7 +547,7 @@ const SalesPage: React.FC = () => {
 
   const fetchLastCustomerPrice = async (customerName: string, itemName: string) => {
     try {
-      const salesSnap = await getDocs(collection(db, 'sales_invoices'));
+      const salesSnap = await getDocs(collection(db, 'purchases_invoices'));
       const filtered = salesSnap.docs
         .map(doc => doc.data())
         .filter(inv => inv.customerName === customerName && Array.isArray(inv.items))
@@ -662,7 +664,7 @@ const SalesPage: React.FC = () => {
     try {
       // حفظ الفاتورة في Firestore مباشرة
       const { addDoc, collection } = await import('firebase/firestore');
-      await addDoc(collection(db, 'sales_invoices'), invoice);
+      await addDoc(collection(db, 'purchases_invoices'), invoice);
       message.success('تم حفظ الفاتورة بنجاح!');
       // إعادة تعيين النموذج
       setItems([]);
@@ -977,13 +979,13 @@ const SalesPage: React.FC = () => {
       }
     },
     {
-      title: 'العميل',
+      title: 'المورد',
       dataIndex: 'customer',
       key: 'customer',
       width: 150
     },
     {
-      title: 'تليفون العميل',
+      title: 'تليفون المورد',
       dataIndex: 'customerPhone',
       key: 'customerPhone',
       width: 120
@@ -1021,12 +1023,13 @@ const SalesPage: React.FC = () => {
         // جلب طرق الدفع
         const paymentSnap = await getDocs(collection(db, 'paymentMethods'));
         setPaymentMethods(paymentSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        // جلب العملاء من صفحة العملاء (collection: 'customers')
-        const customersSnap = await getDocs(collection(db, 'customers'));
-        setCustomers(customersSnap.docs.map(doc => {
-          const data = doc.data();
-          return { id: doc.id, ...data, taxFile: data.taxFile || '' };
+        // جلب الموردين بنفس طريقة صفحة الموردين
+        const suppliersSnap = await getDocs(collection(db, 'suppliers'));
+        const suppliersData = suppliersSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
         }));
+        setSuppliers(suppliersData);
         // جلب المخازن
         const warehousesSnap = await getDocs(collection(db, 'warehouses'));
         setWarehouses(warehousesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -1073,24 +1076,24 @@ const SalesPage: React.FC = () => {
   // حالة إظهار/إخفاء جدول سجل الفواتير
   const [showInvoicesTable, setShowInvoicesTable] = useState(false);
 
-  // حالة مودال البحث عن عميل
-  const [showCustomerSearch, setShowCustomerSearch] = useState(false);
-  const [customerSearchText, setCustomerSearchText] = useState('');
+  // حالة مودال البحث عن مورد
+  const [showSupplierSearch, setShowSupplierSearch] = useState(false);
+  const [supplierSearchText, setSupplierSearchText] = useState('');
 
-  // تصفية العملاء حسب البحث
-  const filteredCustomers = useMemo(() => {
-    if (!customerSearchText) return customers;
-    const search = customerSearchText.toLowerCase();
-    return customers.filter(c =>
-      (c.nameAr && c.nameAr.toLowerCase().includes(search)) ||
-      (c.nameEn && c.nameEn.toLowerCase().includes(search)) ||
-      (c.phone && c.phone.toLowerCase().includes(search)) ||
-      (c.mobile && c.mobile.toLowerCase().includes(search)) ||
-      (c.phoneNumber && c.phoneNumber.toLowerCase().includes(search)) ||
-      (c.commercialReg && c.commercialReg.toLowerCase().includes(search)) ||
-      (c.taxFile && c.taxFile.toLowerCase().includes(search))
+  // تصفية الموردين حسب البحث
+  const filteredSuppliers = useMemo(() => {
+    if (!supplierSearchText) return suppliers;
+    const search = supplierSearchText.toLowerCase();
+    return suppliers.filter(s =>
+      (s.nameAr && s.nameAr.toLowerCase().includes(search)) ||
+      (s.nameEn && s.nameEn.toLowerCase().includes(search)) ||
+      (s.phone && s.phone.toLowerCase().includes(search)) ||
+      (s.mobile && s.mobile.toLowerCase().includes(search)) ||
+      (s.phoneNumber && s.phoneNumber.toLowerCase().includes(search)) ||
+      (s.commercialReg && s.commercialReg.toLowerCase().includes(search)) ||
+      (s.taxFile && s.taxFile.toLowerCase().includes(search))
     );
-  }, [customerSearchText, customers]);
+  }, [supplierSearchText, suppliers]);
 
   // دالة طباعة الفاتورة
 const handlePrint = () => {
@@ -1564,13 +1567,10 @@ const handlePrint = () => {
     <div className="p-2 sm:p-6 w-full max-w-none">
       <div className="p-4 font-['Tajawal'] bg-white rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] mb-4 animate-[bounce_2s_infinite] relative overflow-hidden">
         <div className="flex items-center">
-          <h1 className="text-2xl font-bold text-blue-800">فاتورة مبيعات
-</h1>
-          {/* إيموجي متحركة باي باي */}
-          <span className="animate-[wave_2s_infinite] text-3xl mr-3">👋</span>
+          <h1 className="text-2xl font-bold text-green-800">فاتورة مشتريات</h1>
+          <span className="animate-[wave_2s_infinite] text-3xl mr-3">🛒</span>
         </div>
-        {/* تأثيرات إضافية */}
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]"></div>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 to-blue-500 animate-[pulse_3s_infinite]"></div>
       </div>
 
 <style jsx global>{`
@@ -1607,7 +1607,7 @@ const handlePrint = () => {
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "فاتورة مبيعات" }
+          { label: "فاتورة مشتريات" }
         ]}
       />
       <Spin spinning={fetchingItems}>
@@ -1761,8 +1761,8 @@ const handlePrint = () => {
             borderTop: '1px solid #000',
             paddingTop: 12
           }}>
-            <div>البائع: {lastSavedInvoice.delegate || ''}</div>
-            <div>التاريخ: {lastSavedInvoice.date || ''}</div>
+          <div>المستلم: {lastSavedInvoice.delegate || ''}</div>
+          <div>التاريخ: {lastSavedInvoice.date || ''}</div>
           </div>
         </div>
 
@@ -1906,14 +1906,14 @@ const handlePrint = () => {
                   showSearch
                   value={invoiceData.branch}
                   onChange={(value) => {
-                    // توليد رقم فاتورة احترافي: INV-رقم الفرع الحقيقي-التاريخ-رقم الفاتورة
+                    // توليد رقم فاتورة احترافي: PUR-رقم الفرع الحقيقي-التاريخ-رقم الفاتورة
                     setBranchCode('');
                     const today = dayjs().format('YYYYMMDD');
                     // جلب رقم الفرع الحقيقي من كائن الفروع
                     const branchObj = branches.find(b => b.id === value);
                     const branchCode = branchObj?.code || branchObj?.id || value;
                     const serial = Math.floor(1000 + Math.random() * 9000); // رقم عشوائي بين 1000 و9999
-                    const invoiceNumber = `INV-${branchCode}-${today}-${serial}`;
+                    const invoiceNumber = `PUR-${branchCode}-${today}-${serial}`;
                     setInvoiceData(prev => ({
                       ...prev,
                       branch: value,
@@ -1956,23 +1956,23 @@ const handlePrint = () => {
               )}
             </Col>
             <Col xs={24} sm={12} md={6}>
-              <Form.Item label="رقم العميل">
+              <Form.Item label="رقم هاتف المورد">
                 <Input
-                  id="customerNumber"
-                  value={invoiceData.customerNumber}
-                  placeholder="رقم العميل"
+                  id="supplierPhone"
+                  value={invoiceData.supplierNumber}
+                  placeholder="رقم هاتف المورد"
                   disabled
                 />
               </Form.Item>
             </Col>
             {/* إضافة حقل البائع بجانب رقم العميل */}
             <Col xs={24} sm={12} md={6}>
-              <Form.Item label="البائع">
+              <Form.Item label="المستلم">
                 <Select
                   showSearch
                   value={invoiceData.delegate}
                   onChange={value => setInvoiceData({ ...invoiceData, delegate: value })}
-                  placeholder="اختر البائع"
+                  placeholder="اختر المستلم"
                   style={{ fontFamily: 'Cairo, sans-serif' }}
                   filterOption={(input, option) =>
                     String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
@@ -1985,13 +1985,13 @@ const handlePrint = () => {
           </Row>
           <Row gutter={16} className="mb-4">
             <Col xs={24} sm={24} md={24}>
-              <Form.Item label="اسم العميل">
+      <Form.Item label="اسم المورد">
                 
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <Button
+                  <Button
                     type="default"
                     style={{ padding: '0 8px', fontWeight: 700, background: 'transparent', boxShadow: 'none', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}
-                    onClick={() => setShowAddCustomerModal(true)}
+                    onClick={() => setShowAddSupplierModal(true)}
                   >
                     <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {/* Modern Add User Icon */}
@@ -2007,16 +2007,17 @@ const handlePrint = () => {
                   </Button>
                   <Select
                     showSearch
-                    value={invoiceData.customerName}
-                    placeholder="اسم العميل"
+                    value={invoiceData.supplierName}
+                    placeholder="اسم المورد"
                     onChange={(value) => {
-                      const selected = customers.find(c => c.nameAr === value);
+                      const selected = suppliers.find(s => s.name === value);
                       setInvoiceData({
                         ...invoiceData,
-                        customerName: value || '',
-                        customerNumber: selected ? (selected.phone || selected.mobile || selected.phoneNumber || '') : '',
-                        commercialRecord: selected ? (selected.commercialReg || '') : '',
-                        taxFile: selected ? (selected.taxFileNumber || selected.taxFile || '') : ''
+                        supplierName: value || '',
+                        supplierNumber: selected ? (selected.phone || '') : '',
+                        companyNumber: selected ? (selected.companyNumber || '') : '',
+                        address: selected ? (selected.address || '') : '',
+                        email: selected ? (selected.email || '') : ''
                       });
                     }}
                     style={{ fontFamily: 'Cairo, sans-serif', fontWeight: 500, fontSize: 16, width: '100%' }}
@@ -2024,31 +2025,31 @@ const handlePrint = () => {
                       String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                     }
                     allowClear
-                    options={customers.map(customer => ({ 
-                      label: customer.nameAr, 
-                      value: customer.nameAr 
+                    options={suppliers.map(supplier => ({ 
+                      label: supplier.name, 
+                      value: supplier.name 
                     }))}
                   />
 
-      {/* Add Customer Modal */}
+      {/* Add Supplier Modal */}
       <Modal
-        open={showAddCustomerModal}
-        onCancel={() => setShowAddCustomerModal(false)}
+        open={showAddSupplierModal}
+        onCancel={() => setShowAddSupplierModal(false)}
         footer={null}
-        title={<span style={{fontFamily:'Cairo',fontWeight:700}}>إضافة عميل جديد</span>}
+        title={<span style={{fontFamily:'Cairo',fontWeight:700}}>إضافة مورد جديد</span>}
         width={420}
         bodyStyle={{ background: '#f8fafc', borderRadius: 12, padding: 24 }}
       >
         <div style={{ marginBottom: 12, padding: 8, background: '#e0e7ef', borderRadius: 8, textAlign: 'center', fontWeight: 500, color: '#305496', fontFamily: 'Cairo', fontSize: 15 }}>
-          يرجى تعبئة بيانات العميل بدقة
+          يرجى تعبئة بيانات المورد بدقة
         </div>
-        <Form layout="vertical" onFinish={handleAddCustomer} style={{ gap: 0 }}>
-          <Form.Item label={<span style={{fontWeight:600}}>اسم العميل</span>} required style={{ marginBottom: 14 }}>
+          <Form layout="vertical" onFinish={handleAddSupplier} style={{ gap: 0 }}>
+          <Form.Item label={<span style={{fontWeight:600}}>اسم المورد</span>} required style={{ marginBottom: 14 }}>
             <input
               className="ant-input"
-              value={addCustomerForm.nameAr}
-              onChange={e => handleAddCustomerChange('nameAr', e.target.value)}
-              placeholder="اسم العميل"
+              value={addSupplierForm.nameAr}
+              onChange={e => handleAddSupplierChange('nameAr', e.target.value)}
+              placeholder="اسم المورد"
               style={{
                 fontFamily: 'Cairo',
                 fontWeight: 500,
@@ -2068,8 +2069,8 @@ const handlePrint = () => {
           <Form.Item label={<span style={{fontWeight:600}}>رقم الهاتف</span>} required style={{ marginBottom: 14 }}>
             <input
               className="ant-input"
-              value={addCustomerForm.phone}
-              onChange={e => handleAddCustomerChange('phone', e.target.value)}
+              value={addSupplierForm.phone}
+              onChange={e => handleAddSupplierChange('phone', e.target.value)}
               placeholder="رقم الهاتف"
               
                  style={{
@@ -2090,8 +2091,8 @@ const handlePrint = () => {
           <Form.Item label={<span style={{fontWeight:600}}>نوع العمل</span>} required style={{ marginBottom: 14 }}>
             <select
               className="ant-select"
-              value={addCustomerForm.businessType || 'فرد'}
-              onChange={e => handleAddCustomerChange('businessType', e.target.value)}
+              value={addSupplierForm.businessType || 'فرد'}
+              onChange={e => handleAddSupplierChange('businessType', e.target.value)}
               style={{ fontFamily: 'Cairo', fontWeight: 500, fontSize: 15, width: '100%', borderRadius: 6, border: '1.5px solid #b6c2d6', background: '#fff', padding: '6px 8px' }}
               required
             >
@@ -2101,13 +2102,13 @@ const handlePrint = () => {
               ))}
             </select>
           </Form.Item>
-          {(addCustomerForm.businessType === 'شركة' || addCustomerForm.businessType === 'مؤسسة') && (
+          {(addSupplierForm.businessType === 'شركة' || addSupplierForm.businessType === 'مؤسسة') && (
             <div style={{ background: '#f1f5f9', borderRadius: 8, padding: 12, marginBottom: 10, border: '1px solid #e0e7ef' }}>
               <Form.Item label={<span style={{fontWeight:600}}>السجل التجاري</span>} required style={{ marginBottom: 12 }}>
                 <input
                   className="ant-input"
-                  value={addCustomerForm.commercialReg}
-                  onChange={e => handleAddCustomerChange('commercialReg', e.target.value)}
+                  value={addSupplierForm.commercialReg}
+                  onChange={e => handleAddSupplierChange('commercialReg', e.target.value)}
                   placeholder="السجل التجاري"
               style={{
                 fontFamily: 'Cairo',
@@ -2127,8 +2128,8 @@ const handlePrint = () => {
               <Form.Item label={<span style={{fontWeight:600}}>الملف الضريبي</span>} required style={{ marginBottom: 0 }}>
                 <input
                   className="ant-input"
-                  value={addCustomerForm.taxFileNumber}
-                  onChange={e => handleAddCustomerChange('taxFileNumber', e.target.value)}
+                  value={addSupplierForm.taxFileNumber}
+                  onChange={e => handleAddSupplierChange('taxFileNumber', e.target.value)}
                   placeholder="الملف الضريبي"
               style={{
                 fontFamily: 'Cairo',
@@ -2150,7 +2151,7 @@ const handlePrint = () => {
             <Button
               type="primary"
               htmlType="submit"
-              loading={addCustomerLoading}
+              loading={addSupplierLoading}
               style={{ width: '100%', fontFamily: 'Cairo', fontWeight: 700, fontSize: 16, borderRadius: 8, height: 44, boxShadow: '0 2px 8px #e0e7ef' }}
             >
               إضافة
@@ -2158,53 +2159,54 @@ const handlePrint = () => {
           </Form.Item>
         </Form>
         <div style={{fontSize:13, color:'#6b7280', marginTop:14, textAlign:'center'}}>
-          بعد الإضافة يمكنك تعديل باقي بيانات العميل من صفحة العملاء.
+          بعد الإضافة يمكنك تعديل باقي بيانات المورد من صفحة الموردين.
         </div>
       </Modal>
                   <Button
                     type="default"
                     icon={<SearchOutlined />}
                     style={{ minWidth: 40 }}
-                    onClick={() => setShowCustomerSearch(true)}
+                    onClick={() => setShowSupplierSearch(true)}
                   />
-      {/* مودال البحث عن عميل */}
+      {/* مودال البحث عن مورد */}
       <Modal
-        open={showCustomerSearch}
-        onCancel={() => setShowCustomerSearch(false)}
+        open={showSupplierSearch}
+        onCancel={() => setShowSupplierSearch(false)}
         footer={null}
-        title={<span style={{fontFamily:'Cairo',fontWeight:700}}>بحث عن عميل</span>}
+        title={<span style={{fontFamily:'Cairo',fontWeight:700}}>بحث عن مورد</span>}
         width={600}
       >
         <Input
           placeholder="ابحث بالاسم أو رقم الهاتف أو أي معلومة..."
-          value={customerSearchText}
-          onChange={e => setCustomerSearchText(e.target.value)}
+          value={supplierSearchText}
+          onChange={e => setSupplierSearchText(e.target.value)}
           style={{ marginBottom: 16, fontFamily: 'Cairo' }}
           allowClear
           prefix={<SearchOutlined />}
         />
         <Table
-          dataSource={filteredCustomers}
+          dataSource={filteredSuppliers}
           rowKey={row => row.id || row.nameAr}
           columns={[
-            { title: 'الاسم', dataIndex: 'nameAr', key: 'nameAr' },
-            { title: 'الجوال', dataIndex: 'mobile', key: 'mobile' },
+            {
+              title: 'الاسم',
+              key: 'name',
+              render: (_: any, record: any) => record.name || record.nameAr || ''
+            },
             { title: 'الهاتف', dataIndex: 'phone', key: 'phone' },
-            { title: 'السجل التجاري', dataIndex: 'commercialReg', key: 'commercialReg' },
-            { title: 'الملف الضريبي', dataIndex: 'taxFile', key: 'taxFile' },
             {
               title: 'اختيار',
               key: 'select',
-              render: (_, record) => (
+              render: (_: any, record: any) => (
                 <Button type="link" onClick={() => {
                   setInvoiceData({
                     ...invoiceData,
-                    customerName: record.nameAr || '',
-                    customerNumber: record.phone || record.mobile || record.phoneNumber || '',
+                    supplierName: record.name || record.nameAr || '',
+                    supplierNumber: record.phone || record.mobile || record.phoneNumber || '',
                     commercialRecord: record.commercialReg || '',
                     taxFile: record.taxFileNumber || record.taxFile || ''
                   });
-                  setShowCustomerSearch(false);
+                  setShowSupplierSearch(false);
                 }}>اختيار</Button>
               )
             }
@@ -2380,7 +2382,7 @@ const handlePrint = () => {
                 !invoiceData.paymentMethod ||
                 !invoiceData.branch ||
                 (warehouseMode !== 'multiple' && !invoiceData.warehouse) ||
-                !invoiceData.customerName
+                !invoiceData.supplierName
               }
               icon={
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2459,16 +2461,39 @@ const handlePrint = () => {
                     return;
                   }
                   await handleSave();
-                  // بعد الحفظ: توليد رقم فاتورة احترافي: INV-رقم الفرع الحقيقي-التاريخ-رقم الفاتوره
+                  // بعد الحفظ: توليد رقم فاتورة احترافي: PUR-رقم الفرع الحقيقي-التاريخ-رقم الفاتوره
                   const today = dayjs().format('YYYYMMDD');
                   const branchObj = branches.find(b => b.id === invoiceData.branch);
                   const branchCode = branchObj?.code || branchObj?.id || invoiceData.branch || '000';
                   const serial = Math.floor(1000 + Math.random() * 9000); // رقم عشوائي بين 1000 و9999
-                  const newInvoiceNumber = `INV-${branchCode}-${today}-${serial}`;
+                  const newInvoiceNumber = `PUR-${branchCode}-${today}-${serial}`;
                   setInvoiceData(prev => ({
                     ...prev,
                     invoiceNumber: newInvoiceNumber
                   }));
+                  // حفظ الفاتورة في قاعدة البيانات عبر API
+                  try {
+                    const response = await fetch('/api/purchases', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({
+                        ...invoiceData,
+                        invoiceNumber: newInvoiceNumber,
+                        items: [...items],
+                        totals: { ...totals },
+                        date: invoiceData.date || today
+                      })
+                    });
+                    if (response.ok) {
+                      message.success('تم حفظ الفاتورة في قاعدة البيانات بنجاح');
+                    } else {
+                      message.error('حدث خطأ أثناء حفظ الفاتورة في قاعدة البيانات');
+                    }
+                  } catch (error) {
+                    message.error('تعذر الاتصال بقاعدة البيانات');
+                  }
                 }}
                 style={{ width: 150 }}
                 loading={loading}
@@ -2526,83 +2551,83 @@ const handlePrint = () => {
           </div>
           {showInvoicesTable && (
             <div className="mt-6">
-              <Table
-                columns={invoiceColumns}
-                dataSource={invoices}
-                loading={invoicesLoading}
-                pagination={{ pageSize: 10 }}
-                bordered
-                scroll={{ x: 3000 }}
-                size="middle"
-                rowKey="key"
-                summary={() => (
-                  <Table.Summary fixed>
-                    <Table.Summary.Row>
-                      <Table.Summary.Cell index={0} colSpan={6} align="right">
-                        <strong>الإجماليات</strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={1} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.quantity, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={2} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.price, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={3} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.total, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={4} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.discountValue, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={5} align="center">
-                        <strong>
-                          {invoices.length > 0 
-                            ? (invoices.reduce((sum, record) => sum + record.discountValue, 0) / 
-                               invoices.reduce((sum, record) => sum + record.total, 0) * 100).toFixed(2)
-                            : '0.00'}%
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={6} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.taxValue, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={7} align="center">
-                        <strong>
-                          {invoices.length > 0 
-                            ? (invoices.reduce((sum, record) => sum + record.taxValue, 0) / 
-                               (invoices.reduce((sum, record) => sum + record.total, 0) - 
-                                invoices.reduce((sum, record) => sum + record.discountValue, 0)) * 100).toFixed(2)
-                            : '0.00'}%
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={8} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.net, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={9} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.cost, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={10} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.profit, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={11} colSpan={6}></Table.Summary.Cell>
-                    </Table.Summary.Row>
-                  </Table.Summary>
-                )}
-              />
+      <Table
+        columns={invoiceColumns}
+        dataSource={invoices}
+        loading={invoicesLoading}
+        pagination={{ pageSize: 10 }}
+        bordered
+        scroll={{ x: 3000 }}
+        size="middle"
+        rowKey="key"
+        summary={() => (
+          <Table.Summary fixed>
+            <Table.Summary.Row>
+              <Table.Summary.Cell index={0} colSpan={6} align="right">
+                <strong>الإجماليات</strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={1} align="center">
+                <strong>
+                  {purchaseInvoices.reduce((sum, record) => sum + record.quantity, 0).toFixed(2)}
+                </strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={2} align="center">
+                <strong>
+                  {purchaseInvoices.reduce((sum, record) => sum + record.price, 0).toFixed(2)}
+                </strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={3} align="center">
+                <strong>
+                  {purchaseInvoices.reduce((sum, record) => sum + record.total, 0).toFixed(2)}
+                </strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={4} align="center">
+                <strong>
+                  {purchaseInvoices.reduce((sum, record) => sum + record.discountValue, 0).toFixed(2)}
+                </strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={5} align="center">
+                <strong>
+                  {purchaseInvoices.length > 0 
+                    ? (purchaseInvoices.reduce((sum, record) => sum + record.discountValue, 0) / 
+                       purchaseInvoices.reduce((sum, record) => sum + record.total, 0) * 100).toFixed(2)
+                    : '0.00'}%
+                </strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={6} align="center">
+                <strong>
+                  {purchaseInvoices.reduce((sum, record) => sum + record.taxValue, 0).toFixed(2)}
+                </strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={7} align="center">
+                <strong>
+                  {purchaseInvoices.length > 0 
+                    ? (purchaseInvoices.reduce((sum, record) => sum + record.taxValue, 0) / 
+                       (purchaseInvoices.reduce((sum, record) => sum + record.total, 0) - 
+                        purchaseInvoices.reduce((sum, record) => sum + record.discountValue, 0)) * 100).toFixed(2)
+                    : '0.00'}%
+                </strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={8} align="center">
+                <strong>
+                  {purchaseInvoices.reduce((sum, record) => sum + record.net, 0).toFixed(2)}
+                </strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={9} align="center">
+                <strong>
+                  {purchaseInvoices.reduce((sum, record) => sum + record.cost, 0).toFixed(2)}
+                </strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={10} align="center">
+                <strong>
+                  {purchaseInvoices.reduce((sum, record) => sum + record.profit, 0).toFixed(2)}
+                </strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={11} colSpan={6}></Table.Summary.Cell>
+            </Table.Summary.Row>
+          </Table.Summary>
+        )}
+      />
             </div>
           )}
         </Card>
@@ -2611,13 +2636,4 @@ const handlePrint = () => {
   );
 };
 
-export default SalesPage;
-
-// إضافة خط Cairo للصفحة إذا لم يكن مضافاً في مكان آخر
-if (typeof document !== 'undefined' && !document.getElementById('cairo-font')) {
-  const link = document.createElement('link');
-  link.id = 'cairo-font';
-  link.rel = 'stylesheet';
-  link.href = 'https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap';
-  document.head.appendChild(link);
-}
+export default PurchasesPage;

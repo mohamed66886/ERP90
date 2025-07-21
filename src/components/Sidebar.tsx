@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { title } from "process";
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -44,6 +45,7 @@ const menuItems = [
     icon: Receipt,
     children: [
       { title: "فواتير المبيعات", href: "/stores/sales" },
+      { title: "فواتير المشتريات", href: "/stores/purchases" },
     ],
   },
   {
@@ -53,6 +55,8 @@ const menuItems = [
       { title: "إدارة المخازن", href: "/stores/manage" },
       { title: "الأصناف", href: "/stores/item" },
       { title: "مرتجع المبيعات", href: "/stores/sales-return" },
+      {title : "مرتجع المشتريات", href: "/stores/purchases-return"},
+      { title: "المخزون", href: "/stores/stock" }
     ],
   },
   {
@@ -76,6 +80,7 @@ const menuItems = [
 const Sidebar = ({ isCollapsed, onToggle, onLogout, customersCount }: SidebarProps) => {
   const location = useLocation();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
 
   const toggleExpanded = (title: string) => {
     setExpandedItems(prev => 
@@ -110,66 +115,52 @@ const Sidebar = ({ isCollapsed, onToggle, onLogout, customersCount }: SidebarPro
           "shadow-lg"
         )}
       >
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col sidebar-nav-maxheight">
           
-          {/* Sidebar header */}
-          <div className="p-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              {!isCollapsed && (
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                    <BarChart3 className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="font-bold text-lg text-gray-900">نظام المحاسبة</h2>
-                    <p className="text-sm text-gray-500">الإصدار الاحترافي</p>
-                  </div>
-                </div>
-              )}
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onToggle}
-                className="lg:hidden"
-              >
-                {isCollapsed ? <Menu className="w-5 h-5" /> : <X className="w-5 h-5" />}
-              </Button>
-            </div>
-          </div>
-
           {/* Navigation items */}
           <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
             {menuItems.map((item) => (
-              <div key={item.title}>
+              <div 
+                key={item.title}
+                className="relative"
+                onMouseEnter={() => isCollapsed && item.children && setHoveredItem(item.title)}
+                onMouseLeave={() => isCollapsed && setHoveredItem(null)}
+              >
                 {item.children ? (
                   <div>
                     <button
                       onClick={() => toggleExpanded(item.title)}
                       className={cn(
                         "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium",
-                        "transition-colors text-right",
+                        "transition-all duration-200 text-right",
                         hasActiveChild(item.children)
                           ? "bg-blue-50 text-blue-600"
                           : "text-gray-600 hover:bg-gray-100",
-                        isCollapsed && "justify-center"
+                        isCollapsed && "justify-center",
+                        isCollapsed && hoveredItem === item.title && "bg-blue-50 scale-105"
                       )}
                     >
-                      <item.icon className="w-5 h-5 flex-shrink-0" />
+                      <item.icon className="w-5 h-5 flex-shrink-0 transition-transform duration-200" />
                       {!isCollapsed && (
                         <>
                           <span className="flex-1">{item.title}</span>
                           {expandedItems.includes(item.title) ? (
-                            <ChevronDown className="w-4 h-4" />
+                            <ChevronDown className="w-4 h-4 transition-transform duration-200" />
                           ) : (
-                            <ChevronRight className="w-4 h-4" />
+                            <ChevronRight className="w-4 h-4 transition-transform duration-200" />
                           )}
                         </>
                       )}
                     </button>
 
+                    {/* Expanded menu for desktop */}
                     {!isCollapsed && expandedItems.includes(item.title) && (
-                      <div className="mr-8 mt-2 space-y-1">
+                      <div 
+                        className="mr-8 mt-2 space-y-1 overflow-hidden"
+                        style={{
+                          animation: "fadeIn 0.3s ease-in-out",
+                        }}
+                      >
                         {item.children.map((child) => (
                           <NavLink
                             key={child.href}
@@ -177,12 +168,55 @@ const Sidebar = ({ isCollapsed, onToggle, onLogout, customersCount }: SidebarPro
                             className={({ isActive }) =>
                               cn(
                                 "flex items-center px-3 py-2 rounded-md text-sm",
-                                "transition-colors text-right",
+                                "transition-all duration-200 text-right hover:translate-x-1",
                                 isActive
                                   ? "bg-blue-50 text-blue-600 font-medium"
                                   : "text-gray-600 hover:bg-gray-100"
                               )
                             }
+                          >
+                            {child.title}
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Popup menu for collapsed state */}
+                    {isCollapsed && hoveredItem === item.title && (
+                      <div
+                        ref={el => {
+                          if (el) {
+                            const parent = el.parentElement?.querySelector('button');
+                            if (parent) {
+                              const rect = parent.getBoundingClientRect();
+                              el.style.top = rect.top - 35 + 'px'; // رفع القائمة 16px فوق الزر
+                            }
+                          }
+                        }}
+                        className={cn(
+                          "fixed w-48 bg-white rounded-lg shadow-xl z-50",
+                          "py-1 border border-gray-200",
+                          "animate-in fade-in slide-in-from-left-4"
+                        )}
+                        style={{ pointerEvents: 'auto' }}
+                      >
+                        <div className="px-3 py-2 text-xs font-medium text-gray-500 border-b border-gray-200">
+                          {item.title}
+                        </div>
+                        {item.children.map((child) => (
+                          <NavLink
+                            key={child.href}
+                            to={child.href}
+                            className={({ isActive }) =>
+                              cn(
+                                "block px-4 py-2 text-sm text-right",
+                                "transition-colors duration-150",
+                                isActive
+                                  ? "bg-blue-50 text-blue-600 font-medium"
+                                  : "text-gray-700 hover:bg-gray-100"
+                              )
+                            }
+                            onClick={() => setHoveredItem(null)}
                           >
                             {child.title}
                           </NavLink>
@@ -196,11 +230,12 @@ const Sidebar = ({ isCollapsed, onToggle, onLogout, customersCount }: SidebarPro
                     className={({ isActive }) =>
                       cn(
                         "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium",
-                        "transition-colors text-right",
+                        "transition-all duration-200 text-right hover:translate-x-1",
                         isActive
                           ? "bg-blue-50 text-blue-600"
                           : "text-gray-600 hover:bg-gray-100",
-                        isCollapsed && "justify-center"
+                        isCollapsed && "justify-center",
+                        isCollapsed && "hover:scale-105"
                       )
                     }
                   >
@@ -228,11 +263,11 @@ const Sidebar = ({ isCollapsed, onToggle, onLogout, customersCount }: SidebarPro
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium",
-                  "transition-colors text-right",
+                  "transition-all duration-200 text-right hover:translate-x-1",
                   isActive
                     ? "bg-blue-50 text-blue-600"
                     : "text-gray-600 hover:bg-gray-100",
-                  isCollapsed && "justify-center"
+                  isCollapsed && "justify-center hover:scale-105"
                 )
               }
             >
@@ -244,8 +279,9 @@ const Sidebar = ({ isCollapsed, onToggle, onLogout, customersCount }: SidebarPro
               onClick={onLogout}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium",
-                "transition-colors text-right text-red-600 hover:bg-red-50",
-                isCollapsed && "justify-center"
+                "transition-all duration-200 text-right text-red-600 hover:bg-red-50",
+                "hover:translate-x-1",
+                isCollapsed && "justify-center hover:scale-105"
               )}
             >
               <LogOut className="w-5 h-5 flex-shrink-0" />
@@ -254,6 +290,36 @@ const Sidebar = ({ isCollapsed, onToggle, onLogout, customersCount }: SidebarPro
           </div>
         </div>
       </div>
+
+      {/* Add global animations */}
+      <style jsx global>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes fadeInLeft {
+          from {
+            opacity: 0;
+            transform: translateX(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        .animate-in.fade-in.slide-in-from-left-4 {
+          animation: fadeInLeft 0.2s ease-out forwards;
+        }
+        .animate-in {
+          animation: fadeIn 0.2s ease-out forwards;
+        }
+      `}</style>
     </>
   );
 };
