@@ -54,6 +54,7 @@ interface Totals {
   afterDiscount: number;
   afterTax: number;
   total: number;
+  tax: number;
 }
 
 interface InvoiceRecord {
@@ -98,15 +99,26 @@ const initialItem: InvoiceItem = {
   total: 0
 };
 
-function generateInvoiceNumber(branchCode?: string | number): string {
+
+// دالة توليد رقم فاتورة جديد بناءً على رقم الفرع والتاريخ والتسلسل اليومي
+async function generateInvoiceNumberAsync(branchCode: string): Promise<string> {
   const date = new Date();
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
-  const rand = Math.floor(1000 + Math.random() * 9000);
-  // إذا كان هناك كود فرع رقمي، أضفه لرقم الفاتورة
-  const branchPart = branchCode && !isNaN(Number(branchCode)) ? String(Number(branchCode)).padStart(3, '0') + '-' : '';
-  return `INV-${branchPart}${y}${m}${d}-${rand}`;
+  const dateStr = `${y}${m}${d}`;
+  const branchPart = branchCode && !isNaN(Number(branchCode)) ? String(Number(branchCode)).padStart(3, '0') : '000';
+  // جلب عدد الفواتير لنفس الفرع في نفس اليوم
+  const { getDocs, collection, query, where } = await import('firebase/firestore');
+  const q = query(
+    collection(db, 'sales_invoices'),
+    where('branch', '==', branchCode),
+    where('date', '==', `${y}-${m}-${d}`)
+  );
+  const snapshot = await getDocs(q);
+  const count = snapshot.size + 1;
+  const serial = String(count).padStart(4, '0');
+  return `INV-${branchPart}-${dateStr}-${serial}`;
 }
 
 function getTodayString(): string {
@@ -368,7 +380,7 @@ const SalesPage: React.FC = () => {
   const [warehouseMode, setWarehouseMode] = useState<'single' | 'multiple'>('single');
   const [branchCode, setBranchCode] = useState<string>('');
   const [invoiceData, setInvoiceData] = useState<InvoiceData>({
-    invoiceNumber: generateInvoiceNumber(),
+    invoiceNumber: '',
     entryNumber: '',
     date: getTodayString(),
     paymentMethod: '',
@@ -381,6 +393,19 @@ const SalesPage: React.FC = () => {
     commercialRecord: '',
     taxFile: ''
   });
+
+  // توليد رقم فاتورة جديد عند كل إعادة تعيين أو تغيير الفرع
+  const generateAndSetInvoiceNumber = async (branchCodeValue: string) => {
+    const invoiceNumber = await generateInvoiceNumberAsync(branchCodeValue);
+    setInvoiceData(prev => ({ ...prev, invoiceNumber }));
+  };
+
+  // توليد رقم فاتورة عند تحميل الصفحة لأول مرة إذا كان رقم الفرع موجود
+  useEffect(() => {
+    if (branchCode) {
+      generateAndSetInvoiceNumber(branchCode);
+    }
+  }, [branchCode]);
   const [delegates, setDelegates] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
@@ -396,7 +421,8 @@ const SalesPage: React.FC = () => {
   const [totals, setTotals] = useState<Totals>({
     afterDiscount: 0,
     afterTax: 0,
-    total: 0
+    total: 0,
+    tax: 0
   });
 
   const [taxRate, setTaxRate] = useState<string>('15');
@@ -585,21 +611,25 @@ const SalesPage: React.FC = () => {
     updateTotals(newItems);
   };
 
-  // تحديث الإجماليات بدون خصم إضافي
+  // تحديث الإجماليات مع جمع الضريبة
   const updateTotals = (itemsList: InvoiceItem[]) => {
+    let totalTax = 0;
     const calculated = itemsList.reduce((acc, item) => {
       const lineTotal = item.total || 0;
       const discount = item.discountValue || 0;
+      const tax = item.taxValue || 0;
+      totalTax += tax;
       return {
         afterDiscount: acc.afterDiscount + (lineTotal - discount),
-        afterTax: acc.afterTax + (lineTotal - discount),
+        afterTax: acc.afterTax + (lineTotal - discount + tax),
         total: acc.total + lineTotal
       };
     }, { afterDiscount: 0, afterTax: 0, total: 0 });
     setTotals({
       afterDiscount: parseFloat(calculated.afterDiscount.toFixed(2)),
       afterTax: parseFloat(calculated.afterTax.toFixed(2)),
-      total: parseFloat(calculated.total.toFixed(2))
+      total: parseFloat(calculated.total.toFixed(2)),
+      tax: parseFloat(totalTax.toFixed(2))
     });
   };
 
@@ -629,21 +659,27 @@ const SalesPage: React.FC = () => {
       message.success('تم حفظ الفاتورة بنجاح!');
       // إعادة تعيين النموذج
       setItems([]);
-      setTotals({ afterDiscount: 0, afterTax: 0, total: 0 });
-      setInvoiceData({
-        invoiceNumber: generateInvoiceNumber(branchCode),
-        entryNumber: '',
-        date: getTodayString(),
-        paymentMethod: '',
-        branch: '',
-        warehouse: '',
-        customerNumber: '',
-        customerName: '',
-        delegate: '',
-        priceRule: '',
-        commercialRecord: '',
-        taxFile: ''
-      });
+      setTotals({ afterDiscount: 0, afterTax: 0, total: 0, tax: 0 });
+      // توليد رقم فاتورة جديد بعد الحفظ
+      if (branchCode) {
+        generateAndSetInvoiceNumber(branchCode);
+      } else {
+        setInvoiceData(prev => ({
+          ...prev,
+          invoiceNumber: '',
+          entryNumber: '',
+          date: getTodayString(),
+          paymentMethod: '',
+          branch: '',
+          warehouse: '',
+          customerNumber: '',
+          customerName: '',
+          delegate: '',
+          priceRule: '',
+          commercialRecord: '',
+          taxFile: ''
+        }));
+      }
       // تحديث سجل الفواتير
       await fetchInvoices();
       // حفظ بيانات الفاتورة الأخيرة للمودال
@@ -707,12 +743,24 @@ const SalesPage: React.FC = () => {
       width: 80,
       align: 'center' as const
     },
+    
     { 
       title: 'قيمة الخصم', 
       dataIndex: 'discountValue',
       width: 100,
       align: 'center' as const,
       render: (text: number) => `${text.toFixed(2)}`
+    },
+    { 
+      title: 'الإجمالي بعد الخصم', 
+      key: 'netAfterDiscount',
+      width: 110,
+      align: 'center' as const,
+      render: (_: any, record: any) => {
+        const subtotal = Number(record.price) * Number(record.quantity);
+        const discountValue = subtotal * Number(record.discountPercent) / 100;
+        return (subtotal - discountValue).toFixed(2);
+      }
     },
     { 
       title: '% الضريبة', 
@@ -963,6 +1011,9 @@ const SalesPage: React.FC = () => {
         // جلب المخازن
         const warehousesSnap = await getDocs(collection(db, 'warehouses'));
         setWarehouses(warehousesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        // جلب البائعين
+        const delegatesSnap = await getDocs(collection(db, 'delegates'));
+        setDelegates(delegatesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         // قوائم ثابتة
         setUnits(['قطعة', 'كرتونة', 'كيلو', 'جرام', 'لتر', 'متر', 'علبة']);
         setPriceRules(['السعر العادي', 'سعر الجملة', 'سعر التخفيض']);
@@ -996,8 +1047,8 @@ const SalesPage: React.FC = () => {
     total: totals.total.toFixed(2),
     discount: (totals.total - totals.afterDiscount).toFixed(2),
     afterDiscount: totals.afterDiscount.toFixed(2),
-    tax: (0).toFixed(2), // الضريبة صفر
-    net: totals.afterDiscount.toFixed(2) // الصافي = الاجمالي بعد الخصم
+    tax: totals.tax.toFixed(2), // الضريبة الفعلية
+    net: totals.afterTax.toFixed(2) // الصافي = الاجمالي بعد الخصم + الضريبة
   }), [totals]);
 
   // حالة إظهار/إخفاء جدول سجل الفواتير
@@ -1118,9 +1169,9 @@ const handlePrint = () => {
               min-width: 100px;
             }
             .logo {
-              width: 80px;
+              width: 150px;
               height: auto;
-              margin-bottom: 4px;
+              margin-bottom: 8px;
             }
             .company-info-ar {
               text-align: right;
@@ -1208,11 +1259,33 @@ const handlePrint = () => {
               letter-spacing: 0.5px;
             }
             .totals { margin-top: 5mm; border-top: 1px solid #000; padding-top: 3mm; font-weight: bold; }
-            .policy { margin-top: 5mm; font-size: 10px; border: 1px solid #ddd; padding: 3mm; }
+            .policy { font-size: 10px; border: 1px solid #ddd; padding: 3mm; /*margin-top: 5mm;*/ }
             .policy-title { font-weight: bold; margin-bottom: 2mm; }
             .signature { margin-top: 5mm; display: flex; justify-content: space-between; }
             .signature-box { width: 45%; border-top: 1px solid #000; padding-top: 3mm; }
             .footer { margin-top: 5mm; text-align: center; font-size: 10px; }
+            /* Ensure totals and policy are always side by side on print */
+            .totals-policy-row {
+              display: flex;
+              flex-direction: row;
+              flex-wrap: nowrap !important;
+              justify-content: flex-end;
+              align-items: flex-start;
+              gap: 24px;
+              margin-top: 5mm;
+            }
+            @media print {
+              .totals-policy-row {
+                display: flex !important;
+                flex-direction: row !important;
+                flex-wrap: nowrap !important;
+                justify-content: flex-end !important;
+                align-items: flex-start !important;
+                gap: 24px !important;
+                margin-top: 5mm !important;
+              }
+              .policy { margin-top: 0 !important; }
+            }
           </style>
         </head>
         <body>
@@ -1260,9 +1333,8 @@ const handlePrint = () => {
                 })()}
               </div>
               <div class="qr-code">
-                <img src="${qrDataUrl}" alt="QR Code" style="width:60px;height:60px;" /><br>
-                <span style="font-size:10px">${invoice.invoiceNumber || ''}</span>
-              </div>
+                <img src="${qrDataUrl}" alt="QR Code" style="width:80px;height:80px;" /><br>
+               </div>
             </div>
             <table class="info-row-table left">
               <tr><td class="label">اسم العميل</td><td class="value">${invoice.customerName || ''}</td></tr>
@@ -1366,46 +1438,50 @@ const handlePrint = () => {
               </tr>
             </tfoot>
           </table>
-          <!-- Totals Section as vertical table left aligned -->
-          <div style="display: flex; justify-content: flex-end; margin-top: 5mm;">
-            <table style="border:1.5px solid #000; border-radius:6px; font-size:13px; min-width:220px; max-width:320px; margin-left:0; margin-right:0; border-collapse:collapse; box-shadow:none;">
-              <tbody>
-                <tr>
-                  <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">إجمالى الفاتورة</td>
-                  <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.total?.toFixed(2)}</td>
-                </tr>
-                <tr>
-                  <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">مبلغ الخصم</td>
-                  <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.total - invoice.totals?.afterDiscount).toFixed(2)}</td>
-                </tr>
-                <tr>
-                  <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى بعد الخصم</td>
-                  <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.afterDiscount?.toFixed(2)}</td>
-                </tr>
-                <tr>
-                  <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الضريبة (${invoice.items && invoice.items[0] ? (invoice.items[0].taxPercent || 0) : 0}%)</td>
-                  <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.afterTax - invoice.totals?.afterDiscount).toFixed(2)}</td>
-                </tr>
-                <tr>
-                  <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى النهايي</td>
-                  <td style="text-align:left; font-weight:700; border:1px solid #000; background:#fff;">${invoice.totals?.afterTax?.toFixed(2)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <!-- Policies Section -->
-          <div class="policy">
-            <div class="policy-title">سياسة الاستبدال والاسترجاع:</div>
-            <div>1- يستوجب أن يكون المنتج بحالته الأصلية بدون أي استعمال وبكامل اكسسواراته وبالتعبئة الأصلية.</div>
-            <div>2- البضاعة المباعة ترد أو تستبدل خلال ثلاثة أيام من تاريخ استلام العميل للمنتج مع إحضار أصل الفاتورة وتكون البضاعة بحالة سليمة ومغلقة.</div>
-            <div>3- يتحمل العميل قيمة التوصيل في حال إرجاع الفاتورة ويتم إعادة المبلغ خلال 3 أيام عمل.</div>
-            <div>4- ${companyData.arabicName || 'الشركة'} غير مسؤولة عن تسليم البضاعة بعد 10 أيام من تاريخ الفاتورة.</div>
-            <div class="policy-title" style="margin-top: 3mm;">سياسة التوصيل:</div>
-            <div>1- توصيل الطلبات من 5 أيام إلى 10 أيام عمل.</div>
-            <div>2- الحد المسموح به للتوصيل هو الدور الأرضي كحد أقصى، وفي حال رغبة العميل بالتوصيل لأعلى من الحد المسموح به، يتم ذلك بواسطة العميل.</div>
-            <div>3- يتم التوصيل حسب جدول المواعيد المحدد من ${companyData.arabicName || 'الشركة'}، كما أن ${companyData.arabicName || 'الشركة'} غير مسؤولة عن أي أضرار ناتجه بسبب التأخير او تأجيل موعد التوصيل.</div>
-            <div>4- يستوجب فحص المنتج أثناء استلامه مع التوقيع باستلامه، وعدم الفحص يسقط حق العميل في المطالبة بالاسترجاع او الاستبدال في حال وجود كسر.</div>
-            <div>5- لايوجد لدينا تركيب الضمان هو ضمان ${companyData.arabicName || 'الشركة'}، كما أن الضمان لا يشمل سوء الاستخدام الناتج من العميل.</div>
+          <!-- Totals and Policies Section side by side -->
+          <div class="totals-policy-row">
+           <div style="flex: 1 1 340px; min-width: 260px; max-width: 600px;">
+              <div class="policy">
+                <div class="policy-title">سياسة الاستبدال والاسترجاع:</div>
+                <div>1- يستوجب أن يكون المنتج بحالته الأصلية بدون أي استعمال وبكامل اكسسواراته وبالتعبئة الأصلية.</div>
+                <div>2- البضاعة المباعة ترد أو تستبدل خلال ثلاثة أيام من تاريخ استلام العميل للمنتج مع إحضار أصل الفاتورة وتكون البضاعة بحالة سليمة ومغلقة.</div>
+                <div>3- يتحمل العميل قيمة التوصيل في حال إرجاع الفاتورة ويتم إعادة المبلغ خلال 3 أيام عمل.</div>
+                <div>4- ${companyData.arabicName || 'الشركة'} غير مسؤولة عن تسليم البضاعة بعد 10 أيام من تاريخ الفاتورة.</div>
+                <div class="policy-title" style="margin-top: 3mm;">سياسة التوصيل:</div>
+                <div>1- توصيل الطلبات من 5 أيام إلى 10 أيام عمل.</div>
+                <div>2- الحد المسموح به للتوصيل هو الدور الأرضي كحد أقصى، وفي حال رغبة العميل بالتوصيل لأعلى من الحد المسموح به، يتم ذلك بواسطة العميل.</div>
+                <div>3- يتم التوصيل حسب جدول المواعيد المحدد من ${companyData.arabicName || 'الشركة'}، كما أن ${companyData.arabicName || 'الشركة'} غير مسؤولة عن أي أضرار ناتجه بسبب التأخير او تأجيل موعد التوصيل.</div>
+                <div>4- يستوجب فحص المنتج أثناء استلامه مع التوقيع باستلامه، وعدم الفحص يسقط حق العميل في المطالبة بالاسترجاع او الاستبدال في حال وجود كسر.</div>
+                <div>5- لايوجد لدينا تركيب الضمان هو ضمان ${companyData.arabicName || 'الشركة'}، كما أن الضمان لا يشمل سوء الاستخدام الناتج من العميل.</div>
+              </div>
+            </div>
+            <div style="flex: 0 0 320px; max-width: 340px; min-width: 220px;">
+              <table style="border:1.5px solid #000; border-radius:6px; font-size:13px; min-width:220px; max-width:320px; margin-left:0; margin-right:0; border-collapse:collapse; box-shadow:none; width:100%;">
+                <tbody>
+                  <tr>
+                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">إجمالى الفاتورة</td>
+                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.total?.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">مبلغ الخصم</td>
+                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.total - invoice.totals?.afterDiscount).toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى بعد الخصم</td>
+                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.afterDiscount?.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الضريبة (${invoice.items && invoice.items[0] ? (invoice.items[0].taxPercent || 0) : 0}%)</td>
+                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.afterTax - invoice.totals?.afterDiscount).toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى النهايي</td>
+                    <td style="text-align:left; font-weight:700; border:1px solid #000; background:#fff;">${invoice.totals?.afterTax?.toFixed(2)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+           
           </div>
           <!-- Signature Section -->
           <div class="signature">
@@ -1714,21 +1790,8 @@ const handlePrint = () => {
             {/* تم حذف حقل البائع (المستخدم الحالي) */}
             <Col xs={24} sm={12} md={6}>
               <Form.Item label="رقم الفاتورة">
-                {/* إظهار رقم الفاتورة للمستخدم مع استبدال id بـ code */}
                 <Input
-                  value={(() => {
-                    if (!invoiceData.invoiceNumber) return '';
-                    const parts = invoiceData.invoiceNumber.split('-');
-                    if (parts.length !== 4) return invoiceData.invoiceNumber;
-                    const branchId = parts[1];
-                    const branchObj = branches.find(b => b.id === branchId);
-                    let code = branchObj?.code || branchObj?.branchCode || branchId;
-                    if (typeof code === 'string') {
-                      const match = code.match(/\d+/);
-                      if (match) code = match[0];
-                    }
-                    return `INV-${code}-${parts[2]}-${parts[3]}`;
-                  })()}
+                  value={invoiceData.invoiceNumber || ''}
                   placeholder="رقم الفاتورة"
                   disabled
                 />
@@ -1786,37 +1849,14 @@ const handlePrint = () => {
                   showSearch
                   value={invoiceData.branch}
                   onChange={(value) => {
-                    // استخدم branch.id في التوليد والبحث (لضمان التفرد)، وcode للعرض فقط
-                    const selectedBranch = branches.find(b => b.id === value);
-                    let code = selectedBranch?.code || selectedBranch?.branchCode || value;
-                    if (typeof code === 'string') {
-                      const match = code.match(/\d+/);
-                      if (match) code = match[0];
-                    }
-                    setBranchCode(code);
-                    // توليد رقم الفاتورة الجديد
-                    const today = new Date();
-                    const yyyymmdd = today.getFullYear().toString() +
-                      String(today.getMonth() + 1).padStart(2, '0') +
-                      String(today.getDate()).padStart(2, '0');
-                    // ابحث عن آخر فاتورة لنفس الفرع ونفس اليوم باستخدام branch.id
-                    let branchInvoices = invoices.filter(inv => {
-                      if (!inv.invoiceNumber) return false;
-                      const parts = inv.invoiceNumber.split('-');
-                      return parts[1] === String(value) && parts[2] === yyyymmdd;
-                    });
-                    let serial = 1;
-                    if (branchInvoices.length > 0) {
-                      // استخرج آخر رقم تسلسلي
-                      const last = branchInvoices.map(inv => {
-                        const parts = inv.invoiceNumber.split('-');
-                        return parseInt(parts[3], 10) || 0;
-                      }).sort((a, b) => b - a)[0];
-                      serial = last + 1;
-                    }
-                    const serialStr = String(serial).padStart(4, '0');
-                    // رقم الفاتورة يظهر للمستخدم برقم الفرع الصحيح (code)
-                    const invoiceNumber = `INV-${code}-${yyyymmdd}-${serialStr}`;
+                    // توليد رقم فاتورة احترافي: INV-رقم الفرع الحقيقي-التاريخ-رقم الفاتورة
+                    setBranchCode('');
+                    const today = dayjs().format('YYYYMMDD');
+                    // جلب رقم الفرع الحقيقي من كائن الفروع
+                    const branchObj = branches.find(b => b.id === value);
+                    const branchCode = branchObj?.code || branchObj?.id || value;
+                    const serial = Math.floor(1000 + Math.random() * 9000); // رقم عشوائي بين 1000 و9999
+                    const invoiceNumber = `INV-${branchCode}-${today}-${serial}`;
                     setInvoiceData(prev => ({
                       ...prev,
                       branch: value,
@@ -2322,26 +2362,24 @@ const handlePrint = () => {
               <Card size="small">
                 <div className="flex justify-between">
                   <span style={{ color: '#2563eb', fontWeight: 600 }}>الإجمالي:</span>
-                  <span className="font-bold" style={{ color: '#2563eb' }}>{totalsDisplay.total}</span>
+                  <span className="font-bold" style={{ color: '#2563eb' }}>{totals.total.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span style={{ color: '#dc2626', fontWeight: 600 }}>الخصم:</span>
-                  <span className="font-bold" style={{ color: '#dc2626' }}>{totalsDisplay.discount}</span>
+                  <span className="font-bold" style={{ color: '#dc2626' }}>{(totals.total - totals.afterDiscount).toFixed(2)}</span>
                 </div>
-                {/* تم حذف مدخل الخصم الإضافي */}
-
                 <div className="flex justify-between">
                   <span style={{ color: '#ea580c', fontWeight: 600 }}>الإجمالي بعد الخصم:</span>
-                  <span className="font-bold" style={{ color: '#ea580c' }}>{totalsDisplay.afterDiscount}</span>
+                  <span className="font-bold" style={{ color: '#ea580c' }}>{totals.afterDiscount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span style={{ color: '#9333ea', fontWeight: 600 }}>قيمة الضريبة:</span>
-                  <span className="font-bold" style={{ color: '#9333ea' }}>{totalsDisplay.tax}</span>
+                  <span className="font-bold" style={{ color: '#9333ea' }}>{totals.tax.toFixed(2)}</span>
                 </div>
                 <Divider className="my-2" />
                 <div className="flex justify-between">
                   <span style={{ color: '#059669', fontWeight: 700 }}>الإجمالي النهائي:</span>
-                  <span className="font-bold text-lg" style={{ color: '#059669' }}>{totalsDisplay.net}</span>
+                  <span className="font-bold text-lg" style={{ color: '#059669' }}>{totals.afterTax.toFixed(2)}</span>
                 </div>
               </Card>
             </Col>
@@ -2354,7 +2392,7 @@ const handlePrint = () => {
                 type="primary" 
                 size="large" 
                 icon={<SaveOutlined />} 
-                onClick={() => {
+                onClick={async () => {
                   if (Number(totalsDisplay.net) <= 0) {
                     if (typeof message !== 'undefined' && message.error) {
                       message.error('لا يمكن حفظ الفاتورة إذا كان الإجمالي النهائي صفر أو أقل');
@@ -2363,7 +2401,17 @@ const handlePrint = () => {
                     }
                     return;
                   }
-                  handleSave();
+                  await handleSave();
+                  // بعد الحفظ: توليد رقم فاتورة احترافي: INV-رقم الفرع الحقيقي-التاريخ-رقم الفاتوره
+                  const today = dayjs().format('YYYYMMDD');
+                  const branchObj = branches.find(b => b.id === invoiceData.branch);
+                  const branchCode = branchObj?.code || branchObj?.id || invoiceData.branch || '000';
+                  const serial = Math.floor(1000 + Math.random() * 9000); // رقم عشوائي بين 1000 و9999
+                  const newInvoiceNumber = `INV-${branchCode}-${today}-${serial}`;
+                  setInvoiceData(prev => ({
+                    ...prev,
+                    invoiceNumber: newInvoiceNumber
+                  }));
                 }}
                 style={{ width: 150 }}
                 loading={loading}
