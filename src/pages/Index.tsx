@@ -18,6 +18,7 @@ import HelpPage from "./help";
 import { Routes, Route } from "react-router-dom";
 import PurchasesReturnPage from "./stores/purchases-return";
 import Stockpage from "./stores/stock";
+import Footer from "@/components/Footer";
 
 
 import SettingsPage from "./SettingsPage";
@@ -28,6 +29,7 @@ import SalesReturnPage from "./stores/sales-return";
 import Branches from "./business/branches";
 import PaymentMethodsPage from "./business/payment-methods";
 import Suppliers from "./suppliers";
+import NotFound from "./NotFound";
 import { useAuth } from "@/contexts/useAuth";
 type AppState = "login" | "data-completion" | "dashboard";
 
@@ -105,7 +107,7 @@ const Index = () => {
 
   // بعد تسجيل الدخول وإتمام البيانات، استخدم الراوتر
   return (
-    <div className="min-h-screen bg-background rtl" dir="rtl">
+    <div className="bg-background rtl" dir="rtl">
       {/* الهيدر بعرض الشاشة بالكامل */}
       <Header
         onLogout={handleLogout}
@@ -114,36 +116,36 @@ const Index = () => {
         companyName={companyData?.arabicName}
       />
       {/* صف فيه السايدبار بجانب المحتوى الرئيسي */}
-      <div className="flex">
-        <Sidebar 
-          isCollapsed={sidebarCollapsed}
-          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-          onLogout={handleLogout}
-        />
-        <div className="flex-1 flex flex-col h-screen overflow-y-auto">
-          <main className="flex-1">
-            <Routes>
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/stores/item" element={<ItemCardPage />} />
-              <Route path="/stores/sales" element={<SalesPage />} />
-              <Route path="/stores/manage" element={<WarehouseManagement />} />
-              <Route path="/stores/sales-return" element={<SalesReturnPage />} />
-              <Route path="/business/branches" element={<Branches />} />
-              <Route path="/profile" element={<ProfilePage />} />
-              <Route path="/stores/stock" element={<Stockpage />} />
-              <Route path="/stores/purchases" element={<PurchasesPage />} />
-              <Route path="/stores/purchases-return" element={<PurchasesReturnPage />} />
-              <Route path="/help" element={<HelpPage />} />
-              <Route path="/admin/admins" element={<Managers />} />
-              <Route path="/business/payment-methods" element={<PaymentMethodsPage />} />
-              <Route path="/suppliers" element={<Suppliers />} />
-              
-              <Route path="*" element={<Dashboard />} />
-            </Routes>
-          </main>
-        </div>
+    <div className="flex">
+      <Sidebar />
+      <div className="flex-1 flex flex-col overflow-y-auto min-h-screen">
+        <main className="flex-1">
+          <Routes>
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/stores/item" element={<ItemCardPage />} />
+            <Route path="/stores/sales" element={<SalesPage />} />
+            <Route path="/stores/manage" element={<WarehouseManagement />} />
+            <Route path="/stores/sales-return" element={<SalesReturnPage />} />
+            <Route path="/business/branches" element={<Branches />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/stores/stock" element={<Stockpage />} />
+            <Route path="/stores/purchases" element={<PurchasesPage />} />
+            <Route path="/stores/purchases-return" element={<PurchasesReturnPage />} />
+            <Route path="/help" element={<HelpPage />} />
+            <Route path="/admin/admins" element={<Managers />} />
+            <Route path="/business/payment-methods" element={<PaymentMethodsPage />} />
+            <Route path="/suppliers" element={<Suppliers />} />
+            <Route path="/" element={<Dashboard />} />
+
+          {/* Catch-all route for 404 */}
+          <Route path="*" element={<NotFound />} />
+
+          </Routes>
+        </main>
+        <Footer />
       </div>
     </div>
+  </div>
   );
 };
 
