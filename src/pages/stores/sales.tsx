@@ -34,6 +34,7 @@ interface InvoiceItem {
   taxPercent: string;
   taxValue: number;
   total: number;
+  isNewItem?: boolean; // إضافة خاصية تحديد إذا كان الصنف جديد
 }
 
 interface InvoiceData {
@@ -97,8 +98,9 @@ const initialItem: InvoiceItem = {
   // تم حذف الخصم الإضافي
   taxPercent: '15',
   taxValue: 0,
-  total: 0
-};
+  total: 0,
+  isNewItem: false
+}
 
 
 // دالة توليد رقم فاتورة جديد بناءً على رقم الفرع والتاريخ والتسلسل اليومي
@@ -803,23 +805,43 @@ const SalesPage: React.FC = () => {
     },
     {
       title: 'إجراءات',
-      width: 100,
+      width: 140,
       align: 'center' as const,
       render: (_: any, record: InvoiceItem, index: number) => (
-        <Button 
-          danger 
-          size="small"
-          onClick={() => {
-            const newItems = items.filter((_, i) => i !== index);
-            setItems(newItems);
-            updateTotals(newItems);
-          }}
-        >
-          حذف
-        </Button>
+        <>
+          <Button
+            type="primary"
+            size="small"
+            style={{ marginLeft: 8 }}
+            onClick={() => handleEditItem(record, index)}
+          >
+            تعديل
+          </Button>
+          <Button 
+            danger 
+            size="small"
+            onClick={() => {
+              const newItems = items.filter((_, i) => i !== index);
+              setItems(newItems);
+              updateTotals(newItems);
+            }}
+            style={{ marginRight: 8 }}
+          >
+            حذف
+          </Button>
+        </>
       )
     }
   ];
+
+  // دالة تعبئة بيانات الصنف عند التعديل
+  const handleEditItem = (record: InvoiceItem, index: number) => {
+    setItem(record);
+    // حذف الصنف من الجدول عند التعديل
+    const newItems = items.filter((_, i) => i !== index);
+    setItems(newItems);
+    updateTotals(newItems);
+  };
 
   const handleEditInvoice = (record: any) => {
     // تعبئة بيانات الفاتورة المختارة في النموذج
@@ -1059,14 +1081,6 @@ const SalesPage: React.FC = () => {
       render: (_: any, record: any) => (
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
           <Button
-            type="primary"
-            size="small"
-            onClick={() => handleEditInvoice(record)}
-            style={{ fontWeight: 600 }}
-          >
-            تعديل
-          </Button>
-          <Button
             danger
             size="small"
             onClick={() => handleDeleteInvoice(record)}
@@ -1079,54 +1093,54 @@ const SalesPage: React.FC = () => {
     },
   ];
 
-  // جلب القوائم من Firebase
+  // تعريف الدالة خارج useEffect
+  const fetchLists = async () => {
+    try {
+      setFetchingItems(true);
+      // جلب الفروع
+      const branchesSnap = await getDocs(collection(db, 'branches'));
+      setBranches(branchesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // جلب طرق الدفع
+      const paymentSnap = await getDocs(collection(db, 'paymentMethods'));
+      setPaymentMethods(paymentSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // جلب العملاء من صفحة العملاء (collection: 'customers')
+      const customersSnap = await getDocs(collection(db, 'customers'));
+      setCustomers(customersSnap.docs.map(doc => {
+        const data = doc.data();
+        return { id: doc.id, ...data, taxFile: data.taxFile || '' };
+      }));
+      // جلب المخازن
+      const warehousesSnap = await getDocs(collection(db, 'warehouses'));
+      setWarehouses(warehousesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // جلب البائعين
+      const delegatesSnap = await getDocs(collection(db, 'delegates'));
+      setDelegates(delegatesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // قوائم ثابتة
+      setUnits(['قطعة', 'كرتونة', 'كيلو', 'جرام', 'لتر', 'متر', 'علبة']);
+      setPriceRules(['السعر العادي', 'سعر الجملة', 'سعر التخفيض']);
+      // جلب الأصناف
+      const itemsSnap = await getDocs(collection(db, 'inventory_items'));
+      const itemsData = itemsSnap.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: data.name || '',
+          itemCode: data.itemCode || '',
+          salePrice: data.salePrice || 0,
+          discount: data.discount || 0,
+          isVatIncluded: data.isVatIncluded || false,
+          type: data.type || ''
+        };
+      }).filter(item => item.name);
+      setItemNames(itemsData);
+    } catch (err) {
+      console.error('Error fetching lists:', err);
+      message.error('تعذر تحميل القوائم من قاعدة البيانات');
+    } finally {
+      setFetchingItems(false);
+    }
+  };
   useEffect(() => {
-    const fetchLists = async () => {
-      try {
-        setFetchingItems(true);
-        // جلب الفروع
-        const branchesSnap = await getDocs(collection(db, 'branches'));
-        setBranches(branchesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        // جلب طرق الدفع
-        const paymentSnap = await getDocs(collection(db, 'paymentMethods'));
-        setPaymentMethods(paymentSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        // جلب العملاء من صفحة العملاء (collection: 'customers')
-        const customersSnap = await getDocs(collection(db, 'customers'));
-        setCustomers(customersSnap.docs.map(doc => {
-          const data = doc.data();
-          return { id: doc.id, ...data, taxFile: data.taxFile || '' };
-        }));
-        // جلب المخازن
-        const warehousesSnap = await getDocs(collection(db, 'warehouses'));
-        setWarehouses(warehousesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        // جلب البائعين
-        const delegatesSnap = await getDocs(collection(db, 'delegates'));
-        setDelegates(delegatesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        // قوائم ثابتة
-        setUnits(['قطعة', 'كرتونة', 'كيلو', 'جرام', 'لتر', 'متر', 'علبة']);
-        setPriceRules(['السعر العادي', 'سعر الجملة', 'سعر التخفيض']);
-        // جلب الأصناف
-        const itemsSnap = await getDocs(collection(db, 'inventory_items'));
-        const itemsData = itemsSnap.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            name: data.name || '',
-            itemCode: data.itemCode || '',
-            salePrice: data.salePrice || 0,
-            discount: data.discount || 0,
-            isVatIncluded: data.isVatIncluded || false,
-            type: data.type || ''
-          };
-        }).filter(item => item.name);
-        setItemNames(itemsData);
-      } catch (err) {
-        console.error('Error fetching lists:', err);
-        message.error('تعذر تحميل القوائم من قاعدة البيانات');
-      } finally {
-        setFetchingItems(false);
-      }
-    };
     fetchLists();
   }, []);
 
@@ -2171,43 +2185,80 @@ const handlePrint = () => {
               <Input
                 value={item.itemNumber}
                 placeholder="كود الصنف"
-                disabled
+                disabled={!item.isNewItem}
+                onChange={e => setItem({ ...item, itemNumber: e.target.value })}
               />
             </Col>
             <Col xs={24} sm={12} md={8}>
 
               <div style={{ marginBottom: 4, fontWeight: 500 }}>اسم الصنف</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Select
-                  ref={itemNameSelectRef}
-                  showSearch
-                  value={item.itemName}
-                  placeholder="اسم الصنف"
-                  style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
-                  onChange={async (value) => {
-                    const selected = itemNames.find(i => i.name === value);
-                    let price = selected && selected.salePrice ? String(selected.salePrice) : '';
-                    if (priceType === 'آخر سعر العميل' && invoiceData.customerName) {
-                      const lastPrice = await fetchLastCustomerPrice(invoiceData.customerName, value);
-                      if (lastPrice) price = String(lastPrice);
+                {item.isNewItem ? (
+                  <Input
+                    value={item.itemName}
+                    placeholder="اسم الصنف"
+                    style={{ width: '100%', fontFamily: 'Cairo, sans-serif', fontWeight: 500, fontSize: 16 }}
+                    onChange={e => setItem({ ...item, itemName: e.target.value })}
+                  />
+                ) : (
+                  <Select
+                    ref={itemNameSelectRef}
+                    showSearch
+                    value={item.itemName}
+                    placeholder="اسم الصنف"
+                    style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
+                    onChange={async (value) => {
+                      const selected = itemNames.find(i => i.name === value);
+                      let price = selected && selected.salePrice ? String(selected.salePrice) : '';
+                      if (priceType === 'آخر سعر العميل' && invoiceData.customerName) {
+                        const lastPrice = await fetchLastCustomerPrice(invoiceData.customerName, value);
+                        if (lastPrice) price = String(lastPrice);
+                      }
+                      setItem({
+                        ...item,
+                        itemName: value,
+                        itemNumber: selected ? (selected.itemCode || '') : '',
+                        price,
+                        discountPercent: selected && selected.discount ? String(selected.discount) : '0',
+                        taxPercent: selected && selected.isVatIncluded ? taxRate : '0',
+                        quantity: '1',
+                        isNewItem: !selected // إذا لم يوجد الصنف اعتبره جديد
+                      });
+                    }}
+                    filterOption={(input, option) =>
+                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                     }
-                  setItem({
-                    ...item,
-                    itemName: value,
-                    itemNumber: selected ? (selected.itemCode || '') : item.itemNumber,
-                    price,
-                    discountPercent: selected && selected.discount ? String(selected.discount) : '0',
-                    taxPercent: selected && selected.isVatIncluded ? taxRate : '0',
-                    quantity: '1' // الكمية الافتراضية عند اختيار صنف (كسلسلة نصية)
-                  });
+                    allowClear
+                    options={itemNames.map(i => ({ label: i.name, value: i.name }))}
+                  />
+                )}
+                {/* زر إضافة صنف جديد */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  style={{ minWidth: 40 }}
+                  onClick={() => {
+                    // إذا لم يوجد اسم صنف أو الاسم غير موجود بالقائمة، فعل إدخال كود الصنف
+                    if (!item.itemName || !itemNames.some(i => i.name === item.itemName)) {
+                      setItem({
+                        ...item,
+                        itemName: '',
+                        itemNumber: '',
+                        isNewItem: true
+                      });
+                    }
                   }}
-                  filterOption={(input, option) =>
-                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  allowClear
-                  options={itemNames.map(i => ({ label: i.name, value: i.name }))}
-                />
-  
+                  title="إضافة أو تحرير صنف جديد"
+                >
+                  {/* أيقونة قائمة مربعات (grid/list) */}
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="3" y="3" width="6" height="6" rx="1.5" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5"/>
+                    <rect x="15" y="3" width="6" height="6" rx="1.5" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5"/>
+                    <rect x="3" y="15" width="6" height="6" rx="1.5" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5"/>
+                    <rect x="15" y="15" width="6" height="6" rx="1.5" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5"/>
+                  </svg>
+                </Button>
               </div>
             </Col>
             {warehouseMode === 'multiple' && (
@@ -2381,6 +2432,10 @@ const handlePrint = () => {
                     return;
                   }
                   await handleSave();
+                  // تحديث الأصناف بعد الحفظ مباشرة
+                  if (typeof fetchLists === 'function') {
+                    await fetchLists();
+                  }
                   // بعد الحفظ: توليد رقم فاتورة احترافي: INV-رقم الفرع الحقيقي-التاريخ-رقم الفاتوره
                   const today = dayjs().format('YYYYMMDD');
                   const branchObj = branches.find(b => b.id === invoiceData.branch);
@@ -2524,6 +2579,17 @@ const handlePrint = () => {
                     </Table.Summary.Row>
                   </Table.Summary>
                 )}
+                // عند الضغط على صف: جلب أصناف الفاتورة للجدول الرئيسي
+                onRow={record => ({
+                  onClick: () => {
+                    if (record.items && Array.isArray(record.items)) {
+                      setItems(record.items.map(it => ({ ...it })));
+                    }
+                    // إذا أردت تعبئة بيانات الفاتورة أيضًا:
+                    // setInvoiceData({...invoiceData, ...record});
+                  }
+                })}
+                style={{ cursor: 'pointer' }}
               />
             </div>
           )}
