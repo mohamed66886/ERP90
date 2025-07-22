@@ -821,6 +821,48 @@ const SalesPage: React.FC = () => {
     }
   ];
 
+  const handleEditInvoice = (record: any) => {
+    // تعبئة بيانات الفاتورة المختارة في النموذج
+    setInvoiceData({
+      ...invoiceData,
+      ...record,
+      delegate: record.delegate || record.seller || '',
+      branch: record.branch || '',
+      warehouse: record.warehouse || '',
+      customerNumber: record.customerNumber || '',
+      customerName: record.customerName || record.customer || '',
+      priceRule: record.priceRule || '',
+      commercialRecord: record.commercialRecord || '',
+      taxFile: record.taxFile || '',
+    });
+    setItems(record.items || []);
+    setTotals(record.totals || totals);
+    setLastSavedInvoice(record);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteInvoice = async (record: any) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذه الفاتورة؟')) return;
+    setInvoicesLoading(true);
+    try {
+      // حذف الفاتورة من قاعدة البيانات (Firebase أو أي مصدر آخر)
+      // مثال: await deleteInvoiceById(record.id)
+      // إذا كنت تستخدم Firebase:
+      if (record.id) {
+        const { deleteDoc, doc } = await import('firebase/firestore');
+        const { db } = await import('../../lib/firebase');
+        await deleteDoc(doc(db, 'salesInvoices', record.id));
+        setInvoices(prev => prev.filter(inv => inv.id !== record.id));
+      } else {
+        setInvoices(prev => prev.filter(inv => inv.invoiceNumber !== record.invoiceNumber));
+      }
+    } catch (err) {
+      alert('حدث خطأ أثناء الحذف');
+    } finally {
+      setInvoicesLoading(false);
+    }
+  };
+
   const invoiceColumns = [
     {
       title: 'رقم الفاتورة',
@@ -1008,6 +1050,33 @@ const SalesPage: React.FC = () => {
       render: (type: string) => type === 'ضريبة' ? 'ضريبة' : 'ضريبة مبسطة'
     },
     // ...existing code...
+    {
+      title: 'إجراءات',
+      key: 'actions',
+      width: 120,
+      align: 'center',
+      fixed: 'right',
+      render: (_: any, record: any) => (
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+          <Button
+            type="primary"
+            size="small"
+            onClick={() => handleEditInvoice(record)}
+            style={{ fontWeight: 600 }}
+          >
+            تعديل
+          </Button>
+          <Button
+            danger
+            size="small"
+            onClick={() => handleDeleteInvoice(record)}
+            style={{ fontWeight: 600 }}
+          >
+            حذف
+          </Button>
+        </div>
+      )
+    },
   ];
 
   // جلب القوائم من Firebase
@@ -1560,11 +1629,25 @@ const handlePrint = () => {
     })();
 };
 
+  // ref for item name select
+  const itemNameSelectRef = React.useRef<any>(null);
+
+  // تعديل addItem ليعيد التركيز على اسم الصنف بعد الإضافة
+
+  const handleAddItem = async () => {
+    await addItem();
+    setItem(prev => ({ ...prev, quantity: '1' })); // إعادة تعيين الكمية إلى 1 بعد الإضافة (كسلسلة نصية)
+    setTimeout(() => {
+      itemNameSelectRef.current?.focus?.();
+    }, 100); // تأخير بسيط لضمان إعادة التهيئة
+  };
+
   return (
     <div className="p-2 sm:p-6 w-full max-w-none">
       <div className="p-4 font-['Tajawal'] bg-white rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] mb-4 animate-[bounce_2s_infinite] relative overflow-hidden">
         <div className="flex items-center">
-          <h1 className="text-2xl font-bold text-blue-800">فاتورة مبيعات
+
+          <h1 className="text-2xl font-bold text-blue-800">فاتورة مبيعات جديده
 </h1>
           {/* إيموجي متحركة باي باي */}
           <span className="animate-[wave_2s_infinite] text-3xl mr-3">👋</span>
@@ -1612,170 +1695,7 @@ const handlePrint = () => {
       />
       <Spin spinning={fetchingItems}>
         {/* مودال الطباعة بعد الحفظ */}
-<Modal
-  open={showPrintModal}
-  onCancel={() => setShowPrintModal(false)}
-  footer={[
-    <Button key="close" onClick={() => setShowPrintModal(false)}>
-      إغلاق
-    </Button>,
-    <Button key="print" type="primary" onClick={handlePrint}>
-      طباعة الفاتورة
-    </Button>
-  ]}
-  width={800}
-  style={{ maxWidth: '95vw' }} // لجعلها متجاوبة مع الهاتف
-  title={<span style={{fontFamily:'Tajawal',fontWeight:700}}>فاتورة مبيعات محفوظة</span>}
->
-  <div id="print-invoice-content" style={{fontFamily:'Tajawal', direction:'rtl', padding:10}}>
-    {lastSavedInvoice && (
-      <div style={{ overflowX: 'auto' }}> {/* لجعل الجداول قابلة للتمرير أفقيًا على الهاتف */}
-        {/* Header Section - مصمم للهاتف */}
 
-
-
-
- 
-
-        {/* Items Table - قابل للتمرير أفقيًا على الهاتف */}
-        <div style={{overflowX: 'auto', marginBottom: 16}}>
-          <table style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            fontSize: 11,
-            minWidth: window.innerWidth < 768 ? '700px' : '100%' // يجبر الجدول على التمرير الأفقي على الهاتف
-          }}>
-            <thead>
-              <tr>
-                <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>الرقم</th>
-                <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>اسم الصنف</th>
-                <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>الكمية</th>
-                <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>السعر</th>
-                <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>الخصم</th>
-                <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>الإجمالي</th>
-                {window.innerWidth >= 768 && ( // إخفاء بعض الأعمدة على الهاتف
-                  <>
-                    <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>الضريبة</th>
-                    <th style={{border:'1px solid #000', padding:8, textAlign:'center', backgroundColor:'#305496', color:'#fff', fontWeight:'bold', fontSize:12.5}}>المخزن</th>
-                  </>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {lastSavedInvoice.items && lastSavedInvoice.items.map((it:any, idx:number) => {
-                const subtotal = Number(it.price) * Number(it.quantity);
-                const discountValue = Number(it.discountValue) || 0;
-                const taxValue = Number(it.taxValue) || 0;
-                const net = subtotal - discountValue + taxValue;
-                return (
-                  <tr key={idx}>
-                    <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{idx + 1}</td>
-                    <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{it.itemName || ''}</td>
-                    <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{it.quantity || ''}</td>
-                    <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{Number(it.price).toFixed(2)}</td>
-                    <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{discountValue.toFixed(2)}</td>
-                    <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{net.toFixed(2)}</td>
-                    {window.innerWidth >= 768 && (
-                      <>
-                        <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>{taxValue.toFixed(2)}</td>
-                        <td style={{border:'1px solid #000', padding:8, textAlign:'center'}}>
-                          {(() => {
-                            const warehouseId = it.warehouseId || lastSavedInvoice.warehouse;
-                            const warehouseObj = warehouses.find(w => w.id === warehouseId);
-                            return warehouseObj ? (warehouseObj.name || warehouseObj.id) : (warehouseId || '');
-                          })()}
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Totals Section */}
-        <div style={{display:'flex', justifyContent:'flex-end', marginTop:16}}>
-          <table style={{
-            border:'1.5px solid #000',
-            borderRadius:6,
-            fontSize:13,
-            minWidth:220,
-            maxWidth:320,
-            marginLeft:0,
-            marginRight:0,
-            borderCollapse:'collapse'
-          }}>
-            <tbody>
-              <tr>
-                <td style={{fontWeight:'bold', color:'#000', textAlign:'right', padding:'7px 12px', border:'1px solid #000', background:'#fff'}}>إجمالى الفاتورة</td>
-                <td style={{textAlign:'left', fontWeight:500, border:'1px solid #000', background:'#fff'}}>{lastSavedInvoice.totals?.total?.toFixed(2)}</td>
-              </tr>
-              <tr>
-                <td style={{fontWeight:'bold', color:'#000', textAlign:'right', padding:'7px 12px', border:'1px solid #000', background:'#fff'}}>مبلغ الخصم</td>
-                <td style={{textAlign:'left', fontWeight:500, border:'1px solid #000', background:'#fff'}}>{(lastSavedInvoice.totals?.total - lastSavedInvoice.totals?.afterDiscount).toFixed(2)}</td>
-              </tr>
-              <tr>
-                <td style={{fontWeight:'bold', color:'#000', textAlign:'right', padding:'7px 12px', border:'1px solid #000', background:'#fff'}}>الاجمالى بعد الخصم</td>
-                <td style={{textAlign:'left', fontWeight:500, border:'1px solid #000', background:'#fff'}}>{lastSavedInvoice.totals?.afterDiscount?.toFixed(2)}</td>
-              </tr>
-              <tr>
-                <td style={{fontWeight:'bold', color:'#000', textAlign:'right', padding:'7px 12px', border:'1px solid #000', background:'#fff'}}>الضريبة</td>
-                <td style={{textAlign:'left', fontWeight:500, border:'1px solid #000', background:'#fff'}}>{(lastSavedInvoice.totals?.afterTax - lastSavedInvoice.totals?.afterDiscount).toFixed(2)}</td>
-              </tr>
-              <tr>
-                <td style={{fontWeight:'bold', color:'#000', textAlign:'right', padding:'7px 12px', border:'1px solid #000', background:'#fff'}}>الاجمالى النهائي</td>
-                <td style={{textAlign:'left', fontWeight:700, border:'1px solid #000', background:'#fff'}}>{lastSavedInvoice.totals?.afterTax?.toFixed(2)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        {/* Policies Section - مخفية على الهاتف */}
-        {window.innerWidth >= 768 && (
-          <div style={{marginTop:16, border:'1px solid #ddd', padding:12, fontSize:10}}>
-            <div style={{fontWeight:'bold', marginBottom:8}}>سياسة الاستبدال والاسترجاع:</div>
-            <div>1- يستوجب أن يكون المنتج بحالته الأصلية بدون أي استعمال وبكامل اكسسواراته وبالتعبئة الأصلية.</div>
-            <div>2- البضاعة المباعة ترد أو تستبدل خلال ثلاثة أيام من تاريخ استلام العميل للمنتج مع إحضار أصل الفاتورة وتكون البضاعة بحالة سليمة ومغلقة.</div>
-          </div>
-        )}
-
-        {/* Signature Section - مبسطة للهاتف */}
-        <div style={{
-          marginTop: 16,
-          display: 'flex',
-          flexDirection: window.innerWidth < 768 ? 'column' : 'row',
-          justifyContent: 'space-between',
-          gap: 16
-        }}>
-          <div style={{
-            width: window.innerWidth < 768 ? '100%' : '45%',
-            borderTop: '1px solid #000',
-            paddingTop: 12
-          }}>
-            <div>اسم العميل: {lastSavedInvoice.customerName || ''}</div>
-            <div>التوقيع: ___________________</div>
-          </div>
-          <div style={{
-            width: window.innerWidth < 768 ? '100%' : '45%',
-            borderTop: '1px solid #000',
-            paddingTop: 12
-          }}>
-            <div>البائع: {lastSavedInvoice.delegate || ''}</div>
-            <div>التاريخ: {lastSavedInvoice.date || ''}</div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        {window.innerWidth >= 768 && (
-          <div style={{marginTop:16, textAlign:'center', fontSize:10}}>
-            {companyData.website ? `لزيارة متجرنا الإلكتروني: ${companyData.website}` : ''}
-          </div>
-        )}
-      </div>
-    )}
-  </div>
-</Modal>
         <Card 
           title={
 <div className="flex items-center gap-4 px-3 py-2 bg-gray-50 rounded-lg">
@@ -2259,6 +2179,7 @@ const handlePrint = () => {
               <div style={{ marginBottom: 4, fontWeight: 500 }}>اسم الصنف</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Select
+                  ref={itemNameSelectRef}
                   showSearch
                   value={item.itemName}
                   placeholder="اسم الصنف"
@@ -2270,14 +2191,15 @@ const handlePrint = () => {
                       const lastPrice = await fetchLastCustomerPrice(invoiceData.customerName, value);
                       if (lastPrice) price = String(lastPrice);
                     }
-                    setItem({
-                      ...item,
-                      itemName: value,
-                      itemNumber: selected ? (selected.itemCode || '') : item.itemNumber,
-                      price,
-                      discountPercent: selected && selected.discount ? String(selected.discount) : '0',
-                      taxPercent: selected && selected.isVatIncluded ? taxRate : '0'
-                    });
+                  setItem({
+                    ...item,
+                    itemName: value,
+                    itemNumber: selected ? (selected.itemCode || '') : item.itemNumber,
+                    price,
+                    discountPercent: selected && selected.discount ? String(selected.discount) : '0',
+                    taxPercent: selected && selected.isVatIncluded ? taxRate : '0',
+                    quantity: '1' // الكمية الافتراضية عند اختيار صنف (كسلسلة نصية)
+                  });
                   }}
                   filterOption={(input, option) =>
                     String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
@@ -2375,7 +2297,7 @@ const handlePrint = () => {
             <div style={{ marginBottom: 4, fontWeight: 500, visibility: 'hidden' }}>إضافة</div>
             <Button 
               type="primary"
-              onClick={addItem}
+              onClick={handleAddItem}
               disabled={
                 !invoiceData.paymentMethod ||
                 !invoiceData.branch ||
@@ -2612,12 +2534,3 @@ const handlePrint = () => {
 };
 
 export default SalesPage;
-
-// إضافة خط Cairo للصفحة إذا لم يكن مضافاً في مكان آخر
-if (typeof document !== 'undefined' && !document.getElementById('cairo-font')) {
-  const link = document.createElement('link');
-  link.id = 'cairo-font';
-  link.rel = 'stylesheet';
-  link.href = 'https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap';
-  document.head.appendChild(link);
-}
