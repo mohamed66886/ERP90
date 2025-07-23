@@ -338,7 +338,6 @@ const StockPage = () => {
           { label: "المخزون" }
         ]}
       />
-
       {/* Search Options Section */}
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
