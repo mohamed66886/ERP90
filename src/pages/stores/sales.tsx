@@ -758,14 +758,23 @@ const SalesPage: React.FC = () => {
     const cleanInvoiceData = Object.fromEntries(
       Object.entries(invoiceData).filter(([_, v]) => v !== '')
     );
+    // توحيد اسم طريقة الدفع مع قائمة طرق الدفع
+    let paymentMethodName = cleanInvoiceData.paymentMethod;
+    const paymentNames = paymentMethods.map(m => m.name || m.id);
+    if (!paymentNames.includes(paymentMethodName)) {
+      // إذا لم تكن القيمة موجودة، اختر أول طريقة دفع كافتراضي أو اتركها فارغة
+      paymentMethodName = paymentNames[0] || '';
+    }
     const invoice = {
       ...cleanInvoiceData,
+      paymentMethod: paymentMethodName,
       items,
       totals: {
         ...totals
       },
       type: invoiceType,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      source: 'sales'
     };
     try {
       // حفظ الفاتورة في Firestore مباشرة

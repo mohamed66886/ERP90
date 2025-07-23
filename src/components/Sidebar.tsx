@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { FaStar, FaCog, FaExchangeAlt, FaChartBar, FaChevronDown, FaChevronUp, FaChevronRight, FaFileInvoiceDollar, FaUndo, FaFileInvoice, FaUndoAlt, FaWarehouse, FaBoxes, FaCubes, FaUsers, FaUserTie, FaUserFriends, FaUserCheck, FaUserShield, FaBuilding, FaMoneyCheckAlt, FaSlidersH, FaServer, FaCloudUploadAlt, FaQuestionCircle } from "react-icons/fa";
+import { FaStar, FaHome, FaCog, FaExchangeAlt, FaChartBar, FaChevronDown, FaChevronUp, FaChevronRight, FaFileInvoiceDollar, FaUndo, FaFileInvoice, FaUndoAlt, FaWarehouse, FaBoxes, FaCubes, FaUsers, FaUserTie, FaUserFriends, FaUserCheck, FaUserShield, FaBuilding, FaMoneyCheckAlt, FaSlidersH, FaServer, FaCloudUploadAlt, FaQuestionCircle } from "react-icons/fa";
   // قائمة الإعدادات الأساسية مع الأيقونات
   const settingsMenu = [
     { label: "ادارة الفروع", icon: <FaBuilding className="text-blue-500" />, path: "/business/branches" },
@@ -51,14 +51,15 @@ const Sidebar = () => {
   }, [activeMenu, sidebarOpen]);
 
   const salesReports = [
-    "تقرير بالفواتير",
-    "تقرير بالفواتير التفضيلي",
-    "تقرير بعروض السعر",
-    "تقرير بعروض السعر تفصيلي",
-    "تحليل المبيعات",
-    "تقرير الأصناف المباعة",
-    "تقرير مبيعات بائع",
-    "كشف حساب عميل"
+    { label: "تقرير المبيعات اليومية", icon: <FaChartBar className="text-blue-500" />, path: "/reports/daily-sales" },
+    { label: "تقرير بارباح الفواتير", icon: <FaFileInvoiceDollar className="text-green-500" />, path: "/reports/invoice-profits" },
+    { label: "تقرير بالفواتير التفضيلي", icon: <FaFileInvoiceDollar className="text-purple-500" /> },
+    { label: "تقرير بعروض السعر", icon: <FaFileInvoice className="text-orange-500" /> },
+    { label: "تقرير بعروض السعر تفصيلي", icon: <FaFileInvoice className="text-pink-500" /> },
+    { label: "تحليل المبيعات", icon: <FaChartBar className="text-teal-500" /> },
+    { label: "تقرير الأصناف المباعة", icon: <FaBoxes className="text-yellow-500" /> },
+    { label: "تقرير مبيعات بائع", icon: <FaUserTie className="text-blue-400" /> },
+    { label: "كشف حساب عميل", icon: <FaUsers className="text-gray-500" /> }
   ];
 
 
@@ -84,7 +85,7 @@ const Sidebar = () => {
   const location = useLocation();
 
   return (
-    <div className="flex relative" ref={sidebarRef}>
+    <div className="flex relative hidden md:flex" ref={sidebarRef}>
       <motion.aside
         initial={{ width: 224 }}
         animate={{ width: sidebarOpen ? 224 : 76 }}
@@ -93,6 +94,15 @@ const Sidebar = () => {
         style={{ height: "89vh", overflowY: "auto", position: "sticky", top: "80px", zIndex: 20 }}
       >
         <nav className="flex-1 py-6 px-2 flex flex-col">
+          <SidebarItem 
+            icon={<FaHome />} 
+            label="الصفحة الرئيسية" 
+            open={sidebarOpen} 
+            className="border-b border-gray-200 last:border-b-0" 
+            active={location.pathname === '/'}
+            onClick={() => { setActiveMenu(null); navigate('/'); }}
+            ref={(el) => itemRefs.current['home'] = el}
+          />
           <SidebarItem 
             icon={<FaStar />} 
             label="المفضلة" 
@@ -312,8 +322,11 @@ const Sidebar = () => {
               {salesReports.map((report, index) => (
                 <SubmenuItem 
                   key={index}
-                  label={report}
+                  label={report.label}
+                  icon={report.icon}
                   isLast={index === salesReports.length - 1}
+                  active={report.path && location.pathname === report.path}
+                  onClick={report.path ? (() => { setActiveMenu(null); navigate(report.path); }) : undefined}
                 />
               ))}
             </motion.div>

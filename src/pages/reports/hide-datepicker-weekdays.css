@@ -1,0 +1,6 @@
+/* إخفاء صف أسماء أيام الأسبوع في تقويم Ant Design DatePicker */
+.ant-picker-calendar .ant-picker-content thead,
+.ant-picker-panel .ant-picker-content thead,
+.ant-picker-dropdown .ant-picker-content thead {
+  display: none !important;
+}

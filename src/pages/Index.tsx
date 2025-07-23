@@ -16,8 +16,10 @@ import Managers from "./admin/admins";
 import PurchasesPage from "./stores/purchases";
 import HelpPage from "./help";
 import { Routes, Route } from "react-router-dom";
+import DailySales from "./reports/daily-sales";
 import PurchasesReturnPage from "./stores/purchases-return";
 import Stockpage from "./stores/stock";
+import InvoiceProfitsReport from "./reports/invoice-profits";
 import Footer from "@/components/Footer";
 
 
@@ -130,10 +132,12 @@ const Index = () => {
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/stores/stock" element={<Stockpage />} />
             <Route path="/stores/purchases" element={<PurchasesPage />} />
+            <Route path="/reports/invoice-profits" element={<InvoiceProfitsReport />} />
             <Route path="/stores/purchases-return" element={<PurchasesReturnPage />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/admin/admins" element={<Managers />} />
             <Route path="/business/payment-methods" element={<PaymentMethodsPage />} />
+            <Route path="/reports/daily-sales" element={<DailySales />} />
             <Route path="/suppliers" element={<Suppliers />} />
             <Route path="/" element={<Dashboard />} />
 
