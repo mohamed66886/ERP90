@@ -20,6 +20,7 @@ interface InventoryItem {
   discount?: number;
   isVatIncluded?: boolean;
   type?: string;
+  tempCodes?: boolean;
 }
 
 interface InvoiceItem {
@@ -129,6 +130,95 @@ function getTodayString(): string {
 }
 
 const SalesPage: React.FC = () => {
+  // حالة مودال إضافة صنف جديد
+  const [showAddItemModal, setShowAddItemModal] = useState(false);
+
+  // قائمة الموردين
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
+  const [addItemLoading, setAddItemLoading] = useState(false);
+
+  // جلب الموردين من قاعدة البيانات عند تحميل الصفحة
+  useEffect(() => {
+    const fetchSuppliers = async () => {
+      try {
+        const suppliersSnapshot = await getDocs(collection(db, 'suppliers'));
+        const suppliersData = suppliersSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...(doc.data() as { name: string })
+        }));
+        // فقط الاسم والمعرف
+        setSuppliers(suppliersData.map(s => ({ id: s.id, name: s.name })));
+      } catch (error) {
+        console.error('Error fetching suppliers:', error);
+      }
+    };
+    fetchSuppliers();
+  }, []);
+
+  // دالة إضافة صنف جديد
+  const handleAddNewItem = async () => {
+    if (!addItemForm.name.trim() || !addItemForm.salePrice.trim() || !addItemForm.unit.trim()) return;
+    setAddItemLoading(true);
+    try {
+      // بناء بيانات الصنف الجديد
+      const newItem = {
+        name: addItemForm.name.trim(),
+        itemCode: addItemForm.itemCode?.trim() || '',
+        purchasePrice: addItemForm.purchasePrice ? Number(addItemForm.purchasePrice) : 0,
+        salePrice: addItemForm.salePrice ? Number(addItemForm.salePrice) : 0,
+        minOrder: addItemForm.minOrder ? Number(addItemForm.minOrder) : 0,
+        discount: addItemForm.discount ? Number(addItemForm.discount) : 0,
+        allowNegative: !!addItemForm.allowNegative,
+        isVatIncluded: !!addItemForm.isVatIncluded,
+        tempCodes: !!addItemForm.tempCodes,
+        supplier: addItemForm.supplier || '',
+        unit: addItemForm.unit.trim(),
+        type: 'مستوى ثاني',
+        parentId: addItemForm.parentId || ''
+      };
+
+      // إضافة الصنف إلى قاعدة البيانات (صفحة الأصناف)
+      try {
+        const { addDoc, collection } = await import('firebase/firestore');
+        await addDoc(collection(db, 'inventory_items'), newItem);
+      } catch (err) {
+        console.error('خطأ في حفظ الصنف في قاعدة البيانات:', err);
+        if (typeof message !== 'undefined' && message.error) {
+          message.error('حدث خطأ أثناء حفظ الصنف في قاعدة البيانات');
+        }
+      }
+
+      // تحديث القائمة المحلية
+      if (typeof setItemNames === 'function') {
+        setItemNames((prev: any[]) => [...prev, newItem]);
+      }
+      setShowAddItemModal(false);
+      setAddItemForm({
+        name: '',
+        itemCode: '',
+        purchasePrice: '',
+        salePrice: '',
+        minOrder: '',
+        discount: '',
+        allowNegative: false,
+        isVatIncluded: false,
+        tempCodes: false,
+        supplier: '',
+        unit: '',
+        type: '',
+        parentId: ''
+      });
+      if (typeof message !== 'undefined' && message.success) {
+        message.success('تمت إضافة الصنف بنجاح');
+      }
+    } catch (e) {
+      if (typeof message !== 'undefined' && message.error) {
+        message.error('حدث خطأ أثناء إضافة الصنف');
+      }
+    } finally {
+      setAddItemLoading(false);
+    }
+  };
   // --- Add Customer Modal State (fix: must be inside component, before return) ---
   const businessTypes = ["شركة", "مؤسسة", "فرد"];
   const initialAddCustomer = {
@@ -597,9 +687,25 @@ const SalesPage: React.FC = () => {
       return;
     }
 
+    // Prevent adding items with tempCodes (إيقاف مؤقت) by name or code
+    const possibleItems = itemNames.filter(i => i.name === item.itemName || i.itemCode === item.itemNumber);
+    if (possibleItems.length === 0) {
+      message.info('الصنف غير موجود في قائمة الأصناف!');
+      return;
+    }
+    const stoppedItem = possibleItems.find(i => i.tempCodes === true || i.tempCodes === 'true' || String(i.tempCodes).toLowerCase() === 'true');
+    if (stoppedItem) {
+      console.warn('[SALES] محاولة إضافة صنف موقف مؤقت:', {
+        itemName: item.itemName,
+        itemNumber: item.itemNumber,
+        stoppedItem
+      });
+      message.warning('هذا الصنف موقوف مؤقتًا ولا يمكن إضافته');
+      return;
+    }
+
+    const selected = possibleItems[0];
     const { discountValue, taxValue, total } = calculateItemValues(item);
-    // جلب بيانات الصنف من قائمة الأصناف
-    const selected = itemNames.find(i => i.name === item.itemName);
     const mainCategory = selected?.type || '';
     // إذا كان يوجد cost في بيانات الصنف
     const cost = selected && typeof (selected as any).cost !== 'undefined' ? Number((selected as any).cost) : 0;
@@ -808,28 +914,46 @@ const SalesPage: React.FC = () => {
       width: 140,
       align: 'center' as const,
       render: (_: any, record: InvoiceItem, index: number) => (
-        <>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
           <Button
-            type="primary"
+            type="text"
             size="small"
-            style={{ marginLeft: 8 }}
             onClick={() => handleEditItem(record, index)}
-          >
-            تعديل
-          </Button>
-          <Button 
-            danger 
-            size="small"
-            onClick={() => {
-              const newItems = items.filter((_, i) => i !== index);
-              setItems(newItems);
-              updateTotals(newItems);
+            style={{
+              color: '#1890ff',
+              transition: 'transform 0.2s',
             }}
-            style={{ marginRight: 8 }}
-          >
-            حذف
-          </Button>
-        </>
+            icon={
+              <span style={{ display: 'inline-block', transition: 'transform 0.2s' }} className="action-icon-edit">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1890ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19.5 3 21l1.5-4L16.5 3.5z"/></svg>
+              </span>
+            }
+            onMouseEnter={e => (e.currentTarget as any).style.transform = 'scale(1.15)'}
+            onMouseLeave={e => (e.currentTarget as any).style.transform = 'scale(1)'}
+          />
+          {(
+            <Button
+              type="text"
+              size="small"
+              danger
+              onClick={() => {
+                const newItems = items.filter((_, i) => i !== index);
+                setItems(newItems);
+                updateTotals(newItems);
+              }}
+              style={{
+                transition: 'transform 0.2s',
+              }}
+              icon={
+                <span style={{ display: 'inline-block', transition: 'transform 0.2s' }} className="action-icon-delete">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff4d4f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                </span>
+              }
+              onMouseEnter={e => (e.currentTarget as any).style.transform = 'scale(1.15)'}
+              onMouseLeave={e => (e.currentTarget as any).style.transform = 'scale(1)'}
+            />
+          ) as any}
+        </div>
       )
     }
   ];
@@ -1646,9 +1770,33 @@ const handlePrint = () => {
   // ref for item name select
   const itemNameSelectRef = React.useRef<any>(null);
 
-  // تعديل addItem ليعيد التركيز على اسم الصنف بعد الإضافة
+  // الحالة الأولية لنموذج إضافة صنف جديد
+  const [addItemForm, setAddItemForm] = useState({
+    name: '',
+    itemCode: '',
+    purchasePrice: '',
+    salePrice: '',
+    minOrder: '',
+    discount: '',
+    allowNegative: false,
+    isVatIncluded: false,
+    tempCodes: false,
+    supplier: '',
+    unit: '',
+    type: '', // مهم لظهور اختيار المستوى الأول
+    parentId: '' // مهم لربط المستوى الأول
+  });
 
   const handleAddItem = async () => {
+    // لا تضف إذا لم يتم اختيار اسم صنف
+    if (!item.itemName) {
+      if (typeof message !== 'undefined' && message.info) {
+        message.info('يرجى اختيار اسم الصنف أولاً');
+      } else {
+        alert('يرجى اختيار اسم الصنف أولاً');
+      }
+      return;
+    }
     await addItem();
     setItem(prev => ({ ...prev, quantity: '1' })); // إعادة تعيين الكمية إلى 1 بعد الإضافة (كسلسلة نصية)
     setTimeout(() => {
@@ -1670,7 +1818,7 @@ const handlePrint = () => {
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]"></div>
       </div>
 
-<style jsx global>{`
+<style>{`
   @keyframes bounce {
     0%, 100% {
       transform: translateY(0);
@@ -2185,22 +2333,14 @@ const handlePrint = () => {
               <Input
                 value={item.itemNumber}
                 placeholder="كود الصنف"
-                disabled={!item.isNewItem}
-                onChange={e => setItem({ ...item, itemNumber: e.target.value })}
+                disabled
               />
             </Col>
             <Col xs={24} sm={12} md={8}>
 
-              <div style={{ marginBottom: 4, fontWeight: 500 }}>اسم الصنف</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {item.isNewItem ? (
-                  <Input
-                    value={item.itemName}
-                    placeholder="اسم الصنف"
-                    style={{ width: '100%', fontFamily: 'Cairo, sans-serif', fontWeight: 500, fontSize: 16 }}
-                    onChange={e => setItem({ ...item, itemName: e.target.value })}
-                  />
-                ) : (
+              <div style={{ width: '100%' }}>
+                <div style={{ marginBottom: 0, fontWeight: 500 }}>اسم الصنف</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <Select
                     ref={itemNameSelectRef}
                     showSearch
@@ -2221,44 +2361,249 @@ const handlePrint = () => {
                         price,
                         discountPercent: selected && selected.discount ? String(selected.discount) : '0',
                         taxPercent: selected && selected.isVatIncluded ? taxRate : '0',
-                        quantity: '1',
-                        isNewItem: !selected // إذا لم يوجد الصنف اعتبره جديد
+                        quantity: '1'
                       });
                     }}
                     filterOption={(input, option) =>
-                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                      String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
                     }
                     allowClear
-                    options={itemNames.map(i => ({ label: i.name, value: i.name }))}
-                  />
-                )}
-                {/* زر إضافة صنف جديد */}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  style={{ minWidth: 40 }}
-                  onClick={() => {
-                    // إذا لم يوجد اسم صنف أو الاسم غير موجود بالقائمة، فعل إدخال كود الصنف
-                    if (!item.itemName || !itemNames.some(i => i.name === item.itemName)) {
-                      setItem({
-                        ...item,
-                        itemName: '',
-                        itemNumber: '',
-                        isNewItem: true
-                      });
-                    }
-                  }}
-                  title="إضافة أو تحرير صنف جديد"
-                >
-                  {/* أيقونة قائمة مربعات (grid/list) */}
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="3" y="3" width="6" height="6" rx="1.5" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5"/>
-                    <rect x="15" y="3" width="6" height="6" rx="1.5" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5"/>
-                    <rect x="3" y="15" width="6" height="6" rx="1.5" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5"/>
-                    <rect x="15" y="15" width="6" height="6" rx="1.5" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5"/>
-                  </svg>
-                </Button>
+                  >
+                    {itemNames.map(i => (
+                      <Select.Option key={i.name} value={i.name}>{i.name}</Select.Option>
+                    ))}
+                  </Select>
+                  <Button
+                    type="default"
+                    style={{ marginRight: 4, padding: 4, background: 'transparent', boxShadow: 'none', border: '1.5px solid #2563eb', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 32, minHeight: 32, borderRadius: '50%' }}
+                    onClick={() => setShowAddItemModal(true)}
+                    title="إضافة صنف جديد"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <circle cx="12" cy="12" r="10" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5" />
+                      <path d="M12 8v8m4-4H8" stroke="#2563eb" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </Button>
+                </div>
+                {/* مودال إضافة صنف جديد */}
+<Modal
+  open={showAddItemModal}
+  onCancel={() => setShowAddItemModal(false)}
+  footer={null}
+  title={
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'Cairo', fontWeight: 700 }}>
+      <span style={{ background: '#e0e7ef', borderRadius: '50%', padding: 8, boxShadow: '0 2px 8px #e0e7ef' }}>
+        <svg width="24" height="24" fill="#305496" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm1 3v4h4v2h-4v4h-2v-4H7v-2h4V5h2z"/></svg>
+      </span>
+      إضافة صنف جديد
+    </div>
+  }
+  width={750}
+  bodyStyle={{ background: 'linear-gradient(135deg, #f8fafc 80%, #e0e7ef 100%)', borderRadius: 16, padding: 28, boxShadow: '0 8px 32px #b6c2d655' }}
+  style={{ top: 60 }}
+  destroyOnClose
+>
+  <div style={{ marginBottom: 16 }}>
+    <div style={{ 
+      marginBottom: 12, 
+      padding: 8, 
+      background: '#e0e7ef', 
+      borderRadius: 8, 
+      textAlign: 'center', 
+      fontWeight: 500, 
+      color: '#305496', 
+      fontFamily: 'Cairo', 
+      fontSize: 15 
+    }}>
+      يرجى تعبئة بيانات الصنف بدقة
+    </div>
+  </div>
+  <Form
+    layout="vertical"
+    onFinish={() => {
+      if (addItemForm.tempCodes && message && message.warning) {
+        message.warning('تم إيقاف هذا الصنف مؤقتًا.');
+      }
+      handleAddNewItem();
+    }}
+    style={{ fontFamily: 'Cairo' }}
+    initialValues={addItemForm}
+  >
+  <Row gutter={16}>
+    <Col span={8}>
+      <Form.Item label="نوع الصنف" required>
+        <Input value="مستوى ثاني" disabled style={{ color: '#888', background: '#f3f4f6', fontWeight: 500, fontSize: 15, borderRadius: 6 }} />
+      </Form.Item>
+    </Col>
+    <Col span={8}>
+      {itemNames && itemNames.filter(i => i.type === 'مستوى أول').length > 0 && (
+        <Form.Item label="المستوى الأول" required>
+          <Select
+            value={addItemForm.parentId || ''}
+            onChange={v => setAddItemForm(f => ({ ...f, parentId: v }))}
+            placeholder="اختر المستوى الأول"
+            style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
+          >
+            {itemNames.filter(i => i.type === 'مستوى أول').map(i => (
+              <Select.Option key={i.id || i.name} value={i.id}>{i.name}</Select.Option>
+            ))}
+          </Select>
+        </Form.Item>
+      )}
+    </Col>
+    <Col span={8}>
+      <Form.Item label="اسم الصنف" required>
+        <Input
+          value={addItemForm.name || ''}
+          onChange={e => setAddItemForm(f => ({ ...f, name: e.target.value }))}
+          placeholder="اسم الصنف"
+          autoFocus
+          style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
+        />
+      </Form.Item>
+    </Col>
+  </Row>
+  <Row gutter={16}>
+    <Col span={8}>
+      <Form.Item label="كود الصنف">
+        <Input
+          value={addItemForm.itemCode || ''}
+          onChange={e => setAddItemForm(f => ({ ...f, itemCode: e.target.value }))}
+          placeholder="كود الصنف"
+          style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
+        />
+      </Form.Item>
+    </Col>
+    <Col span={8}>
+      <Form.Item label="سعر الشراء">
+        <Input
+          value={addItemForm.purchasePrice || ''}
+          onChange={e => setAddItemForm(f => ({ ...f, purchasePrice: e.target.value }))}
+          placeholder="سعر الشراء"
+          type="number"
+          min={0}
+          style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
+        />
+      </Form.Item>
+    </Col>
+    <Col span={8}>
+      <Form.Item label="سعر البيع">
+        <Input
+          value={addItemForm.salePrice || ''}
+          onChange={e => setAddItemForm(f => ({ ...f, salePrice: e.target.value }))}
+          placeholder="سعر البيع"
+          type="number"
+          min={0}
+          style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
+        />
+      </Form.Item>
+    </Col>
+  </Row>
+  <Row gutter={16}>
+    <Col span={8}>
+      <Form.Item label="الحد الأدنى للطلب">
+        <Input
+          value={addItemForm.minOrder || ''}
+          onChange={e => setAddItemForm(f => ({ ...f, minOrder: e.target.value }))}
+          placeholder="الحد الأدنى للطلب"
+          type="number"
+          min={0}
+          style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
+        />
+      </Form.Item>
+    </Col>
+    <Col span={8}>
+      <Form.Item label="نسبة الخصم">
+        <Input
+          value={addItemForm.discount || ''}
+          onChange={e => setAddItemForm(f => ({ ...f, discount: e.target.value }))}
+          placeholder="نسبة الخصم"
+          type="number"
+          min={0}
+          max={100}
+          style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
+        />
+      </Form.Item>
+    </Col>
+    <Col span="8">
+      {/* Empty for alignment or add more fields here if needed */}
+    </Col>
+  </Row>
+    <Form.Item>
+      <div style={{ display: 'flex', gap: 16 }}>
+        <label style={{ fontWeight: 500, marginBottom: 0, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={!!addItemForm.allowNegative}
+            onChange={e => setAddItemForm(f => ({ ...f, allowNegative: e.target.checked }))}
+            style={{ marginLeft: 6 }}
+          />
+          السماح بالسالب
+        </label>
+        <label style={{ fontWeight: 500, marginBottom: 0, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={!!addItemForm.isVatIncluded}
+            onChange={e => setAddItemForm(f => ({ ...f, isVatIncluded: e.target.checked }))}
+            style={{ marginLeft: 6 }}
+          />
+          شامل الضريبة
+        </label>
+        <label style={{ fontWeight: 500, marginBottom: 0, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={!!addItemForm.tempCodes}
+            onChange={e => setAddItemForm(f => ({ ...f, tempCodes: e.target.checked }))}
+            style={{ marginLeft: 6 }}
+          />
+          إيقاف مؤقت
+        </label>
+      </div>
+    </Form.Item>
+
+    <Form.Item label="المورد">
+      <Select
+        value={addItemForm.supplier || ''}
+        onChange={v => setAddItemForm(f => ({ ...f, supplier: v }))}
+        placeholder="اختر المورد"
+        style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
+      >
+        {suppliers && suppliers.map(s => (
+          <Select.Option key={s.id} value={s.name}>{s.name}</Select.Option>
+        ))}
+      </Select>
+    </Form.Item>
+    <Form.Item label="الوحدة" required>
+      <Select
+        value={addItemForm.unit || ''}
+        onChange={v => setAddItemForm(f => ({ ...f, unit: v }))}
+        placeholder="اختر الوحدة"
+        style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
+      >
+        {units.map(unit => (
+          <Select.Option key={unit} value={unit}>{unit}</Select.Option>
+        ))}
+      </Select>
+    </Form.Item>
+    <Form.Item>
+      <Button
+        type="primary"
+        htmlType="submit"
+        loading={addItemLoading}
+        style={{ 
+          width: '100%', 
+          fontWeight: 700, 
+          fontSize: 16, 
+          borderRadius: 8, 
+          height: 44, 
+          boxShadow: '0 2px 8px #e0e7ef' 
+        }}
+      >
+        إضافة
+      </Button>
+    </Form.Item>
+  </Form>
+</Modal>
               </div>
             </Col>
             {warehouseMode === 'multiple' && (
@@ -2379,7 +2724,7 @@ const handlePrint = () => {
               columns={itemColumns} 
               dataSource={items} 
               pagination={false} 
-              rowKey={(record) => `${record.itemNumber}-${record.itemName}`}
+              rowKey={(record, index) => `${record.itemNumber}-${record.itemName}-${index}`}
               bordered
               scroll={{ x: true }}
               size="middle"

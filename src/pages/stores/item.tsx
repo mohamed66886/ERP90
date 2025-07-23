@@ -1293,6 +1293,11 @@ const ItemView: React.FC<{
             value={item.supplier || '-'} 
             supplier={suppliers.find(s => s.name === item.supplier)}
           />
+          {item.tempCodes && (
+            <div className="col-span-2 md:col-span-3">
+              <span className="inline-block bg-yellow-200 text-yellow-900 px-3 py-1 rounded font-bold text-xs">إيقاف مؤقت</span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1369,7 +1374,8 @@ const EditItemForm: React.FC<{
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({ ...editData, docId: item.docId });
+    // Always ensure tempCodes is boolean
+    onSave({ ...editData, tempCodes: !!editData.tempCodes, docId: item.docId });
   };
 
   return (
