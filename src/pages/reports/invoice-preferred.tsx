@@ -251,7 +251,9 @@ const InvoicePreferred: React.FC = () => {
       let returnRecords: InvoiceRecord[] = [];
       snapshotReturn.forEach(doc => {
       const data = doc.data();
-        const invoiceNumber = data.invoiceNumber || '';
+        // استخدم رقم المرتجع بدلاً من رقم الفاتورة في المرتجع
+        const referenceNumber = data.referenceNumber || '';
+        const invoiceNumber = referenceNumber || data.invoiceNumber || '';
         const date = data.date || '';
         const branch = typeof doc.data().branch === 'string' ? doc.data().branch : '';
         const customer = data.customerName || data.customer || '';
@@ -297,7 +299,7 @@ const InvoicePreferred: React.FC = () => {
           }
           returnRecords.push({
             key: 'return-' + doc.id + '-' + idx,
-            invoiceNumber,
+            invoiceNumber, // سيحمل رقم المرتجع في حالة المرتجع
             date,
             branch,
             itemNumber: item.itemNumber || '',
@@ -534,7 +536,8 @@ const InvoicePreferred: React.FC = () => {
       if (totalAfterDiscount < 0) totalAfterDiscount = 0;
       totalAfterDiscount = sign * totalAfterDiscount;
       return [
-        inv.invoiceNumber,
+        // إذا كان مرتجع استخدم رقم المرتجع (referenceNumber) إن وجد
+        (inv.isReturn && inv.itemData && inv.itemData.referenceNumber) ? inv.itemData.referenceNumber : inv.invoiceNumber,
         dayjs(inv.date).format('YYYY-MM-DD'),
         inv.invoiceType,
         inv.itemNumber,
@@ -642,7 +645,7 @@ const InvoicePreferred: React.FC = () => {
     <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50">
       <div className="p-4 font-['Tajawal'] bg-white rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] mb-4 relative overflow-hidden">
         <div className="flex items-center">
-          <h1 className="text-xl md:text-2xl font-bold text-blue-800">تقرير فواتير المبيعات المفضلة</h1>
+          <h1 className="text-xl md:text-2xl font-bold text-blue-800">تقرير فواتير المبيعات التفصيلي</h1>
             <span className="animate-[wave_2s_infinite] text-2xl md:text-3xl mr-3">👋</span>        </div>
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]"></div>
       </div>
