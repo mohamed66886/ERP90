@@ -444,6 +444,15 @@ const InvoicePreferred: React.FC = () => {
       customerPhone: customerPhoneFilter,
       itemName,
       itemNumber: itemNumberFilter
+    }).then((result) => {
+      // بعد جلب النتائج، إذا كان هناك اسم عميل محدد ونتيجة واحدة فقط، ضع رقم العميل تلقائياً
+      // نستخدم النتائج الجديدة مباشرة
+      if (customerName && Array.isArray(result)) {
+        const filtered = result.filter(inv => inv.customer && inv.customer === customerName);
+        if (filtered.length === 1 && filtered[0].customerPhone) {
+          setCustomerPhoneFilter(filtered[0].customerPhone);
+        }
+      }
     });
   };
   const getBranchName = (branchId: string) => {
@@ -749,7 +758,20 @@ const InvoicePreferred: React.FC = () => {
               style={{ width: '100%' }}
               placeholder="اسم العميل"
               value={customerName || undefined}
-              onChange={value => setCustomerName(value)}
+              onChange={value => {
+                setCustomerName(value);
+                // عند اختيار اسم العميل، ابحث عن أول رقم هاتف مطابق واملأه تلقائياً
+                if (value) {
+                  const found = invoices.find(inv => inv.customer === value && inv.customerPhone && inv.customerPhone.trim() !== '');
+                  if (found) {
+                    setCustomerPhoneFilter(found.customerPhone);
+                  } else {
+                    setCustomerPhoneFilter('');
+                  }
+                } else {
+                  setCustomerPhoneFilter('');
+                }
+              }}
               allowClear
               filterOption={(input, option) => (option?.children ?? '').toLowerCase().includes(input.toLowerCase())}
             >
@@ -771,7 +793,20 @@ const InvoicePreferred: React.FC = () => {
               style={{ width: '100%' }}
               placeholder="رقم العميل"
               value={customerPhoneFilter || undefined}
-              onChange={value => setCustomerPhoneFilter(value)}
+              onChange={value => {
+                setCustomerPhoneFilter(value);
+                // عند اختيار رقم العميل، ابحث عن أول اسم عميل مطابق واملأه تلقائياً
+                if (value) {
+                  const found = invoices.find(inv => inv.customerPhone === value && inv.customer && inv.customer.trim() !== '');
+                  if (found) {
+                    setCustomerName(found.customer);
+                  } else {
+                    setCustomerName('');
+                  }
+                } else {
+                  setCustomerName('');
+                }
+              }}
               allowClear
               filterOption={(input, option) => (option?.children ?? '').toLowerCase().includes(input.toLowerCase())}
             >
@@ -793,15 +828,27 @@ const InvoicePreferred: React.FC = () => {
               style={{ width: '100%' }}
               placeholder="اسم الصنف"
               value={itemName || undefined}
-              onChange={value => setItemName(value)}
+              onChange={value => {
+                setItemName(value);
+                // عند اختيار اسم الصنف، ابحث عن أول كود صنف مطابق واملأه تلقائياً
+                if (value) {
+                  const found = invoices.find(inv => inv.itemName === value && inv.itemNumber && inv.itemNumber.trim() !== '');
+                  if (found) {
+                    setItemNumberFilter(found.itemNumber);
+                  } else {
+                    setItemNumberFilter('');
+                  }
+                } else {
+                  setItemNumberFilter('');
+                }
+              }}
               allowClear
-              filterOption={(input, option) => (option?.children ?? '').toLowerCase().includes(input.toLowerCase())}
-            >
-              <Select.Option value="">الكل</Select.Option>
-              {Array.from(new Set(invoices.map(inv => inv.itemName).filter(s => !!s && s !== ''))).map(s => (
-                <Select.Option key={s} value={s}>{s}</Select.Option>
-              ))}
-            </Select>
+              filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+              options={[
+                { label: 'الكل', value: '' },
+                ...Array.from(new Set(invoices.map(inv => inv.itemName).filter(s => !!s && s !== ''))).map(s => ({ label: s, value: s }))
+              ]}
+            />
           </motion.div>
           <motion.div 
             initial={{ opacity: 0 }}
@@ -815,15 +862,27 @@ const InvoicePreferred: React.FC = () => {
               style={{ width: '100%' }}
               placeholder="كود الصنف"
               value={itemNumberFilter || undefined}
-              onChange={value => setItemNumberFilter(value)}
+              onChange={value => {
+                setItemNumberFilter(value);
+                // عند اختيار كود الصنف، ابحث عن أول اسم صنف مطابق واملأه تلقائياً
+                if (value) {
+                  const found = invoices.find(inv => inv.itemNumber === value && inv.itemName && inv.itemName.trim() !== '');
+                  if (found) {
+                    setItemName(found.itemName);
+                  } else {
+                    setItemName('');
+                  }
+                } else {
+                  setItemName('');
+                }
+              }}
               allowClear
-              filterOption={(input, option) => (option?.children ?? '').toLowerCase().includes(input.toLowerCase())}
-            >
-              <Select.Option value="">الكل</Select.Option>
-              {Array.from(new Set(invoices.map(inv => inv.itemNumber).filter(s => !!s && s !== ''))).map(s => (
-                <Select.Option key={s} value={s}>{s}</Select.Option>
-              ))}
-            </Select>
+              filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+              options={[
+                { label: 'الكل', value: '' },
+                ...Array.from(new Set(invoices.map(inv => inv.itemNumber).filter(s => !!s && s !== ''))).map(s => ({ label: s, value: s }))
+              ]}
+            />
           </motion.div>
         </div>
         <AnimatePresence>
