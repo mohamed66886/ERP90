@@ -23,6 +23,7 @@ import InvoiceProfitsReport from "./reports/invoice-profits";
 import Footer from "@/components/Footer";
 
 
+import InvoicePreferred from "./reports/invoice-preferred";
 import SettingsPage from "./SettingsPage";
 import ItemCardPage from "./stores/item";
 import SalesPage from "./stores/sales";
@@ -133,6 +134,7 @@ const Index = () => {
             <Route path="/stores/stock" element={<Stockpage />} />
             <Route path="/stores/purchases" element={<PurchasesPage />} />
             <Route path="/reports/invoice-profits" element={<InvoiceProfitsReport />} />
+            <Route path="/reports/invoice-preferred" element={<InvoicePreferred />} />
             <Route path="/stores/purchases-return" element={<PurchasesReturnPage />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/admin/admins" element={<Managers />} />

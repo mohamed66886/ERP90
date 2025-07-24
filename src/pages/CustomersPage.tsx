@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useCallback } from "react";
+// ...existing code...
+import * as XLSX from "xlsx";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, orderBy, addDoc, updateDoc, doc, deleteDoc } from "firebase/firestore";
+// ...existing code...
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Sidebar from "@/components/Sidebar";
@@ -94,11 +97,27 @@ const initialForm: Customer = {
 
 const businessTypes = ["شركة", "مؤسسة", "فرد"];
 const activities = ["مقاولات", "تجارة تجزئة", "صناعة", "خدمات"];
-const branches = ["الرياض", "جدة", "الدمام", "مكة"];
+  // ...
 const cities = ["الرياض", "جدة", "الدمام", "مكة", "الخبر", "الطائف"];
 const statusOptions = ["نشط", "متوقف"] as const;
 
+
 const CustomersPage = () => {
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // جلب الفروع من Firestore
+  const [branches, setBranches] = useState<string[]>([]);
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, "branches"));
+        setBranches(snapshot.docs.map(doc => (doc.data().name as string)));
+      } catch (err) {
+        setBranches([]);
+      }
+    };
+    fetchBranches();
+  }, []);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [form, setForm] = useState<Customer>(initialForm);
   const [isEditing, setIsEditing] = useState(false);
@@ -109,7 +128,140 @@ const CustomersPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
-  const { toast } = useToast();
+
+  // توزيع العملاء عشوائياً على الفروع
+  const handleDistributeBranches = async () => {
+    if (customers.length === 0) return;
+    setLoading(true);
+    try {
+      const updates = customers.map(async (customer) => {
+        const randomBranch = branches[Math.floor(Math.random() * branches.length)];
+        if (customer.docId) {
+          await updateDoc(doc(db, "customers", customer.docId), { branch: randomBranch });
+        }
+      });
+      await Promise.all(updates);
+      toast({
+        title: "تم التوزيع",
+        description: "تم توزيع العملاء عشوائياً على الفروع",
+        variant: "default",
+      });
+      fetchCustomers();
+    } catch (err) {
+      toast({
+        title: "خطأ",
+        description: "حدث خطأ أثناء توزيع العملاء",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // دالة استيراد العملاء من ملف Excel
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // توزيع العملاء عشوائياً على الفروع
+  const handleDistributeBranches = async () => {
+    if (customers.length === 0) return;
+    setLoading(true);
+    try {
+      const updates = customers.map(async (customer) => {
+        const randomBranch = branches[Math.floor(Math.random() * branches.length)];
+        if (customer.docId) {
+          await updateDoc(doc(db, "customers", customer.docId), { branch: randomBranch });
+        }
+      });
+      await Promise.all(updates);
+      toast({
+        title: "تم التوزيع",
+        description: "تم توزيع العملاء عشوائياً على الفروع",
+        variant: "default",
+      });
+      fetchCustomers();
+    } catch (err) {
+      toast({
+        title: "خطأ",
+        description: "حدث خطأ أثناء توزيع العملاء",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLoading(true);
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: "" });
+
+      // استخراج آخر رقم عميل حالي
+      let maxNum = customers
+        .map(c => {
+          const match = /^c-(\d{4})$/.exec(c.id);
+          return match ? parseInt(match[1], 10) : 0;
+        })
+        .reduce((a, b) => Math.max(a, b), 0);
+
+      let addedCount = 0;
+      for (const row of rows) {
+        // تحويل رؤوس الأعمدة إلى حقول Customer
+        const customer: Partial<Customer> = {
+          nameAr: row["اسم العميل"] || row["اسم العميل "] || row["الاسم بالعربي"] || "",
+          branch: row["الفرع"] || "",
+          commercialReg: row["رقم البطاقة / الهوية"] || row["السجل التجاري"] || "",
+          regDate: row["تاريخ إصدار البطاقة / الهوية"] || row["تاريخ السجل"] || todayStr,
+          regAuthority: row["الجهة المُصدرة للهوية"] || row["جهة الإصدار"] || "",
+          businessType: row["نوع العميل"] || row["نوع العمل"] || "",
+          activity: row["مجال الصناعة"] || row["النشاط"] || "",
+          startDate: row["تاريخ الإنشاء"] || row["تاريخ بداية التعامل"] || "",
+          city: row["المدينة"] || "",
+          creditLimit: row["الحد الائتماني"] || "",
+          region: row["المنطقة"] || "",
+          district: row["الحي"] || "",
+          street: row["الشارع"] || "",
+          buildingNo: row["رقم المبنى"] || "",
+          postalCode: row["الرمز البريدي"] || "",
+          countryCode: row["كود الدولة"] || "SA",
+          phone: row["الهاتف"] || row["رقم التليفون"] || "",
+          mobile: row["المحمول"] || row["موبايل الكفيل"] || row["موبايل"] || "",
+          email: row["البريد الإلكتروني"] || row["بريد إلكتروني إضافي"] || "",
+          status: row["اسم الحالة"] === "متوقف" ? "متوقف" : "نشط",
+          taxFileNumber: row["رقم الملف الضريبي"] || "",
+          taxFileExpiry: row["تاريخ انتهاء الملف الضريبي"] || "",
+        };
+        // الاسم بالإنجليزي تلقائي
+        customer.nameEn = arabicToEnglish(customer.nameAr || "");
+        // رقم العميل تلقائي
+        maxNum++;
+        customer.id = `c-${maxNum.toString().padStart(4, "0")}`;
+        // إضافة العميل
+        await addDoc(collection(db, "customers"), {
+          ...initialForm,
+          ...customer,
+          createdAt: new Date().toISOString(),
+        });
+        addedCount++;
+      }
+      toast({
+        title: "تم الاستيراد",
+        description: `تم استيراد ${addedCount} عميل بنجاح`,
+        variant: "default",
+      });
+      fetchCustomers();
+    } catch (err) {
+      toast({
+        title: "خطأ",
+        description: "حدث خطأ أثناء استيراد الملف",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   // جلب العملاء من Firestore مع memoization
   const fetchCustomers = useCallback(async () => {
@@ -307,12 +459,7 @@ const CustomersPage = () => {
   return (
     <div className="min-h-screen bg-background rtl" dir="rtl">
       <div className="flex">
-        <Sidebar
-          isCollapsed={sidebarCollapsed}
-          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-          onLogout={() => { /* TODO: implement logout */ }}
-          customersCount={customers.length}
-        />
+        <Sidebar />
         <div className="flex-1 flex flex-col h-screen overflow-y-auto">
           <Header
             onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -324,6 +471,9 @@ const CustomersPage = () => {
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                 <h1 className="text-2xl font-bold font-arabic">إدارة العملاء</h1>
                 <div className="flex items-center gap-2 w-full md:w-auto">
+                  <Button onClick={handleDistributeBranches} variant="secondary" className="gap-2">
+                    توزيع عشوائي على الفروع
+                  </Button>
                   <div className="relative flex-1 md:w-64">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -336,6 +486,19 @@ const CustomersPage = () => {
                   <Button onClick={() => { resetForm(); setShowForm(true); }} className="gap-2">
                     <PlusCircle className="h-4 w-4" />
                     <span>عميل جديد</span>
+                  </Button>
+                  <Button asChild variant="outline" className="gap-2">
+                    <label htmlFor="import-excel" className="flex items-center cursor-pointer">
+                      <input
+                        id="import-excel"
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".xlsx,.xls"
+                        style={{ display: 'none' }}
+                        onChange={handleImportExcel}
+                      />
+                      <span>استيراد من Excel</span>
+                    </label>
                   </Button>
                 </div>
               </div>

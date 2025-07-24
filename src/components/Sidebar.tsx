@@ -53,7 +53,7 @@ const Sidebar = () => {
   const salesReports = [
     { label: "تقرير المبيعات اليومية", icon: <FaChartBar className="text-blue-500" />, path: "/reports/daily-sales" },
     { label: "تقرير بارباح الفواتير", icon: <FaFileInvoiceDollar className="text-green-500" />, path: "/reports/invoice-profits" },
-    { label: "تقرير بالفواتير التفضيلي", icon: <FaFileInvoiceDollar className="text-purple-500" /> },
+    { label: "تقرير بالفواتير التفضيلي", icon: <FaFileInvoiceDollar className="text-purple-500" />, path: "/reports/invoice-preferred" },
     { label: "تقرير بعروض السعر", icon: <FaFileInvoice className="text-orange-500" /> },
     { label: "تقرير بعروض السعر تفصيلي", icon: <FaFileInvoice className="text-pink-500" /> },
     { label: "تحليل المبيعات", icon: <FaChartBar className="text-teal-500" /> },
