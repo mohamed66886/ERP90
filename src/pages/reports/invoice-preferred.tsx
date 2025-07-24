@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { getDocs, query, collection } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
 import { DatePicker, Input, Select } from "antd";
 import arEG from 'antd/es/date-picker/locale/ar_EG';
@@ -641,6 +642,513 @@ const InvoicePreferred: React.FC = () => {
     const warehouse = warehouses.find(w => w.id === warehouseId);
     return warehouse ? warehouse.name : warehouseId;
   };
+
+
+  // مودال عرض تفاصيل الفاتورة
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const printRef = useRef<HTMLDivElement>(null);
+
+  // بيانات الشركة
+  const [companyData, setCompanyData] = useState<any>({});
+  useEffect(() => {
+    const fetchCompany = async () => {
+      try {
+        const { db } = await import('@/lib/firebase');
+        const { query, collection, getDocs } = await import('firebase/firestore');
+        const q = query(collection(db, "companies"));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+          const docData = snapshot.docs[0];
+          setCompanyData({ ...docData.data() });
+        }
+      } catch (e) {
+        // يمكن إضافة toast هنا إذا أردت
+        console.error("Error fetching company for print: ", e);
+      }
+    };
+    fetchCompany();
+  }, []);
+
+  // دالة طباعة محتوى المودال فقط
+  const handlePrint = () => {
+    // Professional print template
+    if (!selectedInvoice) return;
+    // تجهيز بيانات الفاتورة للطباعة بشكل صحيح
+    let invoice = { ...selectedInvoice };
+    // إذا كان هناك itemData.items (كما في جدول التقارير)، استخدمها للطباعة
+    if (selectedInvoice && selectedInvoice.itemData && Array.isArray(selectedInvoice.itemData.items)) {
+      invoice.items = selectedInvoice.itemData.items;
+    } else if (selectedInvoice && Array.isArray(selectedInvoice.items)) {
+      invoice.items = selectedInvoice.items;
+    } else if (selectedInvoice && selectedInvoice.itemData && typeof selectedInvoice.itemData === 'object') {
+      // إذا كان المستخدم ضغط على صف صنف واحد (itemData مفرد)
+      invoice.items = [selectedInvoice.itemData];
+    } else {
+      invoice.items = [];
+    }
+    // تجهيز بيانات العميل للطباعة
+    invoice.customerName = selectedInvoice.customerName || selectedInvoice.customer || '';
+    invoice.customerNumber = selectedInvoice.customerPhone || selectedInvoice.customerMobile || selectedInvoice.customerNumber || selectedInvoice.phone || selectedInvoice.mobile || selectedInvoice.phoneNumber || '';
+    invoice.taxFile = selectedInvoice.taxFile || companyData.taxFile || '';
+    invoice.customerAddress = selectedInvoice.customerAddress || '';
+    // تجهيز اسم البائع للطباعة
+    invoice.delegate = selectedInvoice.delegate || selectedInvoice.seller || selectedInvoice.salesman || '';
+
+    // حساب الإجماليات إذا لم تكن موجودة أو ناقصة
+    if (!invoice.totals || typeof invoice.totals !== 'object') {
+      invoice.totals = {};
+    }
+    const items = Array.isArray(invoice.items) ? invoice.items : [];
+    // إجمالي قبل الخصم
+    let total = 0;
+    // إجمالي الخصم
+    let totalDiscount = 0;
+    // إجمالي بعد الخصم
+    let afterDiscount = 0;
+    // إجمالي الضريبة
+    let totalTax = 0;
+    // الإجمالي النهائي
+    let afterTax = 0;
+    items.forEach((it) => {
+      const price = Number(it.price) || 0;
+      const quantity = Number(it.quantity) || 0;
+      const discountValue = Number(it.discountValue) || 0;
+      const taxValue = Number(it.taxValue) || 0;
+      const subtotal = price * quantity;
+      total += subtotal;
+      totalDiscount += discountValue;
+      totalTax += taxValue;
+      afterDiscount += (subtotal - discountValue);
+      afterTax += (subtotal - discountValue + taxValue);
+    });
+    // إذا لم تكن القيم موجودة في totals، احسبها
+    invoice.totals.total = typeof invoice.totals.total === 'number' && !isNaN(invoice.totals.total) ? invoice.totals.total : total;
+    invoice.totals.afterDiscount = typeof invoice.totals.afterDiscount === 'number' && !isNaN(invoice.totals.afterDiscount) ? invoice.totals.afterDiscount : afterDiscount;
+    invoice.totals.afterTax = typeof invoice.totals.afterTax === 'number' && !isNaN(invoice.totals.afterTax) ? invoice.totals.afterTax : afterTax;
+    invoice.totals.totalDiscount = typeof invoice.totals.totalDiscount === 'number' && !isNaN(invoice.totals.totalDiscount) ? invoice.totals.totalDiscount : totalDiscount;
+    invoice.totals.totalTax = typeof invoice.totals.totalTax === 'number' && !isNaN(invoice.totals.totalTax) ? invoice.totals.totalTax : totalTax;
+    // تأكد من تحميل بيانات الشركة قبل الطباعة
+    if (!companyData || !companyData.arabicName) {
+      if (typeof window !== 'undefined' && (window as any).toast) {
+        (window as any).toast.error('لم يتم تحميل بيانات الشركة بعد، يرجى المحاولة بعد لحظات');
+      } else {
+        alert('لم يتم تحميل بيانات الشركة بعد، يرجى المحاولة بعد لحظات');
+      }
+      return;
+    }
+    let qrDataUrl = '';
+    if (typeof window !== 'undefined' && (window as any).generateInvoiceQR) {
+      try { qrDataUrl = (window as any).generateInvoiceQR(invoice); } catch { qrDataUrl = ''; }
+    } else {
+      qrDataUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=' + encodeURIComponent(invoice.invoiceNumber || '');
+    }
+    const printWindow = window.open('', '', 'width=900,height=1200');
+    printWindow?.document.write(`
+        <html>
+        <head>
+          <title>فاتورة ضريبية | Tax Invoice</title>
+          <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+          <style>
+            @page { size: A4; margin: 10mm; }
+            body {
+              font-family: 'Tajawal', sans-serif;
+              direction: rtl;
+              padding: 5mm;
+              color: #000;
+              font-size: 12px;
+              line-height: 1.4;
+            }
+            .header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 5mm;
+              border-bottom: 1px solid #000;
+              padding-bottom: 3mm;
+            }
+            .header-section {
+              flex: 1;
+              min-width: 0;
+              padding: 0 8px;
+              box-sizing: border-box;
+            }
+            .header-section.center {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              flex: 0 0 120px;
+              max-width: 120px;
+              min-width: 100px;
+            }
+            .logo {
+              width: 150px;
+              height: auto;
+              margin-bottom: 8px;
+            }
+            .company-info-ar {
+              text-align: right;
+              font-size: 13px;
+              font-weight: 500;
+              line-height: 1.5;
+            }
+            .company-info-en {
+              text-align: left;
+              font-family: Arial, sans-serif;
+              direction: ltr;
+              font-size: 12px;
+              font-weight: 500;
+              line-height: 1.5;
+            }
+            .info-row-table {
+              border: 1px solid #bbb;
+              border-radius: 4px;
+              margin-bottom: 0;
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 12px;
+              margin-top: 0;
+            }
+            .info-row-table td {
+              border: none;
+              padding: 2px 8px;
+              vertical-align: middle;
+              font-weight: 500;
+            }
+            .info-row-table .label {
+              color: #444;
+              font-weight: bold;
+              min-width: 80px;
+              text-align: right;
+            }
+            .info-row-table .value {
+              color: #222;
+              text-align: left;
+            }
+            .info-row-container {
+              display: flex;
+              flex-direction: row;
+              justify-content: space-between;
+              align-items: flex-start;
+              margin-bottom: 10px;
+              gap: 16px;
+            }
+            .info-row-table.left {
+              direction: rtl;
+            }
+            .info-row-table.right {
+              direction: rtl;
+            }
+            .qr-center {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              min-width: 100px;
+              max-width: 120px;
+              flex: 0 0 120px;
+            }
+            .qr-code {
+              width: 80px;
+              height: 80px;
+              border: 1px solid #ddd;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-family: Arial;
+              font-size: 8px;
+              text-align: center;
+              margin-top: 4px;
+            }
+            .invoice-title { text-align: center; font-size: 16px; font-weight: bold; margin: 5mm 0; border: 1px solid #000; padding: 2mm; background-color: #f3f3f3; }
+            .customer-info { margin-bottom: 5mm; border: 1px solid #ddd; padding: 3mm; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 5mm; font-size: 11px; }
+            th, td { border: 1px solid #000; padding: 2mm; text-align: center; }
+            th {
+              background-color: #305496;
+              color: #fff;
+              font-weight: bold;
+              font-size: 12.5px;
+              letter-spacing: 0.5px;
+            }
+            .totals { margin-top: 5mm; border-top: 1px solid #000; padding-top: 3mm; font-weight: bold; }
+            .policy { font-size: 10px; border: 1px solid #ddd; padding: 3mm; /*margin-top: 5mm;*/ }
+            .policy-title { font-weight: bold; margin-bottom: 2mm; }
+            .signature { margin-top: 5mm; display: flex; justify-content: space-between; }
+            .signature-box { width: 45%; border-top: 1px solid #000; padding-top: 3mm; }
+            .footer { margin-top: 5mm; text-align: center; font-size: 10px; }
+            /* Ensure totals and policy are always side by side on print */
+            .totals-policy-row {
+              display: flex;
+              flex-direction: row;
+              flex-wrap: nowrap !important;
+              justify-content: flex-end;
+              align-items: flex-start;
+              gap: 24px;
+              margin-top: 5mm;
+            }
+            @media print {
+              .totals-policy-row {
+                display: flex !important;
+                flex-direction: row !important;
+                flex-wrap: nowrap !important;
+                justify-content: flex-end !important;
+                align-items: flex-start !important;
+                gap: 24px !important;
+                margin-top: 5mm !important;
+              }
+              .policy { margin-top: 0 !important; }
+            }
+          </style>
+        </head>
+        <body>
+          <!-- Header Section: Arabic (right), Logo (center), English (left) -->
+          <div class="header">
+            <div class="header-section company-info-ar">
+              <div>${companyData.arabicName || ''}</div>
+              <div>${companyData.companyType || ''}</div>
+              <div>السجل التجاري: ${companyData.commercialRegistration || ''}</div>
+              <div>الملف الضريبي: ${companyData.taxFile || ''}</div>
+              <div>العنوان: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+              <div>الرمز البريدي: ${companyData.postalCode || ''}</div>
+              <div>الهاتف: ${companyData.phone || ''}</div>
+              <div>الجوال: ${companyData.mobile || ''}</div>
+            </div>
+            <div class="header-section center">
+              <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
+            </div>
+            <div class="header-section company-info-en">
+              <div>${companyData.englishName || ''}</div>
+              <div>${companyData.companyType || ''}</div>
+              <div>Commercial Reg.: ${companyData.commercialRegistration || ''}</div>
+              <div>Tax File: ${companyData.taxFile || ''}</div>
+              <div>Address: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+              <div>Postal Code: ${companyData.postalCode || ''}</div>
+              <div>Phone: ${companyData.phone || ''}</div>
+              <div>Mobile: ${companyData.mobile || ''}</div>
+            </div>
+          </div>
+          <!-- Info Row Section: Invoice info (right), QR (center), Customer info (left) -->
+          <div class="info-row-container">
+            <table class="info-row-table right">
+              <tr><td class="label">طريقة الدفع</td><td class="value">${invoice.paymentMethod || ''}</td></tr>
+              <tr><td class="label">رقم الفاتورة</td><td class="value">${invoice.invoiceNumber || ''}</td></tr>
+              <tr><td class="label">تاريخ الفاتورة</td><td class="value">${invoice.date || ''}</td></tr>
+              <tr><td class="label">تاريخ الاستحقاق</td><td class="value">${invoice.dueDate || ''}</td></tr>
+            </table>
+            <div class="qr-center">
+              <div style="font-size:13px;font-weight:bold;margin-bottom:4px;">
+                ${(() => {
+                  const branch = (typeof branches !== 'undefined' && Array.isArray(branches))
+                    ? branches.find(b => b.id === invoice.branch)
+                    : null;
+                  return branch ? (branch.name || branch.id) : (invoice.branch || '');
+                })()}
+              </div>
+              <div class="qr-code">
+                <img src="${qrDataUrl}" alt="QR Code" style="width:80px;height:80px;" /><br>
+               </div>
+            </div>
+            <table class="info-row-table left">
+              <tr><td class="label">اسم العميل</td><td class="value">${invoice.customerName || ''}</td></tr>
+              <tr><td class="label">رقم الجوال</td><td class="value">${invoice.customerNumber || ''}</td></tr>
+              <tr><td class="label">م.ض</td><td class="value">${invoice.taxFile || ''}</td></tr>
+              <tr><td class="label">عنوان العميل</td><td class="value">${invoice.customerAddress || ''}</td></tr>
+            </table>
+          </div>
+          <!-- Items Table -->
+          <table>
+            <thead>
+              <tr>
+                <th>الرقم</th>
+                <th>كود الصنف</th>
+                <th>اسم الصنف</th>
+                <th>الكمية</th>
+                <th>السعر</th>
+                <th>نسبة الخصم %</th>
+                <th>مبلغ الخصم</th>
+                <th>الإجمالي قبل الضريبة</th>
+                <th>قيمة الضريبة</th>
+                <th>الإجمالي شامل الضريبة</th>
+                <th>المخزن</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(invoice.items || []).map((it, idx) => {
+                const subtotal = Number(it.price) * Number(it.quantity);
+                const discountValue = Number(it.discountValue) || 0;
+                const taxValue = Number(it.taxValue) || 0;
+                const afterDiscount = subtotal - discountValue;
+                const net = afterDiscount + taxValue;
+                const warehouseId = it.warehouseId || invoice.warehouse;
+                const warehouseObj = Array.isArray(warehouses) ? warehouses.find((w: any) => w.id === warehouseId) : null;
+                const warehouseName = warehouseObj ? (warehouseObj.name || warehouseObj.id) : (warehouseId || '');
+                return `<tr>
+                  <td>${idx + 1}</td>
+                  <td>${it.itemNumber || ''}</td>
+                  <td>${it.itemName || ''}</td>
+                  <td>${it.quantity || ''}</td>
+                  <td>${Number(it.price).toFixed(2)}</td>
+                  <td>${it.discountPercent || '0'}</td>
+                  <td>${discountValue.toFixed(2)}</td>
+                  <td>${afterDiscount.toFixed(2)}</td>
+                  <td>${taxValue.toFixed(2)}</td>
+                  <td>${net.toFixed(2)}</td>
+                  <td>${warehouseName}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+            <!-- Summary Row -->
+            <tfoot>
+              <tr style="background:#f3f3f3; font-weight:bold;">
+                <td colspan="6" style="text-align:right; font-weight:bold; color:#000;">الإجماليات:</td>
+                <td style="color:#dc2626; font-weight:bold;">
+                  ${(() => {
+                    // إجمالي الخصم
+                    if (!invoice.items) return '0.00';
+                    let total = 0;
+                    invoice.items.forEach((it) => { total += Number(it.discountValue) || 0; });
+                    return total.toFixed(2);
+                  })()}
+                </td>
+                <td style="color:#ea580c; font-weight:bold;">
+                  ${(() => {
+                    // إجمالي قبل الضريبة
+                    if (!invoice.items) return '0.00';
+                    let total = 0;
+                    invoice.items.forEach((it) => {
+                      const subtotal = Number(it.price) * Number(it.quantity);
+                      const discountValue = Number(it.discountValue) || 0;
+                      total += subtotal - discountValue;
+                    });
+                    return total.toFixed(2);
+                  })()}
+                </td>
+                <td style="color:#9333ea; font-weight:bold;">
+                  ${(() => {
+                    // إجمالي الضريبة
+                    if (!invoice.items) return '0.00';
+                    let total = 0;
+                    invoice.items.forEach((it) => { total += Number(it.taxValue) || 0; });
+                    return total.toFixed(2);
+                  })()}
+                </td>
+                <td style="color:#059669; font-weight:bold;">
+                  ${(() => {
+                    // إجمالي النهائي
+                    if (!invoice.items) return '0.00';
+                    let total = 0;
+                    invoice.items.forEach((it) => {
+                      const subtotal = Number(it.price) * Number(it.quantity);
+                      const discountValue = Number(it.discountValue) || 0;
+                      const taxValue = Number(it.taxValue) || 0;
+                      total += (subtotal - discountValue + taxValue);
+                    });
+                    return total.toFixed(2);
+                  })()}
+                </td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+          <!-- Totals and Policies Section side by side -->
+          <div class="totals-policy-row">
+           <div style="flex: 1 1 340px; min-width: 260px; max-width: 600px;">
+              <div class="policy">
+                <div class="policy-title">سياسة الاستبدال والاسترجاع:</div>
+                <div>1- يستوجب أن يكون المنتج بحالته الأصلية بدون أي استعمال وبكامل اكسسواراته وبالتعبئة الأصلية.</div>
+                <div>2- البضاعة المباعة ترد أو تستبدل خلال ثلاثة أيام من تاريخ استلام العميل للمنتج مع إحضار أصل الفاتورة وتكون البضاعة بحالة سليمة ومغلقة.</div>
+                <div>3- يتحمل العميل قيمة التوصيل في حال إرجاع الفاتورة ويتم إعادة المبلغ خلال 3 أيام عمل.</div>
+                <div>4- ${companyData.arabicName || 'الشركة'} غير مسؤولة عن تسليم البضاعة بعد 10 أيام من تاريخ الفاتورة.</div>
+                <div class="policy-title" style="margin-top: 3mm;">سياسة التوصيل:</div>
+                <div>1- توصيل الطلبات من 5 أيام إلى 10 أيام عمل.</div>
+                <div>2- الحد المسموح به للتوصيل هو الدور الأرضي كحد أقصى، وفي حال رغبة العميل بالتوصيل لأعلى من الحد المسموح به، يتم ذلك بواسطة العميل.</div>
+                <div>3- يتم التوصيل حسب جدول المواعيد المحدد من ${companyData.arabicName || 'الشركة'}، كما أن ${companyData.arabicName || 'الشركة'} غير مسؤولة عن أي أضرار ناتجه بسبب التأخير او تأجيل موعد التوصيل.</div>
+                <div>4- يستوجب فحص المنتج أثناء استلامه مع التوقيع باستلامه، وعدم الفحص يسقط حق العميل في المطالبة بالاسترجاع او الاستبدال في حال وجود كسر.</div>
+                <div>5- لايوجد لدينا تركيب الضمان هو ضمان ${companyData.arabicName || 'الشركة'}، كما أن الضمان لا يشمل سوء الاستخدام الناتج من العميل.</div>
+              </div>
+            </div>
+            <div style="flex: 0 0 320px; max-width: 340px; min-width: 220px;">
+              <table style="border:1.5px solid #000; border-radius:6px; font-size:13px; min-width:220px; max-width:320px; margin-left:0; margin-right:0; border-collapse:collapse; box-shadow:none; width:100%;">
+                <tbody>
+                  <tr>
+                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">إجمالى الفاتورة</td>
+                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.total?.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">مبلغ الخصم</td>
+                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.total - invoice.totals?.afterDiscount).toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى بعد الخصم</td>
+                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.afterDiscount?.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الضريبة (${invoice.items && invoice.items[0] ? (invoice.items[0].taxPercent || 0) : 0}%)</td>
+                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.afterTax - invoice.totals?.afterDiscount).toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى النهايي</td>
+                    <td style="text-align:left; font-weight:700; border:1px solid #000; background:#fff;">${invoice.totals?.afterTax?.toFixed(2)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+           
+          </div>
+          <!-- Signature Section -->
+          <div class="signature">
+            <div class="signature-box">
+              <div>اسم العميل: ${invoice.customerName || ''}</div>
+              <div>التوقيع: ___________________</div>
+            </div>
+            <div class="signature-box" style="position:relative;">
+              <div>البائع: ${invoice.delegate || ''}</div>
+              <div>التاريخ: ${invoice.date || ''}</div>
+              <!-- Decorative Stamp -->
+              <div style="
+                margin-top:18px;
+                display:flex;
+                justify-content:center;
+                align-items:center;
+                width:160px;
+                height:60px;
+                border:2.5px dashed #888;
+                border-radius:50%;
+                box-shadow:0 2px 8px 0 rgba(0,0,0,0.08);
+                opacity:0.85;
+                background: repeating-linear-gradient(135deg, #f8f8f8 0 8px, #fff 8px 16px);
+                font-family: 'Cairo', 'Tajawal', Arial, sans-serif;
+                font-size:15px;
+                font-weight:bold;
+                color:#222;
+                letter-spacing:1px;
+                text-align:center;
+                position:absolute;
+                left:50%;
+                transform:translateX(-50%);
+                bottom:-80px;
+                z-index:2;
+              ">
+                <div style="width:100%;">
+                  <div style="font-size:16px; font-weight:700;">${companyData.arabicName || 'الشركة'}</div>
+                  <div style="font-size:13px; font-weight:500; margin-top:2px;">${companyData.phone ? 'هاتف: ' + companyData.phone : ''}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Footer -->
+          <div class="footer">
+            ${companyData.website ? `لزيارة متجرنا الإلكتروني / Visit our e-shop: ${companyData.website}` : ''}
+          </div>
+        </body>
+        </html>
+      `);
+    printWindow?.document.close();
+    printWindow?.focus();
+    setTimeout(() => { printWindow?.print(); printWindow?.close(); }, 700);
+  };
   return (
     <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50">
       <div className="p-4 font-['Tajawal'] bg-white rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] mb-4 relative overflow-hidden">
@@ -1097,7 +1605,11 @@ const InvoicePreferred: React.FC = () => {
                               `${idx % 2 === 0 ? 'bg-blue-50' : 'bg-transparent'} transition-colors duration-150 hover:bg-blue-100 cursor-pointer`
                             }
                           >
-                            <td className="px-4 py-2 text-center border border-gray-300 w-40 min-w-[10rem]">{inv.invoiceNumber}</td>
+                            <td className="px-4 py-2 text-center border border-gray-300 w-40 min-w-[10rem] text-blue-700 underline cursor-pointer hover:text-blue-900"
+                              onClick={() => { setSelectedInvoice(inv); setShowInvoiceModal(true); }}
+                            >
+                              {inv.invoiceNumber}
+                            </td>
                             <td className="px-4 py-2 text-center border border-gray-300 w-44 min-w-[10rem]">{dayjs(inv.date).format('YYYY-MM-DD')}</td>
                             <td className="px-4 py-2 text-center border border-gray-300 w-23 min-w-[6rem]">{inv.invoiceType}</td>
                             <td className="px-4 py-2 text-center border border-gray-300 w-30 min-w-[8rem]">{inv.itemNumber}</td>
@@ -1189,6 +1701,298 @@ const InvoicePreferred: React.FC = () => {
           </div>
         </div>
       </motion.div>
+    {/* مودال تفاصيل الفاتورة */}
+{
+  showInvoiceModal && selectedInvoice && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 backdrop-blur-sm">
+      {/* Modal Container with Slide-in Animation */}
+      <div 
+        className="bg-white rounded-xl shadow-2xl p-8 max-w-[95vw] w-[950px] md:w-[1150px] lg:w-[1300px] mx-2 md:mx-8 relative"
+        style={{ fontFamily: "Tajawal", maxHeight: '90vh', overflowY: 'auto' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close Button with Hover Animation */}
+        <button
+          className="absolute left-4 top-4 text-gray-500 hover:text-red-600 text-2xl font-bold transition-colors duration-200 transform hover:scale-110"
+          onClick={() => setShowInvoiceModal(false)}
+          title="إغلاق"
+        >
+          ×
+        </button>
+        
+        {/* Modal Content */}
+        <div ref={printRef} className="space-y-6">
+          {/* Header with Fade-in Animation */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.1 }}
+          >
+            <h2 className="text-2xl font-bold text-blue-800 mb-1">تفاصيل الفاتورة</h2>
+            <div className="h-1 w-20 bg-blue-500 rounded-full"></div>
+          </motion.div>
+          
+          {/* Invoice Information Grid */}
+          <motion.div 
+            className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 }}
+          >
+            <div className="flex justify-between">
+              <span className="font-semibold text-gray-600">رقم الفاتورة:</span>
+              <span className="text-gray-800">{selectedInvoice.invoiceNumber}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-semibold text-gray-600">تاريخ الفاتورة:</span>
+              <span className="text-gray-800">{dayjs(selectedInvoice.date).format("YYYY-MM-DD")}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-semibold text-gray-600">نوع الفاتورة:</span>
+              <span className="text-gray-800">{selectedInvoice.invoiceType}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-semibold text-gray-600">اسم العميل:</span>
+              <span className="text-gray-800">{selectedInvoice.customer}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-semibold text-gray-600">رقم العميل:</span>
+              <span className="text-gray-800">{selectedInvoice.customerPhone || "غير متوفر"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-semibold text-gray-600">المخزن:</span>
+              <span className="text-gray-800">{getWarehouseName(selectedInvoice.warehouse)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-semibold text-gray-600">البائع:</span>
+              <span className="text-gray-800">{selectedInvoice.seller || "-"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-semibold text-gray-600">طريقة الدفع:</span>
+              <span className="text-gray-800">{selectedInvoice.paymentMethod || "-"}</span>
+            </div>
+          </motion.div>
+          
+          {/* Items Table with Staggered Animation */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+          >
+            <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-blue-50">
+                  <motion.tr
+                    initial={{ y: 10, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.4 }}
+                  >
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">كود الصنف</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">اسم الصنف</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">الفئة</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">الكمية</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">الوحدة</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">سعر الوحدة</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">الخصم</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">الصافي</th>
+                  </motion.tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredInvoices
+                    .filter(
+                      (row) =>
+                        row.invoiceNumber === selectedInvoice.invoiceNumber &&
+                        row.invoiceType === selectedInvoice.invoiceType
+                    )
+                    .map((row, idx) => {
+                      const price = Number(row.price) || 0;
+                      const quantity = Number(row.quantity) || 0;
+                      const discountValue = Number(row.discountValue) || 0;
+                      const discountPercent = Number(row.discountPercent) || 0;
+                      const totalAfterDiscount =
+                        typeof row.totalAfterDiscount !== "undefined"
+                          ? row.totalAfterDiscount
+                          : price * quantity - discountValue;
+                      const taxValue = Number(row.taxValue) || 0;
+                      const net = Number(row.net) || 0;
+                      const sign = row.invoiceType === "مرتجع" ? -1 : 1;
+                      
+                      return (
+                        <motion.tr
+                          key={idx}
+                          className={idx % 2 === 0 ? "bg-gray-50" : "bg-white"}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.5 + idx * 0.05 }}
+                          whileHover={{ scale: 1.01, backgroundColor: "rgba(59, 130, 246, 0.05)" }}
+                        >
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{row.itemNumber || ""}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{row.itemName || ""}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{row.mainCategory || ""}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{quantity}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{row.unit || ""}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{price.toFixed(2)}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
+                            <div className="flex flex-col">
+                              <span>{discountPercent}%</span>
+                              <span className="text-red-500">{(sign * discountValue).toFixed(2)}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-blue-600">
+                            {(sign * net).toFixed(2)}
+                          </td>
+                        </motion.tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </motion.div>
+          
+          {/* Totals Summary with Slide-up Animation */}
+          <motion.div
+            className="flex flex-col items-end"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.8 }}
+          >
+            <div className="w-full md:w-1/3 bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
+              {(() => {
+                const allRows = filteredInvoices.filter(
+                  (row) =>
+                    row.invoiceNumber === selectedInvoice.invoiceNumber &&
+                    row.invoiceType === selectedInvoice.invoiceType
+                );
+                
+                let total = 0,
+                  totalDiscount = 0,
+                  afterDiscount = 0,
+                  totalTax = 0,
+                  finalTotal = 0;
+                
+                allRows.forEach((row) => {
+                  const sign = row.invoiceType === "مرتجع" ? -1 : 1;
+                  const price = Number(row.price) || 0;
+                  const quantity = Number(row.quantity) || 0;
+                  const discountValue = Number(row.discountValue) || 0;
+                  const taxValue = Number(row.taxValue) || 0;
+                  const subtotal = price * quantity;
+                  const totalAfterDiscount =
+                    typeof row.totalAfterDiscount !== "undefined"
+                      ? row.totalAfterDiscount
+                      : subtotal - discountValue;
+                  
+                  total += sign * subtotal;
+                  totalDiscount += sign * discountValue;
+                  afterDiscount += sign * (totalAfterDiscount < 0 ? 0 : totalAfterDiscount);
+                  totalTax += sign * taxValue;
+                  finalTotal += sign * ((totalAfterDiscount < 0 ? 0 : totalAfterDiscount) + taxValue);
+                });
+                
+                return (
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="font-semibold">الإجمالي:</span>
+                      <span>{total.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-red-500">
+                      <span className="font-semibold">الخصم:</span>
+                      <span>-{totalDiscount.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold">بعد الخصم:</span>
+                      <span>{afterDiscount.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-semibold">الضريبة:</span>
+                      <span>{totalTax.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between pt-2 border-t border-gray-200 font-bold text-lg text-blue-700">
+                      <span>الإجمالي النهائي:</span>
+                      <span>{finalTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </motion.div>
+          
+          {/* Additional Info with Fade Animation */}
+          <motion.div
+            className="flex flex-wrap justify-between text-sm text-gray-600 mt-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 1 }}
+          >
+            <div className="flex items-center space-x-2">
+              <span className="font-semibold">وقت الإنشاء:</span>
+              <span>
+                {(() => {
+                  const parseTime = (val: { seconds?: number } | string | undefined | null) => {
+                    if (!val) return "";
+                    if (typeof val === "object" && val.seconds) {
+                      return dayjs(val.seconds * 1000).format("hh:mm:ss A");
+                    }
+                    if (typeof val === "string") {
+                      const d = dayjs(val);
+                      if (d.isValid()) return d.format("hh:mm:ss A");
+                    }
+                    return "";
+                  };
+                  return (
+                    parseTime(selectedInvoice.createdAt) ||
+                    (selectedInvoice.date
+                      ? dayjs(selectedInvoice.date).format("hh:mm:ss A")
+                      : "")
+                  );
+                })()}
+              </span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="font-semibold">نسبة الضريبة:</span>
+              <span>{selectedInvoice.taxPercent}%</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="font-semibold">العملة:</span>
+              <span>ريال سعودي</span>
+            </div>
+          </motion.div>
+        </div>
+        
+        {/* Action Buttons with Staggered Animation */}
+        <motion.div 
+          className="flex justify-end space-x-3 mt-6"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.1 }}
+        >
+          <motion.button
+            className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors duration-200 flex items-center"
+            onClick={handlePrint}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            طباعة
+          </motion.button>
+          <motion.button
+            className="px-6 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-300 transition-colors duration-200 flex items-center"
+            onClick={() => setShowInvoiceModal(false)}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            إغلاق
+          </motion.button>
+        </motion.div>
+      </div>
+    </div>
+  )
+}
     </div>
   );
 };
