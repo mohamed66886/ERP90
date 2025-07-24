@@ -23,14 +23,15 @@ const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => {
   const getIcon = (label: string) => {
     const iconStyle = "text-blue-400 mr-2 rtl:ml-2";
     const iconMap: Record<string, JSX.Element> = {
-      "الرئيسية": <HomeFilled className={`text-white ${iconStyle}`} />,
-      "المخازن": <ShopFilled className={iconStyle} />,
-      "المخزون": <FileTextFilled className={iconStyle} />,
-      "ادارة الفروع": <ApartmentOutlined className={iconStyle} />,
-      "فاتورة مبيعات": <ShopFilled className={iconStyle} />,
-      "مرتجع مبيعات": <RollbackOutlined className={iconStyle} />,
-      "ادارة طرق الدفع": <CreditCardFilled className={iconStyle} />,
-      "تقارير المبيعات اليوميه": <FileTextFilled className={iconStyle} />
+      "الرئيسية": <HomeFilled className={`text-white ${iconStyle}`} />, 
+      "المخازن": <ShopFilled className={iconStyle} />, 
+      "المخزون": <FileTextFilled className={iconStyle} />, 
+      "ادارة الفروع": <ApartmentOutlined className={iconStyle} />, 
+      "فاتورة مبيعات": <ShopFilled className={iconStyle} />, 
+      "مرتجع مبيعات": <RollbackOutlined className={iconStyle} />, 
+      "ادارة طرق الدفع": <CreditCardFilled className={iconStyle} />, 
+      "تقارير المبيعات اليوميه": <FileTextFilled className={iconStyle} />, 
+      "تقرير بارباح الفواتير": <FileTextFilled className={iconStyle} />
     };
     return iconMap[label] || null;
   };
