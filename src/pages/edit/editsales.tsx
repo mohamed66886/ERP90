@@ -113,12 +113,14 @@ const EditSalesPage: React.FC = () => {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const invoiceParam = searchParams.get('invoice');
-  // حالة الفروع والمخازن
+  // حالة الفروع والمخازن والمندوبين
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
   const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([]);
   // حالة طرق الدفع
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string }[]>([]);
   // حالة العملاء
+  // حالة المندوبين
+  const [delegates, setDelegates] = useState<{ id: string; name: string }[]>([]);
   const [customers, setCustomers] = useState<{
     id: string;
     nameAr: string;
@@ -261,6 +263,14 @@ const EditSalesPage: React.FC = () => {
         setCustomers(customersList);
       } catch (err) {}
       // جلب الأصناف من قاعدة البيانات inventory_items
+      // جلب المندوبين من قاعدة البيانات delegates
+      try {
+        const delegatesSnap = await getDocs(collection(db, 'delegates'));
+        const delegatesList = delegatesSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name || doc.id }));
+        setDelegates(delegatesList);
+      } catch (err) {
+        console.error('Error loading delegates:', err);
+      }
       try {
         const itemsSnap = await getDocs(collection(db, 'inventory_items'));
         const itemsArr = itemsSnap.docs.map(doc => ({
@@ -405,9 +415,33 @@ const EditSalesPage: React.FC = () => {
     { title: 'السعر', dataIndex: 'price', width: 100 },
     { title: '% الخصم', dataIndex: 'discountPercent', width: 80 },
     { title: 'قيمة الخصم', dataIndex: 'discountValue', width: 100 },
+    { title: 'الإجمالي بعد الخصم', dataIndex: 'afterDiscount', width: 120,
+      render: (_, record) => {
+        const quantity = Math.max(0, Number(record.quantity) || 0);
+        const price = Math.max(0, Number(record.price) || 0);
+        const discountPercent = Math.min(100, Math.max(0, Number(record.discountPercent) || 0));
+        const subtotal = price * quantity;
+        const discountValue = subtotal * (discountPercent / 100);
+        const afterDiscount = subtotal - discountValue;
+        return afterDiscount.toFixed(2);
+      }
+    },
     { title: '% الضريبة', dataIndex: 'taxPercent', width: 80 },
     { title: 'قيمة الضريبة', dataIndex: 'taxValue', width: 100 },
-    { title: 'الإجمالي', dataIndex: 'total', width: 100 }
+    { title: 'الإجمالي', dataIndex: 'total', width: 100,
+      render: (_, record) => {
+        const quantity = Math.max(0, Number(record.quantity) || 0);
+        const price = Math.max(0, Number(record.price) || 0);
+        const discountPercent = Math.min(100, Math.max(0, Number(record.discountPercent) || 0));
+        const taxPercent = Math.max(0, Number(record.taxPercent) || 0);
+        const subtotal = price * quantity;
+        const discountValue = subtotal * (discountPercent / 100);
+        const taxableAmount = subtotal - discountValue;
+        const taxValue = taxableAmount * (taxPercent / 100);
+        const netTotal = taxableAmount + taxValue;
+        return netTotal.toFixed(2);
+      }
+    }
   ];
   // ...existing code...
   return (
@@ -541,12 +575,39 @@ const EditSalesPage: React.FC = () => {
           </Col>
           <Col xs={24} sm={12} md={6}>
             <Form.Item label="المندوب">
-              <Input id="delegate" value={invoiceData.delegate} placeholder="المندوب" />
+              <Select
+                id="delegate"
+                value={invoiceData.delegate}
+                placeholder="اختر المندوب"
+                showSearch
+                optionFilterProp="children"
+                filterOption={(input, option) => {
+                  const label = option?.children ? option.children.toString() : '';
+                  const value = option?.value ? option.value.toString() : '';
+                  return label.toLowerCase().includes(input.toLowerCase()) || value.toLowerCase().includes(input.toLowerCase());
+                }}
+                onChange={value => setInvoiceData(prev => ({ ...prev, delegate: value }))}
+              >
+                {delegates.map(d => (
+                  <Option key={d.id} value={d.name}>
+                    {d.name}
+                  </Option>
+                ))}
+              </Select>
             </Form.Item>
           </Col>
           <Col xs={24} sm={12} md={6}>
             <Form.Item label="سياسة التسعير">
-              <Input id="priceRule" value={invoiceData.priceRule} placeholder="سياسة التسعير" />
+              <Select
+                id="priceRule"
+                value={invoiceData.priceRule}
+                placeholder="اختر سياسة التسعير"
+                onChange={value => setInvoiceData(prev => ({ ...prev, priceRule: value }))}
+                style={{ width: '100%' }}
+              >
+                <Option value="salePrice">سعر البيع</Option>
+                <Option value="lastCustomerPrice">آخر سعر للعميل</Option>
+              </Select>
             </Form.Item>
           </Col>
           <Col xs={24} sm={12} md={6}>
@@ -567,13 +628,12 @@ const EditSalesPage: React.FC = () => {
         <Row gutter={[8, 8]} align="middle" justify="start">
           <Col span={3}>
             <Form.Item label="كود الصنف" style={{ marginBottom: 0 }}>
-              <Input id="itemNumber" value={item.itemNumber} disabled placeholder="كود الصنف" />
+              <Input value={item.itemNumber} disabled placeholder="كود الصنف" />
             </Form.Item>
           </Col>
-          <Col span={3}>
+          <Col span={6}>
             <Form.Item label="اسم الصنف" style={{ marginBottom: 0 }}>
               <Select
-                id="itemName"
                 value={item.itemName}
                 showSearch
                 placeholder={itemsList.length === 0 ? "اختر اسم الصنف" : "اختر اسم الصنف"}
@@ -592,10 +652,9 @@ const EditSalesPage: React.FC = () => {
               />
             </Form.Item>
           </Col>
-          <Col span={3}>
+          <Col span={2}>
             <Form.Item label="الكمية" style={{ marginBottom: 0 }}>
               <Input
-                id="quantity"
                 type="number"
                 min={1}
                 value={item.quantity}
@@ -605,12 +664,13 @@ const EditSalesPage: React.FC = () => {
                   setItem(prev => ({ ...prev, quantity: val === '' ? '1' : val }));
                 }}
                 placeholder="الكمية"
+                style={{ width: '100%' }}
               />
             </Form.Item>
           </Col>
           <Col span={3}>
             <Form.Item label="الوحدة" style={{ marginBottom: 0 }}>
-              <Input id="unit" value={item.unit} onChange={e => setItem(prev => ({ ...prev, unit: e.target.value }))} placeholder="الوحدة" />
+              <Input value={item.unit} onChange={e => setItem(prev => ({ ...prev, unit: e.target.value }))} placeholder="الوحدة" />
             </Form.Item>
           </Col>
           <Col span={3}>
@@ -623,7 +683,7 @@ const EditSalesPage: React.FC = () => {
               />
             </Form.Item>
           </Col>
-          <Col span={3}>
+          <Col span={2}>
             <Form.Item label="% الخصم" style={{ marginBottom: 0 }}>
               <InputNumber
                 min={0}
@@ -634,7 +694,7 @@ const EditSalesPage: React.FC = () => {
               />
             </Form.Item>
           </Col>
-          <Col span={3}>
+          <Col span={2}>
             <Form.Item label="% الضريبة" style={{ marginBottom: 0 }}>
               <InputNumber
                 min={0}
@@ -647,37 +707,49 @@ const EditSalesPage: React.FC = () => {
           </Col>
           <Col span={3} style={{ display: 'flex', alignItems: 'center' }}>
             <Button type="primary" icon={<PlusOutlined />} onClick={addItem} style={{ marginTop: 24, width: '100%' }}>
-              إضافة الصنف
+              إضافة 
             </Button>
           </Col>
         </Row>
       </Form>
       <Divider orientation="left">أصناف الفاتورة</Divider>
-      <Table columns={typeof itemColumns !== 'undefined' ? itemColumns : []} dataSource={typeof items !== 'undefined' ? items : []} pagination={false} bordered size="middle" />
+      <Table
+        columns={typeof itemColumns !== 'undefined' ? itemColumns : []}
+        dataSource={typeof items !== 'undefined' ? items : []}
+        pagination={false}
+        bordered
+        size="middle"
+        className="custom-table-header"
+        summary={() => (
+          <Table.Summary fixed>
+            <Table.Summary.Row>
+              <Table.Summary.Cell index={0} colSpan={4} style={{ textAlign: 'right', fontWeight: 'bold', background: '#e6f7ff' }}>الإجماليات</Table.Summary.Cell>
+              {/* السعر */}
+
+              <Table.Summary.Cell index={5} style={{ textAlign: 'center', fontWeight: 'bold' }}>{totals.total}</Table.Summary.Cell>
+              {/* % الخصم */}
+              <Table.Summary.Cell index={6}></Table.Summary.Cell>
+              {/* قيمة الخصم */}
+              <Table.Summary.Cell index={7} style={{ textAlign: 'center', color: '#faad14', fontWeight: 'bold' }}>{totals.discount}</Table.Summary.Cell>
+              {/* الإجمالي بعد الخصم */}
+              <Table.Summary.Cell index={8} style={{ textAlign: 'center', fontWeight: 'bold' }}>{totals.afterDiscount}</Table.Summary.Cell>
+              {/* % الضريبة */}
+              <Table.Summary.Cell index={9}></Table.Summary.Cell>
+              {/* قيمة الضريبة */}
+              <Table.Summary.Cell index={10} style={{ textAlign: 'center', color: '#52c41a', fontWeight: 'bold' }}>{totals.tax}</Table.Summary.Cell>
+              {/* الإجمالي النهائي */}
+              <Table.Summary.Cell index={11} style={{ textAlign: 'center', color: '#d4380d', fontWeight: 'bold', fontSize: 16 }}>{totals.net}</Table.Summary.Cell>
+            </Table.Summary.Row>
+          </Table.Summary>
+        )}
+      />
+      <style>{`
+        .custom-table-header .ant-table-thead > tr > th {
+          background: #e6f7ff !important;
+        }
+      `}</style>
       {/* الإجماليات بنفس تنسيق صفحة المبيعات */}
-      <Card style={{ maxWidth: 340, marginLeft: 'auto', marginTop: 24, boxShadow: '0 2px 8px #eee' }} bodyStyle={{ padding: 16 }}>
-        <div style={{ fontWeight: 'bold', fontSize: 18, marginBottom: 8, color: '#1890ff' }}>الإجماليات</div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span>الإجمالي:</span>
-          <span style={{ fontWeight: 'bold' }}>{totals.total}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span>الخصم:</span>
-          <span style={{ color: '#faad14', fontWeight: 'bold' }}>{totals.discount}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span>الإجمالي بعد الخصم:</span>
-          <span style={{ fontWeight: 'bold' }}>{totals.afterDiscount}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span>قيمة الضريبة:</span>
-          <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{totals.tax}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span>الإجمالي النهائي:</span>
-          <span style={{ color: '#d4380d', fontWeight: 'bold', fontSize: 16 }}>{totals.net}</span>
-        </div>
-      </Card>
+  
       {/* يمكنك لاحقاً تخصيص زر "حفظ" ليكون "تحديث" */}
       <div style={{ textAlign: 'left', marginTop: 24 }}>
         <Button type="primary" icon={<SaveOutlined />} onClick={updateInvoice}>
