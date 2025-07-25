@@ -11,7 +11,7 @@ import Divider from 'antd/es/divider';
 import * as XLSX from 'xlsx';
 import Breadcrumb from "../../components/Breadcrumb";
 import Card from 'antd/es/card';
-import { PlusOutlined, SaveOutlined, UserOutlined } from '@ant-design/icons';
+import { PlusOutlined, SaveOutlined, UserOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { db } from '@/lib/firebase';
 
 // تعريف نوع العنصر
@@ -441,9 +441,32 @@ const EditSalesPage: React.FC = () => {
         const netTotal = taxableAmount + taxValue;
         return netTotal.toFixed(2);
       }
+    },
+    {
+      title: 'الإجراءات',
+      key: 'actions',
+      width: 120,
+      render: (_, record, idx) => (
+        <span>
+          <Button onClick={() => handleEditItem(idx)}><EditOutlined /></Button>
+          <Button onClick={() => handleDeleteItem(idx)}><DeleteOutlined /></Button>
+        </span>
+      )
     }
   ];
   // ...existing code...
+  // دالة حذف صنف من الجدول
+  const handleDeleteItem = (idx: number) => {
+    setItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  // دالة تعديل صنف من الجدول
+  const handleEditItem = (idx: number) => {
+    const itemToEdit = items[idx];
+    setItem({ ...itemToEdit });
+    // احذف الصنف من الجدول مؤقتاً حتى يتم إعادة إضافته بعد التعديل
+    setItems(prev => prev.filter((_, i) => i !== idx));
+  };
   return (
     <div className="p-2 sm:p-6 w-full max-w-none">
       <Breadcrumb
