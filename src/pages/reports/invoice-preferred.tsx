@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from "react";
+import { Link } from 'react-router-dom';
 import { getDocs, query, collection } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
 import { DatePicker, Input, Select } from "antd";
@@ -1605,10 +1606,13 @@ const InvoicePreferred: React.FC = () => {
                               `${idx % 2 === 0 ? 'bg-blue-50' : 'bg-transparent'} transition-colors duration-150 hover:bg-blue-100 cursor-pointer`
                             }
                           >
-                            <td className="px-4 py-2 text-center border border-gray-300 w-40 min-w-[10rem] text-blue-700 underline cursor-pointer hover:text-blue-900"
-                              onClick={() => { setSelectedInvoice(inv); setShowInvoiceModal(true); }}
-                            >
-                              {inv.invoiceNumber}
+                            <td className="px-4 py-2 text-center border border-gray-300 w-40 min-w-[10rem]">
+                              <Link
+                                to={`/edit/editsales?invoice=${encodeURIComponent(inv.invoiceNumber)}`}
+                                className="text-blue-700 underline hover:text-blue-900"
+                              >
+                                {inv.invoiceNumber}
+                              </Link>
                             </td>
                             <td className="px-4 py-2 text-center border border-gray-300 w-44 min-w-[10rem]">{dayjs(inv.date).format('YYYY-MM-DD')}</td>
                             <td className="px-4 py-2 text-center border border-gray-300 w-23 min-w-[6rem]">{inv.invoiceType}</td>
@@ -1720,7 +1724,7 @@ const InvoicePreferred: React.FC = () => {
           ×
         </button>
         
-        {/* Modal Content */}
+        {/* Modal Content - جميع الحقول مقفولة للعرض فقط */}
         <div ref={printRef} className="space-y-6">
           {/* Header with Fade-in Animation */}
           <motion.div
@@ -1730,6 +1734,75 @@ const InvoicePreferred: React.FC = () => {
           >
             <h2 className="text-2xl font-bold text-blue-800 mb-1">تفاصيل الفاتورة</h2>
             <div className="h-1 w-20 bg-blue-500 rounded-full"></div>
+          </motion.div>
+          {/* معلومات الفاتورة - حقول إدخال قابلة للتعديل */}
+          <motion.div 
+            className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 }}
+          >
+            <div className="flex flex-col gap-2">
+              <label className="text-sm text-gray-600">رقم الفاتورة</label>
+              <input type="text" className="bg-gray-100 rounded px-3 py-2 text-gray-800" value={selectedInvoice.invoiceNumber} readOnly />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm text-gray-600">تاريخ الفاتورة</label>
+              <input type="text" className="bg-gray-100 rounded px-3 py-2 text-gray-800" value={dayjs(selectedInvoice.date).format("YYYY-MM-DD")} readOnly />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm text-gray-600">نوع الفاتورة</label>
+              <div className="bg-gray-100 rounded px-3 py-2">
+                <Select value={selectedInvoice.invoiceType} disabled style={{ width: '100%' }}>
+                  <Select.Option value="مبيعات">مبيعات</Select.Option>
+                  <Select.Option value="مرتجع">مرتجع</Select.Option>
+                </Select>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm text-gray-600">اسم العميل</label>
+              <div className="bg-gray-100 rounded px-3 py-2">
+                <Select showSearch value={selectedInvoice.customer} disabled style={{ width: '100%' }}>
+                  {Array.from(new Set(filteredInvoices.map(inv => inv.customer).filter(s => !!s && s !== ''))).map(s => (
+                    <Select.Option key={s} value={s}>{s}</Select.Option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm text-gray-600">رقم العميل</label>
+              <input type="text" className="bg-gray-100 rounded px-3 py-2 text-gray-800" value={selectedInvoice.customerPhone || "غير متوفر"} readOnly />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm text-gray-600">المخزن</label>
+              <div className="bg-gray-100 rounded px-3 py-2">
+                <Select value={selectedInvoice.warehouse} disabled style={{ width: '100%' }}>
+                  {Array.from(new Set(filteredInvoices.map(inv => inv.warehouse).filter(s => !!s && s !== ''))).map(s => (
+                    <Select.Option key={s} value={s}>{getWarehouseName(s)}</Select.Option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm text-gray-600">البائع</label>
+              <div className="bg-gray-100 rounded px-3 py-2">
+                <Select value={selectedInvoice.seller} disabled style={{ width: '100%' }}>
+                  {Array.from(new Set(filteredInvoices.map(inv => inv.seller).filter(s => !!s && s !== ''))).map(s => (
+                    <Select.Option key={s} value={s}>{s}</Select.Option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm text-gray-600">طريقة الدفع</label>
+              <div className="bg-gray-100 rounded px-3 py-2">
+                <Select value={selectedInvoice.paymentMethod} disabled style={{ width: '100%' }}>
+                  {Array.from(new Set(filteredInvoices.map(inv => inv.paymentMethod).filter(s => !!s && s !== ''))).map(s => (
+                    <Select.Option key={s} value={s}>{s}</Select.Option>
+                  ))}
+                </Select>
+              </div>
+            </div>
           </motion.div>
           
           {/* Invoice Information Grid */}
@@ -1966,6 +2039,17 @@ const InvoicePreferred: React.FC = () => {
           animate={{ opacity: 1 }}
           transition={{ delay: 1.1 }}
         >
+          <motion.button
+            className="px-6 py-2 bg-yellow-500 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-600 transition-colors duration-200 flex items-center"
+            onClick={() => {/* TODO: handleEditInvoice */}}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5h2m-1 0v14m-7-7h14" />
+            </svg>
+            تعديل
+          </motion.button>
           <motion.button
             className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors duration-200 flex items-center"
             onClick={handlePrint}
