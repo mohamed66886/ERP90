@@ -448,7 +448,9 @@ const EditSalesPage: React.FC = () => {
     <div className="p-2 sm:p-6 w-full max-w-none">
       <Breadcrumb
         items={[{ label: "الرئيسية", to: "/" }, { label: "تعديل فاتورة مبيعات" }]}
-      />
+      /> 
+        <div className="p-2 bg-white  sm:p-6 w-full max-w-none">
+ 
       <Form layout="vertical">
         <Row gutter={16} className="mb-4">
           <Col xs={24} sm={12} md={6}>
@@ -723,10 +725,10 @@ const EditSalesPage: React.FC = () => {
         summary={() => (
           <Table.Summary fixed>
             <Table.Summary.Row>
-              <Table.Summary.Cell index={0} colSpan={4} style={{ textAlign: 'right', fontWeight: 'bold', background: '#e6f7ff' }}>الإجماليات</Table.Summary.Cell>
+              <Table.Summary.Cell index={0} colSpan={5} style={{ textAlign: 'right', fontWeight: 'bold', background: '#e6f7ff' }}>الإجماليات</Table.Summary.Cell>
               {/* السعر */}
 
-              <Table.Summary.Cell index={5} style={{ textAlign: 'center', fontWeight: 'bold' }}>{totals.total}</Table.Summary.Cell>
+              {/* <Table.Summary.Cell index={5} style={{ textAlign: 'center', fontWeight: 'bold' }}>{totals.total}</Table.Summary.Cell> */}
               {/* % الخصم */}
               <Table.Summary.Cell index={6}></Table.Summary.Cell>
               {/* قيمة الخصم */}
@@ -755,6 +757,7 @@ const EditSalesPage: React.FC = () => {
         <Button type="primary" icon={<SaveOutlined />} onClick={updateInvoice}>
           تحديث الفاتورة
         </Button>
+      </div>
       </div>
     </div>
   );
