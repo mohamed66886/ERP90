@@ -98,6 +98,7 @@ const SalesReturnPage: React.FC = () => {
         }
       }
       // حفظ كل صنف مع معرف واسم المخزن
+      // فقط الأصناف التي الكمية المرتجعة لها أكبر من صفر
       const itemsWithWarehouse = items
         .map(item => ({
           itemNumber: item.itemNumber,
@@ -115,6 +116,12 @@ const SalesReturnPage: React.FC = () => {
           returnedQty: Number(item.returnedQty) || 0
         }))
         .filter(item => item.returnedQty > 0);
+
+      // إذا لم يوجد أي صنف مرتجع، لا تحفظ المرتجع
+      if (itemsWithWarehouse.length === 0) {
+        message.error('يجب إدخال كمية مرتجعة واحدة على الأقل');
+        return;
+      }
 
       // حفظ المرتجع أولاً
       await addDoc(collection(db, 'sales_returns'), {
@@ -144,23 +151,26 @@ const SalesReturnPage: React.FC = () => {
       if (!invoiceSnap.empty) {
         const invoiceDocRef = invoiceSnap.docs[0].ref;
         const invoiceDocData = invoiceSnap.docs[0].data();
-        // تحديث الأصناف
-        const updatedItems = (invoiceDocData.items || []).map((item: any) => {
-          // ابحث عن المرتجع لهذا الصنف
-          const returned = itemsWithWarehouse.find(ret => ret.itemNumber === item.itemNumber);
-          if (returned && returned.returnedQty > 0) {
-            // خصم الكمية المرتجعة
-            const newQuantity = Math.max(Number(item.quantity) - Number(returned.returnedQty), 0);
-            // تحديث عدد المرتجعات السابقة
-            const previousReturns = (item.previousReturns || 0) + Number(returned.returnedQty);
+        // تحديث الأصناف وحذف أي صنف أصبحت كميته صفر
+        const updatedItems = (invoiceDocData.items || [])
+          .map((item: any) => {
+            const returned = itemsWithWarehouse.find(ret => ret.itemNumber === item.itemNumber);
+            if (returned && returned.returnedQty > 0) {
+              const newQuantity = Math.max(Number(item.quantity) - Number(returned.returnedQty), 0);
+              const previousReturns = (item.previousReturns || 0) + Number(returned.returnedQty);
+              return {
+                ...item,
+                quantity: newQuantity.toString(),
+                previousReturns: previousReturns // حفظ المرتجعات السابقة في قاعدة البيانات
+              };
+            }
+            // إذا كان الصنف لم يتم إرجاعه، يجب الحفاظ على قيمة previousReturns كما هي
             return {
               ...item,
-              quantity: newQuantity.toString(),
-              previousReturns
+              previousReturns: item.previousReturns || 0
             };
-          }
-          return item;
-        });
+          })
+          .filter(item => Number(item.quantity) > 0); // حذف الأصناف التي أصبحت كميتها صفر
         await updateDoc(invoiceDocRef, { items: updatedItems });
       }
 
@@ -331,7 +341,7 @@ const SalesReturnPage: React.FC = () => {
           taxValue: item.taxValue,
           total: item.total,
           returnedQty: '',
-          previousReturns: 0
+          previousReturns: item.previousReturns || 0 // جلب المرتجعات السابقة من قاعدة البيانات
         }))
       );
       message.success('تم تحميل بيانات الفاتورة بنجاح');
