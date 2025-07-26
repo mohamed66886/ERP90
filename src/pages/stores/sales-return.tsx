@@ -68,6 +68,23 @@ const initialTotals: InvoiceTotals = {
 const SalesReturnPage: React.FC = () => {
   // حفظ معرف المخزن الأصلي من الفاتورة
   const [originalWarehouseId, setOriginalWarehouseId] = useState<string>('');
+  // قائمة المخازن
+  const [warehouseOptions, setWarehouseOptions] = useState<{ id: string; name: string }[]>([]);
+  // جلب قائمة المخازن من قاعدة البيانات
+  useEffect(() => {
+    const fetchWarehouses = async () => {
+      try {
+        const { getDocs, collection } = await import('firebase/firestore');
+        const { db } = await import('../../lib/firebase');
+        const snap = await getDocs(collection(db, 'warehouses'));
+        const options = snap.docs.map(doc => ({ id: doc.id, name: doc.data().name || doc.id }));
+        setWarehouseOptions(options);
+      } catch {
+        setWarehouseOptions([]);
+      }
+    };
+    fetchWarehouses();
+  }, []);
 
   // حفظ المرتجع
   const handleSaveReturn = async () => {
@@ -77,6 +94,17 @@ const SalesReturnPage: React.FC = () => {
     }
     if (!paymentMethod) {
       message.error('يجب اختيار طريقة الدفع');
+      return;
+    }
+    // تحقق قبل الحفظ: منع حفظ المرتجع إذا تجاوزت المرتجعات السابقة كمية الصنف
+    const invalidReturn = items.some(item => {
+      const returnedQty = Number(item.returnedQty) || 0;
+      const previousReturns = Number(item.previousReturns) || 0;
+      const quantity = Number(item.quantity);
+      return returnedQty > 0 && (previousReturns + returnedQty > quantity);
+    });
+    if (invalidReturn) {
+      message.error('لا يمكن أن يكون مجموع المرتجعات السابقة والكمية المرتجعة أكبر من كمية الصنف الأصلية');
       return;
     }
     try {
@@ -156,12 +184,12 @@ const SalesReturnPage: React.FC = () => {
           .map((item: any) => {
             const returned = itemsWithWarehouse.find(ret => ret.itemNumber === item.itemNumber);
             if (returned && returned.returnedQty > 0) {
-              const newQuantity = Math.max(Number(item.quantity) - Number(returned.returnedQty), 0);
-              const previousReturns = (item.previousReturns || 0) + Number(returned.returnedQty);
+              let previousReturns = (item.previousReturns || 0) + Number(returned.returnedQty);
+              const maxReturns = Number(item.quantity);
+              if (previousReturns > maxReturns) previousReturns = maxReturns;
               return {
                 ...item,
-                quantity: newQuantity.toString(),
-                previousReturns: previousReturns // حفظ المرتجعات السابقة في قاعدة البيانات
+                previousReturns: previousReturns // فقط تحديث المرتجعات السابقة
               };
             }
             // إذا كان الصنف لم يتم إرجاعه، يجب الحفاظ على قيمة previousReturns كما هي
@@ -169,8 +197,7 @@ const SalesReturnPage: React.FC = () => {
               ...item,
               previousReturns: item.previousReturns || 0
             };
-          })
-          .filter(item => Number(item.quantity) > 0); // حذف الأصناف التي أصبحت كميتها صفر
+          });
         await updateDoc(invoiceDocRef, { items: updatedItems });
       }
 
@@ -178,10 +205,11 @@ const SalesReturnPage: React.FC = () => {
       setItems(prevItems => prevItems.map(item => {
         const returned = itemsWithWarehouse.find(ret => ret.itemNumber === item.itemNumber);
         if (returned && returned.returnedQty > 0) {
-          const previousReturns = (item.previousReturns || 0) + Number(returned.returnedQty);
+          let previousReturns = (item.previousReturns || 0) + Number(returned.returnedQty);
+          const maxReturns = Number(item.quantity);
+          if (previousReturns > maxReturns) previousReturns = maxReturns;
           return {
             ...item,
-            quantity: (Math.max(Number(item.quantity) - Number(returned.returnedQty), 0)).toString(),
             previousReturns: previousReturns
           };
         }
@@ -297,11 +325,6 @@ const SalesReturnPage: React.FC = () => {
       const doc = snap.docs[0].data();
       // حفظ معرف المخزن الأصلي في state
       setOriginalWarehouseId(doc.warehouse || '');
-      // جلب اسم المخزن الحقيقي (للعرض فقط)
-      let warehouseName = doc.warehouse || '';
-      if (warehouseName) {
-        warehouseName = await fetchWarehouseName(warehouseName);
-      }
       // جلب اسم الفرع الحقيقي
       let branchName = doc.branch || '';
       if (branchName) {
@@ -310,9 +333,9 @@ const SalesReturnPage: React.FC = () => {
       setInvoiceData({
         invoiceNumber: doc.invoiceNumber || '',
         entryNumber: doc.entryNumber || '',
-        accountingPeriod: dayjs(doc.date).format('YYYY-MM'),
-        date: doc.date || '',
-        warehouse: warehouseName,
+         accountingPeriod: dayjs().format('YYYY-MM'),
+         date: dayjs().format('YYYY-MM-DD'),
+        warehouse: doc.warehouse || '', // نضع معرف المخزن مباشرة
         branch: branchName,
         customerNumber: doc.customerNumber || '',
         customerName: doc.customerName || '',
@@ -675,8 +698,36 @@ const SalesReturnPage: React.FC = () => {
               { id: 'invNum', label: 'رقم الفاتورة', value: invoiceData.invoiceNumber },
                               { id: 'entryNum', label: 'رقم القيد', value: invoiceData.entryNumber },
                               { id: 'accPeriod', label: 'الفترة المحاسبية', value: invoiceData.accountingPeriod },
-                              { id: 'invDate', label: 'تاريخ الفاتورة', value: invoiceData.date },
-                              { id: 'warehouse', label: 'المخزن', value: invoiceData.warehouse },
+                              { id: 'invDate', label: 'تاريخ المرتجع', value: invoiceData.date },
+                              // حقل المخزن قابل للتغيير
+                              {
+                                id: 'warehouse',
+                                label: 'المخزن',
+                                value: invoiceData.warehouse,
+                                render: () => (
+                                  <Select
+                                    id="warehouse"
+                                    value={invoiceData.warehouse}
+                                    placeholder="اختر المخزن"
+                                    onChange={value => {
+                                      setInvoiceData(d => ({ ...d, warehouse: value }));
+                                      setOriginalWarehouseId(value);
+                                    }}
+                                    showSearch
+                                    allowClear
+                                    style={{ width: '100%' }}
+                                    dropdownStyle={{ borderRadius: 12 }}
+                                  >
+                                    {warehouseOptions.length === 0 ? (
+                                      <Select.Option value="" disabled>لا توجد مخازن متاحة</Select.Option>
+                                    ) : (
+                                      warehouseOptions.map(opt => (
+                                        <Select.Option key={opt.id} value={opt.id}>{opt.name}</Select.Option>
+                                      ))
+                                    )}
+                                  </Select>
+                                )
+                              },
                               { id: 'branch', label: 'الفرع', value: invoiceData.branch },
                               { id: 'custNum', label: 'رقم العميل', value: invoiceData.customerNumber },
                               { id: 'custName', label: 'اسم العميل', value: invoiceData.customerName },
@@ -690,16 +741,18 @@ const SalesReturnPage: React.FC = () => {
                                     <label htmlFor={field.id} style={{ marginBottom: 6, fontWeight: 600, color: '#555' }}>
                                       {field.label}
                                     </label>
-                                    <Input 
-                                      id={field.id} 
-                                      value={field.value} 
-                                      disabled 
-                                      style={{ 
-                                        background: '#fafafa',
-                                        borderRadius: 8,
-                                        border: '1px solid #e0e0e0'
-                                      }}
-                                    />
+                                    {field.render ? field.render() : (
+                                      <Input 
+                                        id={field.id} 
+                                        value={field.value} 
+                                        disabled 
+                                        style={{ 
+                                          background: '#fafafa',
+                                          borderRadius: 8,
+                                          border: '1px solid #e0e0e0'
+                                        }}
+                                      />
+                                    )}
                                   </div>
                                 </motion.div>
                               </Col>
