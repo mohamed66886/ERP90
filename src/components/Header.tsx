@@ -1,5 +1,6 @@
 import { LogOut, Menu, X, Calendar, Search, Bell, User, Settings, HelpCircle, Sun, Moon, DollarSign, PieChart } from "lucide-react";
 import MobileSidebar from "./MobileSidebar";
+import { BiSolidBadgeCheck } from "react-icons/bi";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
@@ -414,14 +415,15 @@ const Header = ({
                 {/* User Name (Desktop) */}
                 {isDesktop && (
                   <div className="flex items-center gap-4 mx-3">
-                    <div className="flex flex-col items-end">
-                      <span className="font-normal text-gray-900 dark:text-white">
-                        {userData?.name || "مستخدم"}
-                      </span>
-                      <span className="text-xs text-blue-500 dark:text-blue-300 mt-0">
-                        {userData?.email || "بريد إلكتروني"}
-                      </span>
-                    </div>
+                  <div className="flex flex-col items-end">
+                    <span className="font-normal text-gray-900 dark:text-white flex items-center gap-1">
+                      {userData?.name || "مستخدم"}
+                      <BiSolidBadgeCheck className="text-blue-500" />
+                    </span>
+                    <span className="text-xs text-blue-500 dark:text-blue-300 mt-0">
+                      {userData?.email || "بريد إلكتروني"}
+                    </span>
+                  </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <div className="flex items-center cursor-pointer relative">

@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from "react";
+import { Helmet } from "react-helmet";
 import { Link } from 'react-router-dom';
 import { getDocs, query, collection } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
@@ -54,7 +55,7 @@ interface InvoiceRecord {
 
 
 
-const invoice: React.FC = () => {
+const Invoice: React.FC = () => {
   const [timeFilter, setTimeFilter] = useState<string>("");
   const [showMore, setShowMore] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -750,7 +751,9 @@ const invoice: React.FC = () => {
     printWindow?.document.write(`
         <html>
         <head>
-          <title>فاتورة ضريبية | Tax Invoice</title>
+          <title>تقرير فواتير المبيعات | Sales Invoice Report</title>
+          <meta name="description" content="تقرير فواتير المبيعات، عرض وطباعة فواتير العملاء، ERP90 Dashboard">
+          <meta name="keywords" content="ERP, فواتير, مبيعات, تقرير, عملاء, ضريبة, طباعة, Sales, Invoice, Report, Tax, Customer">
           <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
           <style>
             @page { size: A4; margin: 10mm; }
@@ -1153,10 +1156,18 @@ const invoice: React.FC = () => {
     setTimeout(() => { printWindow?.print(); printWindow?.close(); }, 700);
   };
   return (
-    <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50">
+    <>
+      <Helmet>
+        <title>تقرير فواتير المبيعات | ERP90 Dashboard</title>
+        <meta name="description" content="تقرير فواتير المبيعات، عرض وطباعة فواتير العملاء، ERP90 Dashboard" />
+        <meta name="keywords" content="ERP, فواتير, مبيعات, تقرير, عملاء, ضريبة, طباعة, Sales, Invoice, Report, Tax, Customer" />
+      </Helmet>
+      <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50">
       <div className="p-4 font-['Tajawal'] bg-white rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] mb-4 relative overflow-hidden">
         <div className="flex items-center">
-          <h1 className="text-xl md:text-2xl font-bold text-blue-800">تقرير فواتير المبيعات </h1>
+          <h1 className="text-xl md:text-2xl font-bold text-blue-800">تقرير فواتير المبيعات 
+
+          </h1>
             <span className="animate-[wave_2s_infinite] text-2xl md:text-3xl mr-3">👋</span>        </div>
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]"></div>
       </div>
@@ -2027,7 +2038,8 @@ const invoice: React.FC = () => {
   )
 }
     </div>
+    </>
   );
 };
 
-export default invoice;
+export default Invoice;

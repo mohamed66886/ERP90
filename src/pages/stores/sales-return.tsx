@@ -80,7 +80,7 @@ const SalesReturnPage: React.FC = () => {
       return;
     }
     try {
-      const { addDoc, collection, getDoc, doc: docRef } = await import('firebase/firestore');
+      const { addDoc, collection, getDoc, doc: docRef, updateDoc } = await import('firebase/firestore');
       const { db } = await import('../../lib/firebase');
       // جلب اسم المخزن من قاعدة البيانات
       let warehouseName = '';
@@ -115,6 +115,8 @@ const SalesReturnPage: React.FC = () => {
           returnedQty: Number(item.returnedQty) || 0
         }))
         .filter(item => item.returnedQty > 0);
+
+      // حفظ المرتجع أولاً
       await addDoc(collection(db, 'sales_returns'), {
         referenceNumber,
         invoiceNumber: invoiceData.invoiceNumber,
@@ -133,9 +135,51 @@ const SalesReturnPage: React.FC = () => {
         totals,
         createdAt: new Date().toISOString()
       });
-      message.success('تم حفظ المرتجع بنجاح');
+
+      // تحديث الفاتورة الأصلية في sales_invoices
+      // جلب الفاتورة الأصلية
+      const { getDocs, query, where } = await import('firebase/firestore');
+      const invoiceQuery = query(collection(db, 'sales_invoices'), where('invoiceNumber', '==', invoiceData.invoiceNumber));
+      const invoiceSnap = await getDocs(invoiceQuery);
+      if (!invoiceSnap.empty) {
+        const invoiceDocRef = invoiceSnap.docs[0].ref;
+        const invoiceDocData = invoiceSnap.docs[0].data();
+        // تحديث الأصناف
+        const updatedItems = (invoiceDocData.items || []).map((item: any) => {
+          // ابحث عن المرتجع لهذا الصنف
+          const returned = itemsWithWarehouse.find(ret => ret.itemNumber === item.itemNumber);
+          if (returned && returned.returnedQty > 0) {
+            // خصم الكمية المرتجعة
+            const newQuantity = Math.max(Number(item.quantity) - Number(returned.returnedQty), 0);
+            // تحديث عدد المرتجعات السابقة
+            const previousReturns = (item.previousReturns || 0) + Number(returned.returnedQty);
+            return {
+              ...item,
+              quantity: newQuantity.toString(),
+              previousReturns
+            };
+          }
+          return item;
+        });
+        await updateDoc(invoiceDocRef, { items: updatedItems });
+      }
+
+      // تحديث بيانات الأصناف في الواجهة ليظهر عدد المرتجعات السابقة مباشرة
+      setItems(prevItems => prevItems.map(item => {
+        const returned = itemsWithWarehouse.find(ret => ret.itemNumber === item.itemNumber);
+        if (returned && returned.returnedQty > 0) {
+          const previousReturns = (item.previousReturns || 0) + Number(returned.returnedQty);
+          return {
+            ...item,
+            quantity: (Math.max(Number(item.quantity) - Number(returned.returnedQty), 0)).toString(),
+            previousReturns: previousReturns
+          };
+        }
+        return item;
+      }));
+      message.success('تم حفظ المرتجع وتحديث الفاتورة بنجاح');
     } catch (err) {
-      message.error('حدث خطأ أثناء حفظ المرتجع');
+      message.error('حدث خطأ أثناء حفظ المرتجع أو تحديث الفاتورة');
     }
   };
   // خيارات طرق الدفع من قاعدة البيانات

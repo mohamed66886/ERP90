@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from "react";
+import { Helmet } from "react-helmet";
 import { Link } from 'react-router-dom';
 import { getDocs, query, collection } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
@@ -1151,7 +1152,13 @@ const InvoicePreferred: React.FC = () => {
     setTimeout(() => { printWindow?.print(); printWindow?.close(); }, 700);
   };
   return (
-    <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50">
+    <>
+      <Helmet>
+        <title>تقرير الفواتير المفضلة | ERP90 Dashboard</title>
+        <meta name="description" content="تقرير الفواتير المفضلة، عرض وتحليل الفواتير، ERP90 Dashboard" />
+        <meta name="keywords" content="ERP, تقرير الفواتير, فواتير, مبيعات, تحليل, Preferred Invoices, Sales, Report, Customer" />
+      </Helmet>
+      <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50">
       <div className="p-4 font-['Tajawal'] bg-white rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] mb-4 relative overflow-hidden">
         <div className="flex items-center">
           <h1 className="text-xl md:text-2xl font-bold text-blue-800">تقرير فواتير المبيعات التفصيلي</h1>
@@ -2078,6 +2085,7 @@ const InvoicePreferred: React.FC = () => {
   )
 }
     </div>
+    </>
   );
 };
 

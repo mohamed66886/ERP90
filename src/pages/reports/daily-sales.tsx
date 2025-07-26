@@ -1,5 +1,6 @@
 import "./hide-datepicker-weekdays.css";
 import React from "react";
+import { Helmet } from "react-helmet";
 import Breadcrumb from "../../components/Breadcrumb";
 import { Form, DatePicker, TimePicker, Select, Button, Input } from "antd";
 import arEG from 'antd/es/date-picker/locale/ar_EG';
@@ -549,155 +550,162 @@ const DailySales: React.FC = () => {
   }, [branchId, branches]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.5 }}
-      className="min-h-screen bg-gray-100 flex flex-col items-center py-4 px-2 md:py-8 md:px-4"
-    >
-      <div className="w-full max-w-full">
-        <div className="p-4 font-['Tajawal'] bg-white rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] mb-4 relative overflow-hidden">
-          <div className="flex items-center">
-            <h1 className="text-xl md:text-2xl font-bold text-blue-800">تقارير المبيعات اليومية</h1>
-            <span className="animate-[wave_2s_infinite] text-2xl md:text-3xl mr-3">👋</span>
+    <>
+      <Helmet>
+        <title>تقارير المبيعات اليومية | ERP90</title>
+        <meta name="description" content="صفحة تقارير المبيعات اليومية في نظام ERP90 لعرض وتحليل المبيعات اليومية حسب الفروع والتواريخ." />
+        <meta name="keywords" content="ERP, تقارير, مبيعات, يومية, فروع, تحليل, ERP90" />
+      </Helmet>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5 }}
+        className="min-h-screen bg-gray-100 flex flex-col items-center py-4 px-2 md:py-8 md:px-4"
+      >
+        <div className="w-full max-w-full">
+          <div className="p-4 font-['Tajawal'] bg-white rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] mb-4 relative overflow-hidden">
+            <div className="flex items-center">
+              <h1 className="text-xl md:text-2xl font-bold text-blue-800">تقارير المبيعات اليومية</h1>
+              <span className="animate-[wave_2s_infinite] text-2xl md:text-3xl mr-3">👋</span>
+            </div>
+            <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]"></div>
           </div>
-          <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]"></div>
+
+          <style>{`
+            @keyframes bounce {
+              0%, 100% { transform: translateY(0); }
+              50% { transform: translateY(-5px); }
+            }
+            @keyframes wave {
+              0%, 100% { transform: rotate(0deg); }
+              25% { transform: rotate(20deg); }
+              75% { transform: rotate(-20deg); }
+            }
+            @keyframes pulse {
+              0%, 100% { opacity: 1; }
+              50% { opacity: 0.5; }
+            }
+          `}</style>
+
+          <Breadcrumb
+            items={[
+              { label: "الرئيسية", to: "/" },
+              { label: "التقارير" },
+              { label: "تقارير المبيعات اليومية" }
+            ]}
+          />
         </div>
 
-        <style>{`
-          @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-5px); }
-          }
-          @keyframes wave {
-            0%, 100% { transform: rotate(0deg); }
-            25% { transform: rotate(20deg); }
-            75% { transform: rotate(-20deg); }
-          }
-          @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-          }
-        `}</style>
-
-        <Breadcrumb
-          items={[
-            { label: "الرئيسية", to: "/" },
-            { label: "التقارير" },
-            { label: "تقارير المبيعات اليومية" }
-          ]}
-        />
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-4 md:p-6 w-full max-w-full">
-        {/* Filters Row - Responsive Grid */}
-        <Form layout="vertical" className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 mb-6 items-end">
-          <Form.Item label="من تاريخ" className="mb-0">
-            <DatePicker 
-              className="w-full"
-              popupStyle={{ direction: 'rtl' }}
-              locale={customArEg}
-              value={dateFrom}
-              onChange={v => setDateFrom(v)}
-            />
-          </Form.Item>
-          
-          <Form.Item label="وقت" className="mb-0">
-            <TimePicker 
-              locale={arEG}
-              className="w-full"
-              value={timeFrom}
-              onChange={v => setTimeFrom(v)}
-            />
-          </Form.Item>
-          
-          <Form.Item label="إلى تاريخ" className="mb-0">
-            <DatePicker 
-              className="w-full"
-              popupStyle={{ direction: 'rtl' }}
-              locale={customArEg}
-              value={dateTo}
-              onChange={v => setDateTo(v)}
-            />
-          </Form.Item>
-          
-          <Form.Item label="وقت" className="mb-0">
-            <TimePicker 
-              locale={arEG}
-              className="w-full"
-              value={timeTo}
-              onChange={v => setTimeTo(v)}
-            />
-          </Form.Item>
-          
-          <Form.Item label="الفرع" className="mb-0">
-            <Select
-              className="w-full"
-              loading={branchesLoading}
-              value={branchId}
-              onChange={v => setBranchId(v)}
-              options={[
-                { value: '', label: 'اختر الفرع' },
-                ...branches.map(branch => ({ value: branch.id, label: branch.name }))
-              ]}
-            />
-          </Form.Item>
-          
-          <div className="col-span-1 sm:col-span-2 md:col-span-3 lg:col-span-2 flex flex-col sm:flex-row items-center justify-center gap-2 mt-2 sm:mt-0">
-            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full">
-              <Button 
-                type="primary"
-                className="w-full h-9 text-lg  bg-blue-600 rounded-xl shadow-md"
-                loading={loading}
-                onClick={() => fetchData({ dateFrom, dateTo, branchId, timeFrom, timeTo })}
-              >
-                بحث
-              </Button>
-            </motion.div>
-            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full">
-              <Button
-                type="primary"
-                className="w-full h-9 text-lg  bg-blue-600 flex items-center justify-center gap-3 rounded-xl shadow-md"
-                icon={<PrinterOutlined style={{ fontSize: 20 }} />}
-                onClick={handlePrint}
-              >
-                طباعة
-              </Button>
-              
-            </motion.div>
-          </div>
-        </Form>
-
-        {/* Grid Section - Responsive */}
-        <motion.div 
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
-          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 border rounded-lg bg-gray-50 p-2"
-        >
-          {gridLabels.map((row, rowIdx) =>
-            row.map((label, colIdx) => {
-              const showVisaIcon =
-                label === "عدد الفواتير الآجلة" || label === "إجمالي المبيعات الآجلة";
-              const value = gridValues[rowIdx]?.[colIdx] ?? 0;
-              return (
-                <motion.div
-                  key={label}
-                  whileHover={{ scale: 1.03, boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}
-                  className="flex flex-col items-center justify-center border rounded bg-white min-h-[90px] p-2"
+        <div className="bg-white rounded-lg shadow p-4 md:p-6 w-full max-w-full">
+          {/* Filters Row - Responsive Grid */}
+          <Form layout="vertical" className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 mb-6 items-end">
+            <Form.Item label="من تاريخ" className="mb-0">
+              <DatePicker 
+                className="w-full"
+                popupStyle={{ direction: 'rtl' }}
+                locale={customArEg}
+                value={dateFrom}
+                onChange={v => setDateFrom(v)}
+              />
+            </Form.Item>
+            
+            <Form.Item label="وقت" className="mb-0">
+              <TimePicker 
+                locale={arEG}
+                className="w-full"
+                value={timeFrom}
+                onChange={v => setTimeFrom(v)}
+              />
+            </Form.Item>
+            
+            <Form.Item label="إلى تاريخ" className="mb-0">
+              <DatePicker 
+                className="w-full"
+                popupStyle={{ direction: 'rtl' }}
+                locale={customArEg}
+                value={dateTo}
+                onChange={v => setDateTo(v)}
+              />
+            </Form.Item>
+            
+            <Form.Item label="وقت" className="mb-0">
+              <TimePicker 
+                locale={arEG}
+                className="w-full"
+                value={timeTo}
+                onChange={v => setTimeTo(v)}
+              />
+            </Form.Item>
+            
+            <Form.Item label="الفرع" className="mb-0">
+              <Select
+                className="w-full"
+                loading={branchesLoading}
+                value={branchId}
+                onChange={v => setBranchId(v)}
+                options={[
+                  { value: '', label: 'اختر الفرع' },
+                  ...branches.map(branch => ({ value: branch.id, label: branch.name }))
+                ]}
+              />
+            </Form.Item>
+            
+            <div className="col-span-1 sm:col-span-2 md:col-span-3 lg:col-span-2 flex flex-col sm:flex-row items-center justify-center gap-2 mt-2 sm:mt-0">
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full">
+                <Button 
+                  type="primary"
+                  className="w-full h-9 text-lg  bg-blue-600 rounded-xl shadow-md"
+                  loading={loading}
+                  onClick={() => fetchData({ dateFrom, dateTo, branchId, timeFrom, timeTo })}
                 >
-                  <span className="font-bold text-lg md:text-xl text-gray-800 mb-1 flex items-center gap-1">
-                    {typeof value === 'number' ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value}
-                    {showVisaIcon && <CreditCardOutlined className="text-black text-xl" />}
-                  </span>
-                  <span className="text-sm md:text-base text-gray-700 font-bold text-center">{label}</span>
-                </motion.div>
-              );
-            })
-          )}
-        </motion.div>
-      </div>
-    </motion.div>
+                  بحث
+                </Button>
+              </motion.div>
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full">
+                <Button
+                  type="primary"
+                  className="w-full h-9 text-lg  bg-blue-600 flex items-center justify-center gap-3 rounded-xl shadow-md"
+                  icon={<PrinterOutlined style={{ fontSize: 20 }} />}
+                  onClick={handlePrint}
+                >
+                  طباعة
+                </Button>
+                
+              </motion.div>
+            </div>
+          </Form>
+
+          {/* Grid Section - Responsive */}
+          <motion.div 
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.2, duration: 0.5 }}
+            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 border rounded-lg bg-gray-50 p-2"
+          >
+            {gridLabels.map((row, rowIdx) =>
+              row.map((label, colIdx) => {
+                const showVisaIcon =
+                  label === "عدد الفواتير الآجلة" || label === "إجمالي المبيعات الآجلة";
+                const value = gridValues[rowIdx]?.[colIdx] ?? 0;
+                return (
+                  <motion.div
+                    key={label}
+                    whileHover={{ scale: 1.03, boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}
+                    className="flex flex-col items-center justify-center border rounded bg-white min-h-[90px] p-2"
+                  >
+                    <span className="font-bold text-lg md:text-xl text-gray-800 mb-1 flex items-center gap-1">
+                      {typeof value === 'number' ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value}
+                      {showVisaIcon && <CreditCardOutlined className="text-black text-xl" />}
+                    </span>
+                    <span className="text-sm md:text-base text-gray-700 font-bold text-center">{label}</span>
+                  </motion.div>
+                );
+              })
+            )}
+          </motion.div>
+        </div>
+      </motion.div>
+    </>
   );
 };
 

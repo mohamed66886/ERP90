@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { FaStar, FaHome, FaCog, FaExchangeAlt, FaChartBar, FaChevronDown, FaChevronUp, FaChevronRight, FaFileInvoiceDollar, FaUndo, FaFileInvoice, FaUndoAlt, FaWarehouse, FaBoxes, FaCubes, FaUsers, FaUserTie, FaUserFriends, FaUserCheck, FaUserShield, FaBuilding, FaMoneyCheckAlt, FaSlidersH, FaServer, FaCloudUploadAlt, FaQuestionCircle } from "react-icons/fa";
+import { FaStar, FaHome, FaCog, FaExchangeAlt, FaChartBar, FaChevronDown, FaChevronUp, FaChevronRight, FaFileInvoiceDollar, FaUndo, FaFileInvoice, FaUndoAlt, FaWarehouse, FaBoxes, FaCubes, FaUsers, FaUserTie, FaUserFriends, FaUserCheck, FaUserShield, FaBuilding, FaMoneyCheckAlt, FaSlidersH, FaServer, FaCloudUploadAlt, FaQuestionCircle, FaTasks } from "react-icons/fa";
   // قائمة الإعدادات الأساسية مع الأيقونات
   const settingsMenu = [
     { label: "ادارة الفروع", icon: <FaBuilding className="text-blue-500" />, path: "/business/branches" },
@@ -80,6 +80,14 @@ const Sidebar = () => {
     { label: "ادارة المخازن", icon: <FaWarehouse className="text-blue-500" />, path: "/stores/manage" },
     { label: "ادارة الاصناف", icon: <FaBoxes className="text-green-500" />, path: "/stores/item" },
     { label: "المخزون", icon: <FaCubes className="text-purple-500" />, path: "/stores/stock" }
+  ];
+  // قائمة النظام المحاسبي
+  const accountingMenu = [
+    { label: "قيد يومية", icon: <FaFileInvoiceDollar className="text-blue-500" />, path: "/accounting/daily-entry" },
+    { label: "قيد تسوية", icon: <FaFileInvoiceDollar className="text-green-500" />, path: "/accounting/adjustment-entry" },
+    { label: "قيد افتتاحي", icon: <FaFileInvoiceDollar className="text-purple-500" />, path: "/accounting/opening-entry" },
+    { label: "قيد إقفال", icon: <FaFileInvoiceDollar className="text-red-500" />, path: "/accounting/closing-entry" },
+    { label: "قيد ترحيل", icon: <FaFileInvoiceDollar className="text-orange-500" />, path: "/accounting/posting-entry" }
   ];
 
   const navigate = useNavigate();
@@ -174,6 +182,7 @@ const Sidebar = () => {
         )}
           
           <SidebarItem 
+
             icon={<FaExchangeAlt />} 
             label="العمليات" 
             open={sidebarOpen} 
@@ -224,6 +233,16 @@ const Sidebar = () => {
             onClick={() => toggleMenu('stores')}
             ref={(el) => itemRefs.current['stores'] = el}
           />
+        <SidebarItem 
+          icon={<FaServer />} 
+          label="النظام المحاسبي" 
+          open={sidebarOpen} 
+          className="border-b border-gray-200 last:border-b-0"
+          hasSubmenu
+          isOpen={activeMenu === 'accounting'}
+          onClick={() => toggleMenu('accounting')}
+          ref={(el) => itemRefs.current['accounting'] = el}
+        />
         {activeMenu === 'people' && (
           <>
             <motion.div
@@ -454,7 +473,7 @@ const Sidebar = () => {
                   animate={{ rotate: activeMenu === 'operations' ? 360 : 0 }}
                   transition={{ duration: 0.5 }}
                 >
-                  <FaExchangeAlt className="text-blue-600" />
+                  <FaTasks className="text-blue-600" />
                 </motion.div>
                 العمليات
               </div>
@@ -464,6 +483,55 @@ const Sidebar = () => {
                   label={item.label}
                   icon={item.icon}
                   isLast={index === operationsMenu.length - 1}
+                  active={location.pathname === item.path}
+                  onClick={() => {
+                    setActiveMenu(null);
+                    navigate(item.path);
+                  }}
+                />
+              ))}
+            </motion.div>
+          </>
+        )}
+        {activeMenu === 'accounting' && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-20 bg-black bg-opacity-10"
+              onClick={() => setActiveMenu(null)}
+            />
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="fixed bg-white shadow-[0_0_10px_0_rgba(0,0,0,0.1)] rounded-md pt-0 pb-2 z-30 min-w-[260px] border border-gray-200 scrollbar-hide"
+              style={{
+                top: `${submenuPosition.top}px`,
+                right: sidebarOpen ? 228 : 70,
+                maxHeight: '230px',
+                overflowY: 'auto',
+                overflowX: 'hidden',
+              }}
+            >
+              <div className="sticky top-0 bg-white z-40 flex items-center gap-2 px-4 py-2 text-blue-600 font-bold text-base border-b border-gray-100 select-none shadow-sm">
+                <motion.div
+                  animate={{ rotate: activeMenu === 'accounting' ? 360 : 0 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <FaServer className="text-blue-600" />
+                </motion.div>
+                النظام المحاسبي
+              </div>
+              {accountingMenu.map((item, index) => (
+                <SubmenuItem 
+                  key={index}
+                  label={item.label}
+                  icon={item.icon}
+                  isLast={index === accountingMenu.length - 1}
                   active={location.pathname === item.path}
                   onClick={() => {
                     setActiveMenu(null);

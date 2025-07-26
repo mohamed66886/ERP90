@@ -1,5 +1,6 @@
 // صفحة تعديل الفاتورة
 import React, { useState, useEffect, useMemo } from 'react';
+import { Helmet } from 'react-helmet';
 import { useLocation } from 'react-router-dom';
 import { SearchOutlined } from '@ant-design/icons';
 import { useAuth } from '@/contexts/useAuth';
@@ -626,6 +627,12 @@ const EditSalesPage: React.FC = () => {
     updateAfterEdit();
   };
   return (
+    <>
+      <Helmet>
+        <title>تعديل فاتورة مبيعات | ERP90 Dashboard</title>
+        <meta name="description" content="تعديل فاتورة مبيعات، تحديث بيانات الفاتورة، ERP90 Dashboard" />
+        <meta name="keywords" content="ERP, تعديل فاتورة, مبيعات, تحديث, فاتورة, عملاء, Sales, Invoice, Edit, Update, Customer" />
+      </Helmet>
     <div className="p-2 sm:p-6 w-full max-w-none">
       <Breadcrumb
         items={[{ label: "الرئيسية", to: "/" }, { label: "تعديل فاتورة مبيعات" }]}
@@ -941,6 +948,7 @@ const EditSalesPage: React.FC = () => {
       </div>
       </div>
     </div>
+    </>
   );
 };
 

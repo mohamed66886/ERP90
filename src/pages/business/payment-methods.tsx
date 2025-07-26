@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Helmet } from "react-helmet";
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -166,7 +167,13 @@ const PaymentMethodsPage: React.FC = () => {
   };
 
   return (
-    <div className="p-4 space-y-6 font-['Tajawal'] bg-gray-50 min-h-screen">
+    <>
+      <Helmet>
+        <title>طرق الدفع | ERP90 Dashboard</title>
+        <meta name="description" content="إدارة طرق الدفع، إضافة وتعديل وحذف طرق الدفع، ERP90 Dashboard" />
+        <meta name="keywords" content="ERP, طرق الدفع, دفع, إدارة, تعديل, حذف, إضافة, Payment, Methods, Edit, Delete, Add" />
+      </Helmet>
+      <div className="p-4 space-y-6 font-['Tajawal'] bg-gray-50 min-h-screen">
       {/* Header Card with Animation */}
       <div className="p-4 font-['Tajawal'] bg-white rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] animate-[bounce_2s_infinite] relative overflow-hidden">
         <div className="flex items-center justify-between">
@@ -407,6 +414,7 @@ const PaymentMethodsPage: React.FC = () => {
         </div>
       </div>
     </div>
+    </>
   );
 };
 
