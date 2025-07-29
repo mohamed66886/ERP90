@@ -132,7 +132,7 @@ const EditSalesPage: React.FC = () => {
     taxFile?: string;
   }[]>([]);
 
-  // حالة الصنف الجديد
+  // حالة الصنف الجديد وحالة تعديل الصنف
   const [item, setItem] = useState<InvoiceItem>({
     itemNumber: '',
     itemName: '',
@@ -146,6 +146,8 @@ const EditSalesPage: React.FC = () => {
     total: 0,
     isNewItem: false
   });
+  // مؤشر تعديل الصنف (null إذا إضافة جديدة)
+  const [editIndex, setEditIndex] = useState<number | null>(null);
 
   // دالة اختيار اسم الصنف وتحديث كود الصنف تلقائيًا
   const handleSelectItemName = (value: string) => {
@@ -170,7 +172,7 @@ const EditSalesPage: React.FC = () => {
   // دالة إضافة صنف إلى الجدول
   const addItem = () => {
     if (!item.itemName || !item.quantity || !item.price) {
-      message.error('يرجى إدخال اسم الصنف والكمية والسعر');
+      // لا تقم بأي شيء إذا لم يتم إدخال البيانات المطلوبة
       return;
     }
     const quantity = Math.max(0, Number(item.quantity) || 0);
@@ -188,7 +190,14 @@ const EditSalesPage: React.FC = () => {
       taxValue: parseFloat(taxValue.toFixed(2)),
       total: parseFloat(total.toFixed(2))
     };
-    const updatedItems = [...items, newItem];
+    let updatedItems;
+    if (editIndex !== null && editIndex >= 0 && editIndex < items.length) {
+      // تعديل صنف موجود
+      updatedItems = items.map((it, idx) => (idx === editIndex ? newItem : it));
+    } else {
+      // إضافة صنف جديد
+      updatedItems = [...items, newItem];
+    }
     setItems(updatedItems);
     setItem({
       itemNumber: '',
@@ -203,46 +212,7 @@ const EditSalesPage: React.FC = () => {
       total: 0,
       isNewItem: false
     });
-    // تحديث الفاتورة في قاعدة البيانات مباشرة بعد الإضافة
-    const updateAfterAdd = async () => {
-      try {
-        if (!invoiceData.invoiceNumber) return;
-        const cleanedItems = updatedItems.map(item => ({
-          itemNumber: item.itemNumber,
-          itemName: item.itemName,
-          quantity: Number(item.quantity) || 0,
-          unit: item.unit,
-          price: Number(item.price) || 0,
-          discountPercent: Number(item.discountPercent) || 0,
-          discountValue: Number(item.discountValue) || 0,
-          taxPercent: Number(item.taxPercent) || 0,
-          taxValue: Number(item.taxValue) || 0,
-          total: Number(item.total) || 0
-        }));
-        const cleanedInvoiceData = Object.fromEntries(
-          Object.entries(invoiceData).filter(([_, v]) => v !== '' && v !== undefined && v !== null)
-        );
-        // ابحث عن معرف المستند الحقيقي أولاً
-        const { query, where, getDocs, setDoc, doc } = await import('firebase/firestore');
-        const invoicesQuery = query(collection(db, 'sales_invoices'), where('invoiceNumber', '==', invoiceData.invoiceNumber));
-        const invoicesSnap = await getDocs(invoicesQuery);
-        if (!invoicesSnap.empty) {
-          const realDocId = invoicesSnap.docs[0].id;
-          const invoiceRef = doc(db, 'sales_invoices', realDocId);
-          await setDoc(invoiceRef, {
-            ...cleanedInvoiceData,
-            items: cleanedItems,
-            updatedAt: new Date().toISOString(),
-          }, { merge: true });
-          message.success('تم حفظ الصنف الجديد في قاعدة البيانات');
-        } else {
-          message.error('لم يتم العثور على الفاتورة لتعديلها');
-        }
-      } catch (err) {
-        message.error('حدث خطأ أثناء حفظ الصنف الجديد: ' + (err?.message || err));
-      }
-    };
-    updateAfterAdd();
+    setEditIndex(null);
   };
   // دالة تحديث الفاتورة في قاعدة البيانات
   const updateInvoice = async () => {
@@ -535,96 +505,13 @@ const EditSalesPage: React.FC = () => {
   const handleDeleteItem = (idx: number) => {
     const newItems = items.filter((_, i) => i !== idx);
     setItems(newItems);
-    message.success('تم حذف الصنف من الفاتورة بنجاح');
-    // تحديث الفاتورة في قاعدة البيانات مباشرة بعد الحذف
-    const updateAfterDelete = async () => {
-      try {
-        if (!invoiceData.invoiceNumber) return;
-        const cleanedItems = newItems.map(item => ({
-          itemNumber: item.itemNumber,
-          itemName: item.itemName,
-          quantity: Number(item.quantity) || 0,
-          unit: item.unit,
-          price: Number(item.price) || 0,
-          discountPercent: Number(item.discountPercent) || 0,
-          discountValue: Number(item.discountValue) || 0,
-          taxPercent: Number(item.taxPercent) || 0,
-          taxValue: Number(item.taxValue) || 0,
-          total: Number(item.total) || 0
-        }));
-        const cleanedInvoiceData = Object.fromEntries(
-          Object.entries(invoiceData).filter(([_, v]) => v !== '' && v !== undefined && v !== null)
-        );
-        // ابحث عن معرف المستند الحقيقي أولاً
-        const { query, where, getDocs, setDoc, doc } = await import('firebase/firestore');
-        const invoicesQuery = query(collection(db, 'sales_invoices'), where('invoiceNumber', '==', invoiceData.invoiceNumber));
-        const invoicesSnap = await getDocs(invoicesQuery);
-        if (!invoicesSnap.empty) {
-          const realDocId = invoicesSnap.docs[0].id;
-          const invoiceRef = doc(db, 'sales_invoices', realDocId);
-          await setDoc(invoiceRef, {
-            ...cleanedInvoiceData,
-            items: cleanedItems,
-            updatedAt: new Date().toISOString(),
-          }, { merge: true });
-          message.success('تم حفظ التغييرات في قاعدة البيانات');
-        } else {
-          message.error('لم يتم العثور على الفاتورة لتعديلها');
-        }
-      } catch (err) {
-        message.error('حدث خطأ أثناء حفظ التغييرات: ' + (err?.message || err));
-      }
-    };
-    updateAfterDelete();
   };
 
   // دالة تعديل صنف من الجدول
   const handleEditItem = (idx: number) => {
     const itemToEdit = items[idx];
     setItem({ ...itemToEdit });
-    // احذف الصنف من الجدول مؤقتاً حتى يتم إعادة إضافته بعد التعديل
-    const newItems = items.filter((_, i) => i !== idx);
-    setItems(newItems);
-    // تحديث الفاتورة في قاعدة البيانات مباشرة بعد حذف الصنف مؤقتاً
-    const updateAfterEdit = async () => {
-      try {
-        if (!invoiceData.invoiceNumber) return;
-        const cleanedItems = newItems.map(item => ({
-          itemNumber: item.itemNumber,
-          itemName: item.itemName,
-          quantity: Number(item.quantity) || 0,
-          unit: item.unit,
-          price: Number(item.price) || 0,
-          discountPercent: Number(item.discountPercent) || 0,
-          discountValue: Number(item.discountValue) || 0,
-          taxPercent: Number(item.taxPercent) || 0,
-          taxValue: Number(item.taxValue) || 0,
-          total: Number(item.total) || 0
-        }));
-        const cleanedInvoiceData = Object.fromEntries(
-          Object.entries(invoiceData).filter(([_, v]) => v !== '' && v !== undefined && v !== null)
-        );
-        // ابحث عن معرف المستند الحقيقي أولاً
-        const { query, where, getDocs, setDoc, doc } = await import('firebase/firestore');
-        const invoicesQuery = query(collection(db, 'sales_invoices'), where('invoiceNumber', '==', invoiceData.invoiceNumber));
-        const invoicesSnap = await getDocs(invoicesQuery);
-        if (!invoicesSnap.empty) {
-          const realDocId = invoicesSnap.docs[0].id;
-          const invoiceRef = doc(db, 'sales_invoices', realDocId);
-          await setDoc(invoiceRef, {
-            ...cleanedInvoiceData,
-            items: cleanedItems,
-            updatedAt: new Date().toISOString(),
-          }, { merge: true });
-          message.success('تم حفظ التغييرات في قاعدة البيانات بعد التعديل');
-        } else {
-          message.error('لم يتم العثور على الفاتورة لتعديلها');
-        }
-      } catch (err) {
-        message.error('حدث خطأ أثناء حفظ التغييرات: ' + (err?.message || err));
-      }
-    };
-    updateAfterEdit();
+    setEditIndex(idx);
   };
   return (
     <>

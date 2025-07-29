@@ -67,6 +67,292 @@ const initialTotals: InvoiceTotals = {
 };
 const SalesReturnPage: React.FC = () => {
   // حفظ معرف المخزن الأصلي من الفاتورة
+  // بيانات الشركة من صفحة الإعدادات
+  const initialCompanyData = {
+    arabicName: '',
+    englishName: '',
+    logoUrl: '',
+    commercialRegistration: '',
+    taxFile: '',
+    registrationDate: '',
+    issuingAuthority: '',
+    companyType: '',
+    activityType: '',
+    nationality: '',
+    city: '',
+    region: '',
+    street: '',
+    district: '',
+    buildingNumber: '',
+    postalCode: '',
+    countryCode: 'SA',
+    phone: '',
+    mobile: '',
+    fiscalYear: '',
+    taxRate: ''
+  };
+  const [companyInfo, setCompanyInfo] = useState(initialCompanyData);
+  const [companyLoading, setCompanyLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchCompany = async () => {
+      setCompanyLoading(true);
+      try {
+        const { getDocs, query, collection } = await import('firebase/firestore');
+        const { db } = await import('../../lib/firebase');
+        const q = query(collection(db, 'companies'));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+          const docData = snapshot.docs[0];
+          setCompanyInfo({ ...initialCompanyData, ...docData.data() });
+        }
+      } catch (e) {
+        // يمكن إضافة رسالة خطأ هنا إذا رغبت
+      }
+      setCompanyLoading(false);
+    };
+    fetchCompany();
+  }, []);
+
+  // دالة الطباعة
+  const handlePrint = () => {
+    const printWindow = window.open('', '', 'height=900,width=800');
+    printWindow?.document.write(`
+      <html>
+        <head>
+          <title>طباعة مرتجع المبيعات</title>
+          <style>
+            @media print {
+              .header img[alt="QR Code"] {
+                display: inline-block !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                position: static !important;
+                max-width: 120px !important;
+                max-height: 120px !important;
+              }
+            }
+            body { 
+              font-family: 'Tajawal', Arial, sans-serif; 
+              padding: 20px;
+              direction: rtl;
+            }
+            .header {
+              display: flex;
+              flex-direction: row;
+              align-items: center;
+              justify-content: space-between;
+              margin-bottom: 20px;
+              gap: 24px;
+            }
+            .header-info {
+              text-align: right;
+            }
+            .header-info div {
+              margin: 5px 0;
+              font-weight: bold;
+            }
+            .logo {
+              margin-left: 16px;
+              width: 200px;
+              height: 200px;
+              object-fit: contain;
+              display: inline-block;
+            }
+            .customer-info {
+              margin: 15px 0;
+              line-height: 1.6;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 15px 0;
+            }
+            th, td {
+              border: 1px solid #000;
+              padding: 8px;
+              text-align: center;
+            }
+            .total-section {
+              margin-top: 20px;
+              text-align: left;
+            }
+            .signature-section {
+              margin-top: 40px;
+              display: flex;
+              justify-content: space-between;
+            }
+            .footer {
+              margin-top: 30px;
+              text-align: center;
+              font-weight: bold;
+            }
+            .info-table {
+              width: 350px;
+              float: right;
+              margin-bottom: 16px;
+              border: 1px solid #305496;
+              border-radius: 8px;
+              background: #f8faff;
+            }
+            .info-table th {
+              background: #305496;
+              color: #fff;
+              font-weight: bold;
+              border: 1px solid #305496;
+              padding: 8px;
+              font-size: 1em;
+            }
+            .info-table td {
+              border: 1px solid #305496;
+              padding: 8px;
+              font-size: 1em;
+              background: #fff;
+            }
+            .customer-table {
+            .customer-table-vertical {
+              width: 250px;
+              border: 1px solid #305496;
+              border-radius: 8px;
+              background: #f8faff;
+              margin-bottom: 0;
+              border-spacing: 0;
+            }
+            .customer-table-vertical th {
+              background: #305496;
+              color: #fff;
+              font-weight: bold;
+              border: 1px solid #305496;
+              padding: 8px;
+              font-size: 1em;
+              text-align: right;
+              width: 100px;
+            }
+            .customer-table-vertical td {
+              border: 1px solid #305496;
+              padding: 8px;
+              font-size: 1em;
+              background: #fff;
+              text-align: left;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="header-info">
+              <div style="font-size: 1.3em; font-weight: bold;">${companyInfo.arabicName || 'اسم الشركة'}</div>
+              <div>العنوان /  ${companyInfo.city || ''} - ${companyInfo.district || ''} - ${companyInfo.street || ''}</div>
+              <div>الجوال /  ${companyInfo.mobile || ''}</div>
+              <div>السجل التجاري /  ${companyInfo.commercialRegistration || ''}</div>
+              <div>الرقم الضريبي / ${companyInfo.taxFile || ''}</div>
+            </div>
+            <div style="display: inline-block; text-align: center; vertical-align: middle;">
+              <img 
+                src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(
+                  `اسم الشركة: ${companyInfo.arabicName || ''}\nالعنوان: ${companyInfo.city || ''} - ${companyInfo.district || ''} - ${companyInfo.street || ''}\nالجوال: ${companyInfo.mobile || ''}\nالسجل التجاري: ${companyInfo.commercialRegistration || ''}\nالرقم الضريبي: ${companyInfo.taxFile || ''}`
+                )}"
+                alt="QR Code"
+                style="width:120px;height:120px;border-radius:12px;margin:0 16px;display:inline-block;vertical-align:middle;"
+              />
+            </div>
+            <img src="${companyInfo.logoUrl || window.location.origin + '/public/logo.png'}" alt="Logo" class="logo" />
+          </div>
+
+          <!-- جدول معلومات المرتجع وجدول العميل -->
+          <div style="display: flex; flex-direction: row; gap: 24px; margin-bottom: 16px;">
+            <table class="info-table">
+              <tr>
+                <th>تاريخ الفاتورة</th>
+                <th>تاريخ المرتجع</th>
+                <th>كود المرتجع</th>
+              </tr>
+              <tr>
+                <td>${invoiceData.date || ''}</td>
+                <td>${dayjs().format('YYYY-MM-DD')}</td>
+                <td>${referenceNumber}</td>
+              </tr>
+            </table>
+            <table class="customer-table-vertical">
+              <tr>
+                <th>اسم العميل</th>
+                <td>${invoiceData.customerName || ''}</td>
+              </tr>
+              <tr>
+                <th>الرقم الضريبي</th>
+                <td>${companyInfo.taxFile || ''}</td>
+              </tr>
+              <tr>
+                <th>العنوان</th>
+                <td>${companyInfo.city || ''} - ${companyInfo.district || ''} - ${companyInfo.street || ''}</td>
+              </tr>
+            </table>
+          </div>
+
+        
+          <!-- جدول الأصناف الحقيقي -->
+          <table>
+            <tr>
+              <th>كود الصنف Item Code</th>
+              <th>اسم الصنف Item Name</th>
+              <th>الكمية Quantity</th>
+              <th>مبلغ الخصم Discount Amount</th>
+              <th>قيمة الضريبة Tax Value</th>
+              <th>الإجمالي Total</th>
+            </tr>
+            ${items.filter(item => Number(item.returnedQty) > 0).map(item => `
+              <tr>
+                <td>${item.itemNumber || ''}</td>
+                <td>${item.itemName || ''}</td>
+                <td>${item.returnedQty || 0}</td>
+                <td>${item.discountValue ? item.discountValue.toFixed(2) : '0.00'}</td>
+                <td>${item.taxValue ? item.taxValue.toFixed(2) : '0.00'}</td>
+                <td>${item.total ? item.total.toFixed(2) : '0.00'}</td>
+              </tr>
+            `).join('')}
+            <tr style="font-weight:bold;background:#f4f8ff;">
+              <td colspan="2">إجمالي المرتجع</td>
+              <td>
+                ${items.filter(item => Number(item.returnedQty) > 0).reduce((acc, item) => acc + Number(item.returnedQty), 0)}
+              </td>
+              <td>
+                ${items.filter(item => Number(item.returnedQty) > 0).reduce((acc, item) => acc + (item.discountValue ? Number(item.discountValue) : 0), 0).toFixed(2)}
+              </td>
+              <td>
+                ${items.filter(item => Number(item.returnedQty) > 0).reduce((acc, item) => acc + (item.taxValue ? Number(item.taxValue) : 0), 0).toFixed(2)}
+              </td>
+              <td>
+                ${items.filter(item => Number(item.returnedQty) > 0).reduce((acc, item) => acc + (item.total ? Number(item.total) : 0), 0).toFixed(2)}
+              </td>
+            </tr>
+          </table>
+
+
+
+          <div class="signature-section" style="margin-top:40px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid #305496;padding-top:24px;">
+            <div style="flex:1;text-align:right;">
+              <strong>اسم المستلم:</strong>
+              <span style="display:inline-block;width:180px;border-bottom:1px dashed #305496;margin-right:8px;">&nbsp;</span>
+            </div>
+            <div style="flex:1;text-align:center;">
+              <strong>تاريخ المرتجع:</strong>
+              <span style="display:inline-block;width:120px;border-bottom:1px dashed #305496;margin-right:8px;">${dayjs().format('YYYY-MM-DD')}</span>
+            </div>
+            <div style="flex:1;text-align:left;">
+              <strong>التوقيع:</strong>
+              <span style="display:inline-block;width:120px;border-bottom:1px dashed #305496;margin-right:8px;">&nbsp;</span>
+            </div>
+          </div>
+
+          <div class="footer">
+            <div>${companyInfo.activityType || 'المميزة الرئيسية للعمل'}</div>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow?.document.close();
+    printWindow?.focus();
+    printWindow?.print();
+  };
   const [originalWarehouseId, setOriginalWarehouseId] = useState<string>('');
   // قائمة المخازن
   const [warehouseOptions, setWarehouseOptions] = useState<{ id: string; name: string }[]>([]);
@@ -1020,27 +1306,8 @@ const SalesReturnPage: React.FC = () => {
               border: '1px solid #f0f0f0'
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 20 }}>
               <h2 style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#305496' }}>الأصناف</h2>
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Button 
-                  type="primary"
-                  size="large"
-                  style={{
-                    background: '#305496',
-                    borderColor: '#305496',
-                    fontWeight: 'bold',
-                    padding: '0 24px',
-                    height: 40
-                  }}
-                  onClick={handleSaveReturn}
-                >
-                  حفظ المرتجع
-                </Button>
-              </motion.div>
             </div>
             <Spin spinning={loading}>
               <Table
@@ -1083,69 +1350,124 @@ const SalesReturnPage: React.FC = () => {
                   }
                 }}
               />
-            {/* Summary Row Below Table */}
-            <div style={{
-              marginTop: 24,
-              padding: '16px 0',
-              borderTop: '1px solid #eee',
-              display: 'flex',
-              gap: 32,
-              flexWrap: 'wrap',
-              justifyContent: 'flex-end',
-              background: '#fafcff',
-              borderRadius: 12
-            }}>
-              {/* إجمالي قيمة الخصم */}
-              <div style={{ minWidth: 180 }}>
-                <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي قيمة الخصم:</span>
-                <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
-                  {items.reduce((acc, item) => {
-                    const returned = Number(item.returnedQty) || 0;
-                    const subtotal = Number(item.price) * returned;
-                    const discountValue = subtotal * Number(item.discountPercent) / 100;
-                    return acc + discountValue;
-                  }, 0).toFixed(2)}
-                </span>
+              {/* Summary Row Below Table */}
+              <div style={{
+                marginTop: 24,
+                padding: '16px 0',
+                borderTop: '1px solid #eee',
+                display: 'flex',
+                gap: 32,
+                flexWrap: 'wrap',
+                justifyContent: 'flex-end',
+                background: '#fafcff',
+                borderRadius: 12
+              }}>
+                {/* إجمالي قيمة الخصم */}
+                <div style={{ minWidth: 180 }}>
+                  <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي قيمة الخصم:</span>
+                  <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
+                    {items.reduce((acc, item) => {
+                      const returned = Number(item.returnedQty) || 0;
+                      const subtotal = Number(item.price) * returned;
+                      const discountValue = subtotal * Number(item.discountPercent) / 100;
+                      return acc + discountValue;
+                    }, 0).toFixed(2)}
+                  </span>
+                </div>
+                {/* إجمالي الصافي بعد الخصم */}
+                <div style={{ minWidth: 180 }}>
+                  <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي الصافي بعد الخصم:</span>
+                  <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
+                    {items.reduce((acc, item) => {
+                      const returned = Number(item.returnedQty) || 0;
+                      const subtotal = Number(item.price) * returned;
+                      const discountValue = subtotal * Number(item.discountPercent) / 100;
+                      return acc + (subtotal - discountValue);
+                    }, 0).toFixed(2)}
+                  </span>
+                </div>
+                {/* إجمالي قيمة الضريبة */}
+                <div style={{ minWidth: 180 }}>
+                  <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي قيمة الضريبة:</span>
+                  <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
+                    {items.reduce((acc, item) => {
+                      const returned = Number(item.returnedQty) || 0;
+                      const subtotal = Number(item.price) * returned;
+                      const discountValue = subtotal * Number(item.discountPercent) / 100;
+                      const taxValue = (subtotal - discountValue) * Number(item.taxPercent) / 100;
+                      return acc + taxValue;
+                    }, 0).toFixed(2)}
+                  </span>
+                </div>
+                {/* إجمالي الصافي المرتجع */}
+                <div style={{ minWidth: 180 }}>
+                  <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي الصافي المرتجع:</span>
+                  <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
+                    {items.reduce((acc, item) => {
+                      const returned = Number(item.returnedQty) || 0;
+                      const subtotal = Number(item.price) * returned;
+                      const discountValue = subtotal * Number(item.discountPercent) / 100;
+                      const taxValue = (subtotal - discountValue) * Number(item.taxPercent) / 100;
+                      return acc + (subtotal - discountValue + taxValue);
+                    }, 0).toFixed(2)}
+                  </span>
+                </div>
               </div>
-              {/* إجمالي الصافي بعد الخصم */}
-              <div style={{ minWidth: 180 }}>
-                <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي الصافي بعد الخصم:</span>
-                <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
-                  {items.reduce((acc, item) => {
-                    const returned = Number(item.returnedQty) || 0;
-                    const subtotal = Number(item.price) * returned;
-                    const discountValue = subtotal * Number(item.discountPercent) / 100;
-                    return acc + (subtotal - discountValue);
-                  }, 0).toFixed(2)}
-                </span>
+              {/* حفظ المرتجع تحت الجدول */}
+              <div style={{
+                marginTop: 32,
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: 16,
+                width: '100%'
+              }}>
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Button 
+                    type="primary"
+                    size="large"
+                    style={{
+                      background: '#4F8FF9', // أزرق فاتح
+                      borderColor: '#4F8FF9',
+                      color: '#fff',
+                      fontWeight: 'bold',
+                      padding: '0 32px',
+                      height: 48,
+                      fontSize: 18,
+                      boxShadow: '0 2px 8px rgba(79,143,249,0.15)'
+                    }}
+                    onClick={handleSaveReturn}
+                  >
+                    حفظ المرتجع
+                  </Button>
+                </motion.div>
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Button
+                    type="default"
+                    size="large"
+                    icon={<PrinterOutlined style={{ fontSize: 22, color: '#4F8FF9' }} />}
+                    style={{
+                      background: '#F4F8FF',
+                      borderColor: '#E3EDFC',
+                      color: '#4F8FF9',
+                      fontWeight: 'bold',
+                      padding: '0 24px',
+                      height: 48,
+                      fontSize: 18,
+                      boxShadow: '0 2px 8px rgba(79,143,249,0.10)'
+                    }}
+                    onClick={handlePrint}
+                  >
+                    طباعة
+                  </Button>
+                </motion.div>
               </div>
-              {/* إجمالي قيمة الضريبة */}
-              <div style={{ minWidth: 180 }}>
-                <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي قيمة الضريبة:</span>
-                <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
-                  {items.reduce((acc, item) => {
-                    const returned = Number(item.returnedQty) || 0;
-                    const subtotal = Number(item.price) * returned;
-                    const discountValue = subtotal * Number(item.discountPercent) / 100;
-                    const taxValue = (subtotal - discountValue) * Number(item.taxPercent) / 100;
-                    return acc + taxValue;
-                  }, 0).toFixed(2)}
-                </span>
-              </div>
-              {/* إجمالي الصافي المرتجع */}
-              <div style={{ minWidth: 180 }}>
-                <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي الصافي المرتجع:</span>
-                <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
-                  {items.reduce((acc, item) => {
-                    const returned = Number(item.returnedQty) || 0;
-                    const subtotal = Number(item.price) * returned;
-                    const discountValue = subtotal * Number(item.discountPercent) / 100;
-                    const taxValue = (subtotal - discountValue) * Number(item.taxPercent) / 100;
-                    return acc + (subtotal - discountValue + taxValue);
-                  }, 0).toFixed(2)}
-                </span>
-              </div>
-            </div>
             </Spin>
           </motion.div>
         )}
@@ -1181,6 +1503,7 @@ const SalesReturnPage: React.FC = () => {
                 borderColor: '#305496'
               }}
               icon={<PrinterOutlined style={{ fontSize: 24 }} />}
+              onClick={handlePrint}
             />
           </motion.div>
         </motion.div>
