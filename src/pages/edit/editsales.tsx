@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/useAuth';
 import { doc, getDoc, collection, getDocs, addDoc, updateDoc } from 'firebase/firestore';
 import dayjs from 'dayjs';
 import { Button, Input, Table, message, Form, Row, Col, Select, InputNumber } from 'antd';
+const { Summary } = Table;
 const { Option } = Select;
 import Divider from 'antd/es/divider';
 import * as XLSX from 'xlsx';
@@ -797,32 +798,71 @@ const EditSalesPage: React.FC = () => {
         bordered
         size="middle"
         className="custom-table-header"
+        rowClassName={(_, idx) => (editIndex === idx ? 'editing-row' : '')}
         summary={() => (
-          <Table.Summary fixed>
-            <Table.Summary.Row>
-              <Table.Summary.Cell index={0} colSpan={5} style={{ textAlign: 'right', fontWeight: 'bold', background: '#e6f7ff' }}>الإجماليات</Table.Summary.Cell>
+          <Summary fixed>
+            <Summary.Row>
+              <Summary.Cell index={0} colSpan={5} style={{ textAlign: 'right', fontWeight: 'bold', background: '#e6f7ff' }}>الإجماليات</Summary.Cell>
               {/* السعر */}
 
-              {/* <Table.Summary.Cell index={5} style={{ textAlign: 'center', fontWeight: 'bold' }}>{totals.total}</Table.Summary.Cell> */}
+              {/* <Summary.Cell index={5} style={{ textAlign: 'center', fontWeight: 'bold' }}>{totals.total}</Summary.Cell> */}
               {/* % الخصم */}
-              <Table.Summary.Cell index={6}></Table.Summary.Cell>
+              <Summary.Cell index={6}></Summary.Cell>
               {/* قيمة الخصم */}
-              <Table.Summary.Cell index={7} style={{ textAlign: 'center', color: '#faad14', fontWeight: 'bold' }}>{totals.discount}</Table.Summary.Cell>
+              <Summary.Cell index={7} style={{ textAlign: 'center', color: '#faad14', fontWeight: 'bold' }}>{totals.discount}</Summary.Cell>
               {/* الإجمالي بعد الخصم */}
-              <Table.Summary.Cell index={8} style={{ textAlign: 'center', fontWeight: 'bold' }}>{totals.afterDiscount}</Table.Summary.Cell>
+              <Summary.Cell index={8} style={{ textAlign: 'center', fontWeight: 'bold' }}>{totals.afterDiscount}</Summary.Cell>
               {/* % الضريبة */}
-              <Table.Summary.Cell index={9}></Table.Summary.Cell>
+              <Summary.Cell index={9}></Summary.Cell>
               {/* قيمة الضريبة */}
-              <Table.Summary.Cell index={10} style={{ textAlign: 'center', color: '#52c41a', fontWeight: 'bold' }}>{totals.tax}</Table.Summary.Cell>
+              <Summary.Cell index={10} style={{ textAlign: 'center', color: '#52c41a', fontWeight: 'bold' }}>{totals.tax}</Summary.Cell>
               {/* الإجمالي النهائي */}
-              <Table.Summary.Cell index={11} style={{ textAlign: 'center', color: '#d4380d', fontWeight: 'bold', fontSize: 16 }}>{totals.net}</Table.Summary.Cell>
-            </Table.Summary.Row>
-          </Table.Summary>
+              <Summary.Cell index={11} style={{ textAlign: 'center', color: '#d4380d', fontWeight: 'bold', fontSize: 16 }}>{totals.net}</Summary.Cell>
+            </Summary.Row>
+          </Summary>
         )}
       />
+      {/* ملخص الإجماليات أسفل الجدول */}
+      <div style={{
+        border: '1px solid #b7eb8f',
+        borderRadius: 8,
+        padding: '20px 32px',
+        margin: '16px 0 0 0',
+        fontWeight: 'bold',
+        fontSize: 16,
+        maxWidth: 320,
+        marginRight: 'auto',
+        marginLeft: 0,
+        textAlign: 'left'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span>الإجمالي:</span>
+          <span style={{ color: '#222' }}>{totals.total}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span>الخصم:</span>
+          <span style={{ color: '#faad14' }}>{totals.discount}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span>الإجمالي بعد الخصم:</span>
+          <span style={{ color: '#222' }}>{totals.afterDiscount}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span>قيمة الضريبة:</span>
+          <span style={{ color: '#52c41a' }}>{totals.tax}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 18, color: '#d4380d', borderTop: '1px solid #b7eb8f', paddingTop: 8, marginTop: 8 }}>
+          <span>الإجمالي النهائي:</span>
+          <span>{totals.net}</span>
+        </div>
+      </div>
       <style>{`
         .custom-table-header .ant-table-thead > tr > th {
           background: #e6f7ff !important;
+        }
+        .editing-row {
+          background: #fffbe6 !important;
+          transition: background 0.3s;
         }
       `}</style>
       {/* الإجماليات بنفس تنسيق صفحة المبيعات */}
