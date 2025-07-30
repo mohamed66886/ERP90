@@ -31,7 +31,8 @@ const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => {
       "مرتجع مبيعات": <RollbackOutlined className={iconStyle} />, 
       "ادارة طرق الدفع": <CreditCardFilled className={iconStyle} />, 
       "تقارير المبيعات اليوميه": <FileTextFilled className={iconStyle} />, 
-      "تقرير بارباح الفواتير": <FileTextFilled className={iconStyle} />
+      "تقرير بارباح الفواتير": <FileTextFilled className={iconStyle} />, 
+      "رجوع": <RollbackOutlined className={iconStyle} />
     };
     return iconMap[label] || null;
   };

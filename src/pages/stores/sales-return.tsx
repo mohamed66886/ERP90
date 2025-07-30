@@ -1356,14 +1356,14 @@ const SalesReturnPage: React.FC = () => {
                 padding: '16px 0',
                 borderTop: '1px solid #eee',
                 display: 'flex',
-                gap: 32,
-                flexWrap: 'wrap',
-                justifyContent: 'flex-end',
+                flexDirection: 'column',
+                gap: 12,
+                 alignItems: 'flex-end',
                 background: '#fafcff',
                 borderRadius: 12
               }}>
                 {/* إجمالي قيمة الخصم */}
-                <div style={{ minWidth: 180 }}>
+                <div style={{ minWidth: 220, marginBottom: 4 }}>
                   <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي قيمة الخصم:</span>
                   <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
                     {items.reduce((acc, item) => {
@@ -1375,7 +1375,7 @@ const SalesReturnPage: React.FC = () => {
                   </span>
                 </div>
                 {/* إجمالي الصافي بعد الخصم */}
-                <div style={{ minWidth: 180 }}>
+                <div style={{ minWidth: 220, marginBottom: 4 }}>
                   <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي الصافي بعد الخصم:</span>
                   <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
                     {items.reduce((acc, item) => {
@@ -1387,7 +1387,7 @@ const SalesReturnPage: React.FC = () => {
                   </span>
                 </div>
                 {/* إجمالي قيمة الضريبة */}
-                <div style={{ minWidth: 180 }}>
+                <div style={{ minWidth: 220, marginBottom: 4 }}>
                   <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي قيمة الضريبة:</span>
                   <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
                     {items.reduce((acc, item) => {
@@ -1400,7 +1400,7 @@ const SalesReturnPage: React.FC = () => {
                   </span>
                 </div>
                 {/* إجمالي الصافي المرتجع */}
-                <div style={{ minWidth: 180 }}>
+                <div style={{ minWidth: 220 }}>
                   <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي الصافي المرتجع:</span>
                   <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
                     {items.reduce((acc, item) => {

@@ -12,6 +12,7 @@ const { Option } = Select;
 import Divider from 'antd/es/divider';
 import * as XLSX from 'xlsx';
 import Breadcrumb from "../../components/Breadcrumb";
+import { useNavigate } from 'react-router-dom';
 import Card from 'antd/es/card';
 import { PlusOutlined, SaveOutlined, UserOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { db } from '@/lib/firebase';
@@ -111,6 +112,7 @@ const initialItem: InvoiceItem = {
 
 // صفحة تعديل الفاتورة
 const EditSalesPage: React.FC = () => {
+  const navigate = useNavigate();
   // اجلب رقم الفاتورة من URL
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
@@ -522,9 +524,22 @@ const EditSalesPage: React.FC = () => {
         <meta name="keywords" content="ERP, تعديل فاتورة, مبيعات, تحديث, فاتورة, عملاء, Sales, Invoice, Edit, Update, Customer" />
       </Helmet>
     <div className="p-2 sm:p-6 w-full max-w-none">
-      <Breadcrumb
-        items={[{ label: "الرئيسية", to: "/" }, { label: "تعديل فاتورة مبيعات" }]}
-      /> 
+      <div className="flex items-center">
+        <Breadcrumb
+          items={[
+            { label: "الرئيسية", to: "/" },
+            { label: "تعديل فاتورة مبيعات" }
+          ]}
+        />
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="ml-2 rtl:mr-2 flex items-center px-3 py-1.5 rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 transition text-sm font-medium"
+          style={{ border: 'none', outline: 'none', cursor: 'pointer' }}
+        >
+          <span className="mr-1 rtl:ml-1">رجوع</span>
+        </button>
+      </div>
         <div className="p-2 bg-white  sm:p-6 w-full max-w-none">
  
       <Form layout="vertical">
