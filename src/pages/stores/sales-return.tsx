@@ -114,8 +114,15 @@ const SalesReturnPage: React.FC = () => {
     fetchCompany();
   }, []);
 
+  // حالة لتتبع إذا تم حفظ المرتجع
+  const [isReturnSaved, setIsReturnSaved] = useState(false);
+
   // دالة الطباعة
   const handlePrint = () => {
+    if (!isReturnSaved) {
+      message.warning('يجب حفظ المرتجع أولاً قبل الطباعة');
+      return;
+    }
     const printWindow = window.open('', '', 'height=900,width=800');
     printWindow?.document.write(`
       <html>
@@ -168,7 +175,14 @@ const SalesReturnPage: React.FC = () => {
               border-collapse: collapse;
               margin: 15px 0;
             }
-            th, td {
+            th {
+              background: #e3edfc !important;
+              color: #305496 !important;
+              border: 1px solid #000;
+              padding: 8px;
+              text-align: center;
+            }
+            td {
               border: 1px solid #000;
               padding: 8px;
               text-align: center;
@@ -502,7 +516,9 @@ const SalesReturnPage: React.FC = () => {
         return item;
       }));
       message.success('تم حفظ المرتجع وتحديث الفاتورة بنجاح');
+      setIsReturnSaved(true);
     } catch (err) {
+      setIsReturnSaved(false);
       message.error('حدث خطأ أثناء حفظ المرتجع أو تحديث الفاتورة');
     }
   };
@@ -1288,7 +1304,13 @@ const SalesReturnPage: React.FC = () => {
           </AnimatePresence>
         </motion.div>
       </LayoutGroup>
-            {/* Items Table */}
+      {/* Items Table */}
+      <style>{`
+        .items-table thead tr th {
+          background: #e3edfc !important;
+          color: #305496 !important;
+        }
+      `}</style>
       <AnimatePresence>
         {items.length > 0 && (
           <motion.div
@@ -1311,6 +1333,7 @@ const SalesReturnPage: React.FC = () => {
             </div>
             <Spin spinning={loading}>
               <Table
+                className="items-table"
                 columns={columns.map(col => ({
                   ...col,
                   onCell: () => ({
@@ -1351,20 +1374,24 @@ const SalesReturnPage: React.FC = () => {
                 }}
               />
               {/* Summary Row Below Table */}
-              <div style={{
-                marginTop: 24,
-                padding: '16px 0',
-                borderTop: '1px solid #eee',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 12,
-                 alignItems: 'flex-end',
-                background: '#fafcff',
-                borderRadius: 12
-              }}>
-                {/* إجمالي قيمة الخصم */}
-                <div style={{ minWidth: 220, marginBottom: 4 }}>
-                  <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي قيمة الخصم:</span>
+              <div
+                style={{
+                  marginTop: 24,
+                  padding: '16px 0',
+                  borderTop: '1px solid #eee',
+                  background: '#fafcff',
+                  borderRadius: 12,
+                  width: '100%',
+                  maxWidth: '100%',
+                  textAlign: 'right',
+                  fontSize: 18,
+                  fontWeight: 600,
+                  color: '#305496',
+                  lineHeight: 2
+                }}
+              >
+                <div>
+                  إجمالي قيمة الخصم:
                   <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
                     {items.reduce((acc, item) => {
                       const returned = Number(item.returnedQty) || 0;
@@ -1374,9 +1401,8 @@ const SalesReturnPage: React.FC = () => {
                     }, 0).toFixed(2)}
                   </span>
                 </div>
-                {/* إجمالي الصافي بعد الخصم */}
-                <div style={{ minWidth: 220, marginBottom: 4 }}>
-                  <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي الصافي بعد الخصم:</span>
+                <div>
+                  إجمالي الصافي بعد الخصم:
                   <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
                     {items.reduce((acc, item) => {
                       const returned = Number(item.returnedQty) || 0;
@@ -1386,9 +1412,8 @@ const SalesReturnPage: React.FC = () => {
                     }, 0).toFixed(2)}
                   </span>
                 </div>
-                {/* إجمالي قيمة الضريبة */}
-                <div style={{ minWidth: 220, marginBottom: 4 }}>
-                  <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي قيمة الضريبة:</span>
+                <div>
+                  إجمالي قيمة الضريبة:
                   <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
                     {items.reduce((acc, item) => {
                       const returned = Number(item.returnedQty) || 0;
@@ -1399,9 +1424,8 @@ const SalesReturnPage: React.FC = () => {
                     }, 0).toFixed(2)}
                   </span>
                 </div>
-                {/* إجمالي الصافي المرتجع */}
-                <div style={{ minWidth: 220 }}>
-                  <span style={{ fontWeight: 600, color: '#305496' }}>إجمالي الصافي المرتجع:</span>
+                <div>
+                  إجمالي الصافي المرتجع:
                   <span style={{ marginRight: 8, fontWeight: 'bold', color: '#333' }}>
                     {items.reduce((acc, item) => {
                       const returned = Number(item.returnedQty) || 0;
@@ -1439,7 +1463,9 @@ const SalesReturnPage: React.FC = () => {
                       fontSize: 18,
                       boxShadow: '0 2px 8px rgba(79,143,249,0.15)'
                     }}
-                    onClick={handleSaveReturn}
+                    onClick={() => {
+                      handleSaveReturn();
+                    }}
                   >
                     حفظ المرتجع
                   </Button>
@@ -1463,6 +1489,7 @@ const SalesReturnPage: React.FC = () => {
                       boxShadow: '0 2px 8px rgba(79,143,249,0.10)'
                     }}
                     onClick={handlePrint}
+                    disabled={!isReturnSaved}
                   >
                     طباعة
                   </Button>
@@ -1504,6 +1531,7 @@ const SalesReturnPage: React.FC = () => {
               }}
               icon={<PrinterOutlined style={{ fontSize: 24 }} />}
               onClick={handlePrint}
+              disabled={!isReturnSaved}
             />
           </motion.div>
         </motion.div>
