@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AOS from 'aos';
 import 'aos/dist/aos.css';
 import { motion, AnimatePresence, useAnimation } from 'framer-motion';
@@ -11,6 +12,7 @@ import {
 
 const ERP90Dashboard = () => {
   const [activeSlide, setActiveSlide] = useState(0);
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState([
     { id: 1, text: 'فاتورة جديدة من العميل أحمد', time: 'منذ 5 دقائق', read: false },
     { id: 2, text: 'دفعة مستحقة للموردين', time: 'منذ ساعة', read: false },
@@ -20,12 +22,14 @@ const ERP90Dashboard = () => {
   const controls = useAnimation();
 
   const quickActions = [
-    { title: "فاتورة مبيعات", icon: <FileText className="w-5 h-5" />, color: "bg-blue-500" },
-    { title: "فاتورة مشتريات", icon: <ShoppingCart className="w-5 h-5" />, color: "bg-green-500" },
-    { title: "قيد يومية", icon: <Database className="w-5 h-5" />, color: "bg-purple-500" },
-    { title: "إضافة عميل", icon: <Users className="w-5 h-5" />, color: "bg-amber-500" },
-    { title: "تقرير مالي", icon: <BarChart2 className="w-5 h-5" />, color: "bg-rose-500" },
-    { title: "إعدادات", icon: <Settings className="w-5 h-5" />, color: "bg-gray-500" }
+    { title: "الإدارة المالية", icon: <CreditCard className="w-5 h-5" />, color: "bg-gradient-to-br from-blue-500 to-blue-600", hoverColor: "hover:from-blue-600 hover:to-blue-700", bgColor: "bg-blue-50", borderColor: "border-blue-200", description: "إدارة الحسابات والميزانيات", route: "/management/financial" },
+    { title: "الموارد البشرية", icon: <Users className="w-5 h-5" />, color: "bg-gradient-to-br from-emerald-500 to-emerald-600", hoverColor: "hover:from-emerald-600 hover:to-emerald-700", bgColor: "bg-emerald-50", borderColor: "border-emerald-200", description: "إدارة الموظفين والرواتب", route: "/management/hr" },
+    { title: "إدارة المخازن", icon: <Package className="w-5 h-5" />, color: "bg-gradient-to-br from-orange-500 to-orange-600", hoverColor: "hover:from-orange-600 hover:to-orange-700", bgColor: "bg-orange-50", borderColor: "border-orange-200", description: "إدارة المخزون والمستودعات", route: "/management/warehouse" },
+    { title: "إدارة المشاريع", icon: <FileText className="w-5 h-5" />, color: "bg-gradient-to-br from-purple-500 to-purple-600", hoverColor: "hover:from-purple-600 hover:to-purple-700", bgColor: "bg-purple-50", borderColor: "border-purple-200", description: "متابعة وإدارة المشاريع", route: "/management/projects" },
+    { title: "إدارة المبيعات والعملاء", icon: <ShoppingCart className="w-5 h-5" />, color: "bg-gradient-to-br from-rose-500 to-rose-600", hoverColor: "hover:from-rose-600 hover:to-rose-700", bgColor: "bg-rose-50", borderColor: "border-rose-200", description: "إدارة العملاء والمبيعات", route: "/management/sales" },
+    { title: "إدارة المشتريات والموردين", icon: <Truck className="w-5 h-5" />, color: "bg-gradient-to-br from-teal-500 to-teal-600", hoverColor: "hover:from-teal-600 hover:to-teal-700", bgColor: "bg-teal-50", borderColor: "border-teal-200", description: "إدارة الموردين والمشتريات", route: "/management/purchase" },
+    { title: "إدارة المناقصات والعقود", icon: <FileText className="w-5 h-5" />, color: "bg-gradient-to-br from-indigo-500 to-indigo-600", hoverColor: "hover:from-indigo-600 hover:to-indigo-700", bgColor: "bg-indigo-50", borderColor: "border-indigo-200", description: "إدارة العقود والمناقصات", route: "/management/contracts" },
+    { title: "إدارة المعدات والوحدات الإنتاجية", icon: <Settings className="w-5 h-5" />, color: "bg-gradient-to-br from-amber-500 to-amber-600", hoverColor: "hover:from-amber-600 hover:to-amber-700", bgColor: "bg-amber-50", borderColor: "border-amber-200", description: "إدارة المعدات والإنتاج", route: "/management/equipment" }
   ];
 
   const slides = [
@@ -214,28 +218,46 @@ const ERP90Dashboard = () => {
                 المزيد <ChevronLeft className="w-4 h-4" />
               </button>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
-              {[...quickActions,
-                { title: "إضافة مورد", icon: <Package className="w-5 h-5" />, color: "bg-teal-500" },
-                { title: "إدارة المخزون", icon: <Truck className="w-5 h-5" />, color: "bg-orange-500" },
-                { title: "بحث متقدم", icon: <Search className="w-5 h-5" />, color: "bg-cyan-500" },
-                { title: "مساعدة", icon: <HelpCircle className="w-5 h-5" />, color: "bg-pink-500" },
-                { title: "تنبيهات", icon: <Bell className="w-5 h-5" />, color: "bg-lime-500" },
-                { title: "إضافة منتج", icon: <Plus className="w-5 h-5" />, color: "bg-violet-500" }
-              ].map((action, index) => (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+              {quickActions.map((action, index) => (
                 <motion.button
                   key={index}
-                  whileHover={{ y: -3, scale: 1.03 }}
+                  whileHover={{ y: -8, scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
-                  className="flex flex-col items-center justify-center gap-2 p-3 md:p-4 rounded-lg border border-gray-100 hover:border-indigo-100 hover:bg-indigo-50/50 transition-all"
+                  onClick={() => navigate(action.route)}
+                  className={`flex flex-col items-center justify-center text-center gap-4 p-6 md:p-8 rounded-2xl border-2 ${action.borderColor} ${action.bgColor} hover:shadow-xl transition-all duration-300 group relative overflow-hidden min-h-[180px] cursor-pointer`}
                 >
+                  {/* Background Pattern */}
+                  <div className="absolute inset-0 opacity-5 group-hover:opacity-10 transition-opacity">
+                    <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-current transform translate-x-6 -translate-y-6"></div>
+                    <div className="absolute bottom-0 left-0 w-16 h-16 rounded-full bg-current transform -translate-x-4 translate-y-4"></div>
+                  </div>
+                  
+                  {/* Icon */}
                   <motion.div 
-                    whileHover={{ rotate: 5, scale: 1.1 }}
-                    className={`${action.color} p-2 md:p-3 rounded-full text-white shadow-sm`}
+                    whileHover={{ rotate: 10, scale: 1.15 }}
+                    className={`${action.color} ${action.hoverColor} p-4 rounded-2xl text-white shadow-lg group-hover:shadow-xl transition-all duration-300 relative z-10`}
                   >
                     {action.icon}
                   </motion.div>
-                  <span className="text-xs md:text-sm font-medium text-center">{action.title}</span>
+                  
+                  {/* Content */}
+                  <div className="relative z-10">
+                    <h3 className="text-sm md:text-base font-bold text-gray-800 mb-2 group-hover:text-gray-900 transition-colors leading-tight">
+                      {action.title}
+                    </h3>
+                    <p className="text-xs md:text-sm text-gray-600 leading-relaxed group-hover:text-gray-700 transition-colors">
+                      {action.description}
+                    </p>
+                  </div>
+                  
+                  {/* Arrow */}
+                  <motion.div 
+                    className="absolute bottom-4 left-1/2 transform -translate-x-1/2"
+                    whileHover={{ y: -2 }}
+                  >
+                    <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" />
+                  </motion.div>
                 </motion.button>
               ))}
             </div>

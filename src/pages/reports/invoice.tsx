@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Helmet } from "react-helmet";
 import { Link } from 'react-router-dom';
 import { getDocs, query, collection } from "firebase/firestore";
@@ -23,6 +23,7 @@ interface PaymentMethodOption {
 
 interface InvoiceRecord {
   key: string;
+  id?: string;
   invoiceNumber: string;
   date: string;
   branch: string;
@@ -111,15 +112,10 @@ const Invoice: React.FC = () => {
   }
   const [filteredInvoices, setFilteredInvoices] = useState<InvoiceItemRow[]>([]);
 
-  // Debug: طباعة النتائج المفلترة في الكونسول كلما تغيرت
-  useEffect(() => {
-    console.log('DEBUG - filteredInvoices:', filteredInvoices);
-  }, [filteredInvoices]);
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(30); // عدد الصفوف في كل صفحة
 
-  // Debug: طباعة الفواتير بعد الجلب
-  useEffect(() => {
-    console.log('DEBUG - invoices:', invoices);
-  }, [invoices]);
   useEffect(() => {
     fetchBranches().then(data => {
       setBranches(data);
@@ -138,7 +134,6 @@ const Invoice: React.FC = () => {
     itemName?: string;
     itemNumber?: string;
   }) => {
-    console.log('DEBUG - fetchInvoices called', filtersParams);
     setIsLoading(true);
     try {
       const { getDocs, collection, query, where } = await import('firebase/firestore');
@@ -149,7 +144,7 @@ const Invoice: React.FC = () => {
         const itemsSnap = await getDocs(collection(db, 'inventory_items'));
         inventoryItems = itemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       } catch (e) {
-        console.log('DEBUG - error fetching inventory_items:', e);
+        // Error fetching inventory items
       }
       let q = collection(db, 'sales_invoices');
       let filters: any[] = [];
@@ -303,6 +298,7 @@ const Invoice: React.FC = () => {
           }
           returnRecords.push({
             key: 'return-' + doc.id + '-' + idx,
+            id: doc.id, // إضافة معرف المرتجع
             invoiceNumber, // سيحمل رقم المرتجع في حالة المرتجع
             date,
             branch,
@@ -357,12 +353,10 @@ const Invoice: React.FC = () => {
         );
       }
       setInvoices(filteredAll);
-      console.log('DEBUG - setInvoices called with:', all);
-      // Debug: طباعة النتائج النهائية في الكونسول
-      console.log('DEBUG - Final result array:', all);
+      setFilteredInvoices(all);
     } catch (err) {
       setInvoices([]);
-      console.log('DEBUG - fetchInvoices error:', err);
+      console.error('Error fetching invoices:', err);
     } finally {
       setIsLoading(false);
     }
@@ -370,7 +364,6 @@ const Invoice: React.FC = () => {
 
   // جلب كل البيانات عند تحميل الصفحة فقط (بدون فلاتر)
   useEffect(() => {
-    console.log('DEBUG - useEffect (initial load) calling fetchInvoices');
     fetchInvoices();
     // eslint-disable-next-line
   }, []);
@@ -411,11 +404,10 @@ const Invoice: React.FC = () => {
     });
     setFilteredInvoices(allRows);
   }, [invoices]);
-  // دالة تعرض البيانات المفلترة للعرض فقط حسب الفلاتر الإضافية
-  const getFilteredRows = () => {
+  // دالة تعرض البيانات المفلترة للعرض فقط حسب الفلاتر الإضافية - محسنة بـ useMemo
+  const filteredRows = useMemo(() => {
     // إذا لم يتم اختيار أي فلتر، أرجع كل البيانات
     if (!invoiceTypeFilter && !paymentMethod && !seller) {
-      console.log('DEBUG - getFilteredRows (no filters):', filteredInvoices);
       return filteredInvoices;
     }
     let filtered = filteredInvoices;
@@ -434,12 +426,32 @@ const Invoice: React.FC = () => {
     if (seller) {
       filtered = filtered.filter(inv => inv.seller === seller);
     }
-    console.log('DEBUG - getFilteredRows (with filters):', filtered);
     return filtered;
-  };
+  }, [filteredInvoices, invoiceTypeFilter, paymentMethod, seller]);
+
+  // دالة للحصول على البيانات المقسمة على صفحات - محسنة بـ useMemo
+  const paginatedRows = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return filteredRows.slice(startIndex, endIndex);
+  }, [filteredRows, currentPage, pageSize]);
+
+  // حساب إجمالي عدد الصفحات - محسنة بـ useMemo
+  const totalPages = useMemo(() => {
+    return Math.ceil(filteredRows.length / pageSize);
+  }, [filteredRows.length, pageSize]);
+
+  // دالة للتوافق مع الكود القديم
+  const getFilteredRows = () => filteredRows;
+  const getPaginatedRows = () => paginatedRows;
+  const getTotalPages = () => totalPages;
+
+  // إعادة تعيين الصفحة الحالية إلى 1 عند تغيير الفلاتر
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [invoiceTypeFilter, paymentMethod, seller, filteredInvoices]);
   // عند الضغط على زر البحث: جلب البيانات مع الفلاتر
   const handleSearch = () => {
-    console.log('DEBUG - handleSearch calling fetchInvoices');
     fetchInvoices({
       branchId,
       invoiceNumber,
@@ -1476,7 +1488,7 @@ const Invoice: React.FC = () => {
                   return acc;
                 }, {})
               ).length
-            }
+            } - عرض الصفحة {currentPage} من {getTotalPages()}
           </span>
         </div>
         <motion.div
@@ -1551,11 +1563,11 @@ const Invoice: React.FC = () => {
                 <div className="col-span-1 px-2 py-3 text-center border border-gray-300">البائع</div>
               </div>
               <div className="bg-white">
-                {getFilteredRows().length > 0 ? (
+                {getPaginatedRows().length > 0 ? (
                   <>
                     {/* عرض صف واحد لكل فاتورة */}
                     {Object.values(
-                      getFilteredRows().reduce((acc, inv) => {
+                      getPaginatedRows().reduce((acc, inv) => {
                         const key = inv.invoiceNumber + '-' + inv.invoiceType;
                         if (!acc[key]) {
                           acc[key] = {
@@ -1566,7 +1578,7 @@ const Invoice: React.FC = () => {
                         acc[key]._rows.push(inv);
                         return acc;
                       }, {})
-                    ).map((group, idx) => {
+                    ).map((group: InvoiceItemRow & { _rows: InvoiceItemRow[] }, idx) => {
                       // حساب الإجماليات لكل فاتورة
                       const sign = group.invoiceType === 'مرتجع' ? -1 : 1;
                       let subtotal = 0, discountValue = 0, taxValue = 0, totalAfterDiscount = 0, net = 0;
@@ -1597,12 +1609,21 @@ const Invoice: React.FC = () => {
                       return (
                         <div key={group.invoiceNumber + '-' + group.invoiceType + '-' + idx} className={`grid grid-cols-12 items-center border-b border-gray-200 ${idx % 2 === 0 ? 'bg-blue-50' : 'bg-white'} hover:bg-blue-100 cursor-pointer transition-colors duration-150`}>
                           <div className="col-span-1 px-2 py-2 text-center">
-                            <Link
-                              to={`/edit/editsales?invoice=${encodeURIComponent(group.invoiceNumber)}`}
-                              className="text-blue-700 underline hover:text-blue-900"
-                            >
-                              {group.invoiceNumber}
-                            </Link>
+                            {group.invoiceType === 'مرتجع' && group.id ? (
+                              <Link
+                                to={`/edit/edit-return/${group.id}`}
+                                className="text-red-700 underline hover:text-red-900"
+                              >
+                                {group.invoiceNumber}
+                              </Link>
+                            ) : (
+                              <Link
+                                to={`/edit/editsales?invoice=${encodeURIComponent(group.invoiceNumber)}`}
+                                className="text-blue-700 underline hover:text-blue-900"
+                              >
+                                {group.invoiceNumber}
+                              </Link>
+                            )}
                           </div>
                           <div className="col-span-1 px-2 py-2 text-center">{group.date ? dayjs(group.date).format('YYYY-MM-DD') : ''}</div>
                           <div className="col-span-1 px-2 py-2 text-center">{group.customerPhone && group.customerPhone.trim() !== '' ? group.customerPhone : 'غير متوفر'}</div>
@@ -1621,7 +1642,7 @@ const Invoice: React.FC = () => {
                     {/* صف الإجمالي الكلي */}
                     {
                       (() => {
-                        const rows = getFilteredRows();
+                        const rows = getFilteredRows(); // استخدم كل البيانات المفلترة، ليس فقط المعروضة في الصفحة
                         let totalDiscount = 0, totalAfterDiscount = 0, totalTax = 0, totalNet = 0;
                         rows.forEach(inv => {
                           const sign = inv.invoiceType === 'مرتجع' ? -1 : 1;
@@ -1664,6 +1685,148 @@ const Invoice: React.FC = () => {
             </div>
           </div>
         </div>
+        
+        {/* Pagination Controls */}
+        {getFilteredRows().length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.1 }}
+            className="flex flex-col sm:flex-row justify-between items-center mt-6 gap-4"
+          >
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span>عرض</span>
+              <span className="font-semibold">
+                {Math.min((currentPage - 1) * pageSize + 1, getFilteredRows().length)} - {Math.min(currentPage * pageSize, getFilteredRows().length)}
+              </span>
+              <span>من</span>
+              <span className="font-semibold">{getFilteredRows().length}</span>
+              <span>نتيجة</span>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* Previous Button */}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  currentPage === 1
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </motion.button>
+
+              {/* Page Numbers */}
+              <div className="flex items-center gap-1">
+                {(() => {
+                  const totalPages = getTotalPages();
+                  const pages = [];
+                  
+                  // Show first page
+                  if (totalPages > 0) {
+                    pages.push(
+                      <motion.button
+                        key={1}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setCurrentPage(1)}
+                        className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                          currentPage === 1
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        1
+                      </motion.button>
+                    );
+                  }
+
+                  // Show ellipsis if needed
+                  if (currentPage > 3) {
+                    pages.push(
+                      <span key="dots1" className="px-2 text-gray-400">...</span>
+                    );
+                  }
+
+                  // Show pages around current page
+                  const start = Math.max(2, currentPage - 1);
+                  const end = Math.min(totalPages - 1, currentPage + 1);
+                  
+                  for (let i = start; i <= end; i++) {
+                    if (i !== 1 && i !== totalPages) {
+                      pages.push(
+                        <motion.button
+                          key={i}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => setCurrentPage(i)}
+                          className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                            currentPage === i
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {i}
+                        </motion.button>
+                      );
+                    }
+                  }
+
+                  // Show ellipsis if needed
+                  if (currentPage < totalPages - 2) {
+                    pages.push(
+                      <span key="dots2" className="px-2 text-gray-400">...</span>
+                    );
+                  }
+
+                  // Show last page
+                  if (totalPages > 1) {
+                    pages.push(
+                      <motion.button
+                        key={totalPages}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setCurrentPage(totalPages)}
+                        className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                          currentPage === totalPages
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {totalPages}
+                      </motion.button>
+                    );
+                  }
+
+                  return pages;
+                })()}
+              </div>
+
+              {/* Next Button */}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, getTotalPages()))}
+                disabled={currentPage === getTotalPages()}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  currentPage === getTotalPages()
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </motion.button>
+            </div>
+          </motion.div>
+        )}
       </motion.div>
     {/* مودال تفاصيل الفاتورة */}
 {

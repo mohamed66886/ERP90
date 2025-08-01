@@ -130,6 +130,81 @@ function getTodayString(): string {
 }
 
 const SalesPage: React.FC = () => {
+  // زر توليد 3000 فاتورة عشوائية
+  const generateRandomInvoices = async () => {
+    if (!branches.length || !warehouses.length || !paymentMethods.length || !customers.length || !itemNames.length) {
+      message.error('يجب توفر بيانات الفروع والمخازن والعملاء والأصناف وطرق الدفع أولاً');
+      return;
+    }
+    const { addDoc, collection } = await import('firebase/firestore');
+    const randomFrom = arr => arr[Math.floor(Math.random() * arr.length)];
+    const randomDiscount = () => Math.floor(Math.random() * 21); // 0-20%
+    const randomQty = () => Math.floor(Math.random() * 10) + 1; // 1-10
+    const today = getTodayString();
+    setLoading(true);
+    try {
+      for (let i = 0; i < 3000; i++) {
+        const branch = randomFrom(branches);
+        const warehouse = randomFrom(warehouses);
+        const paymentMethod = randomFrom(paymentMethods);
+        const customer = randomFrom(customers);
+        const item = randomFrom(itemNames);
+        const discountPercent = randomDiscount();
+        const quantity = randomQty();
+        const price = item.salePrice || 10;
+        const subtotal = price * quantity;
+        const discountValue = subtotal * (discountPercent / 100);
+        const taxableAmount = subtotal - discountValue;
+        const taxPercent = 15;
+        const taxValue = taxableAmount * (taxPercent / 100);
+        const total = subtotal;
+        const invoiceNumber = `RND-${branch.id}-${today.replace(/-/g, '')}-${i+1}`;
+        const invoiceData = {
+          invoiceNumber,
+          entryNumber: `EN-${Math.floor(100000 + Math.random() * 900000)}`,
+          date: today,
+          paymentMethod: paymentMethod.name || paymentMethod.value || paymentMethod,
+          branch: branch.id,
+          warehouse: warehouse.id,
+          customerNumber: customer.phone || customer.phoneNumber || '',
+          customerName: customer.nameAr || customer.name || customer.nameEn || '',
+          delegate: '',
+          priceRule: '',
+          commercialRecord: customer.commercialReg || '',
+          taxFile: customer.taxFileNumber || customer.taxFile || '',
+          items: [
+            {
+              itemNumber: item.itemCode || '',
+              itemName: item.name,
+              quantity: String(quantity),
+              unit: item.unit || 'قطعة',
+              price: String(price),
+              discountPercent: String(discountPercent),
+              discountValue,
+              taxPercent: String(taxPercent),
+              taxValue,
+              total,
+              isNewItem: false
+            }
+          ],
+          totals: {
+            afterDiscount: subtotal - discountValue,
+            afterTax: taxableAmount + taxValue,
+            total: subtotal,
+            tax: taxValue
+          },
+          type: 'ضريبة'
+        };
+        await addDoc(collection(db, 'sales_invoices'), invoiceData);
+      }
+      message.success('تم توليد 3000 فاتورة عشوائية بنجاح');
+      fetchInvoices && fetchInvoices();
+    } catch (err) {
+      message.error('حدث خطأ أثناء توليد الفواتير');
+    } finally {
+      setLoading(false);
+    }
+  };
   // حالة مودال إضافة صنف جديد
   const [showAddItemModal, setShowAddItemModal] = useState(false);
 
@@ -1817,14 +1892,16 @@ const handlePrint = () => {
     <div className="p-2 sm:p-6 w-full max-w-none">
       <div className="p-4 font-['Tajawal'] bg-white rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] mb-4 animate-[bounce_2s_infinite] relative overflow-hidden">
         <div className="flex items-center">
-
-          <h1 className="text-2xl font-bold text-blue-800">فاتورة مبيعات جديده
-</h1>
+          <h1 className="text-2xl font-bold text-blue-800">فاتورة مبيعات جديده</h1>
           {/* إيموجي متحركة باي باي */}
           <span className="animate-[wave_2s_infinite] text-3xl mr-3">👋</span>
         </div>
+        {/* زر توليد الفواتير العشوائية */}
+        <Button type="primary" danger style={{ marginTop: 16, fontWeight: 700 }} onClick={generateRandomInvoices}>
+          توليد 3000 فاتورة عشوائية
+        </Button>
         {/* تأثيرات إضافية */}
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]"></div>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]" />
       </div>
 
 <style>{`

@@ -110,6 +110,10 @@ const InvoicePreferred: React.FC = () => {
   }
   const [filteredInvoices, setFilteredInvoices] = useState<InvoiceItemRow[]>([]);
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(30); // عدد الصفوف في كل صفحة
+
   // Debug: طباعة النتائج المفلترة في الكونسول كلما تغيرت
   useEffect(() => {
     console.log('DEBUG - filteredInvoices:', filteredInvoices);
@@ -436,6 +440,25 @@ const InvoicePreferred: React.FC = () => {
     console.log('DEBUG - getFilteredRows (with filters):', filtered);
     return filtered;
   };
+
+  // دالة للحصول على البيانات المقسمة على صفحات
+  const getPaginatedRows = () => {
+    const allRows = getFilteredRows();
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return allRows.slice(startIndex, endIndex);
+  };
+
+  // حساب إجمالي عدد الصفحات
+  const getTotalPages = () => {
+    const allRows = getFilteredRows();
+    return Math.ceil(allRows.length / pageSize);
+  };
+
+  // إعادة تعيين الصفحة الحالية إلى 1 عند تغيير الفلاتر
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [invoiceTypeFilter, paymentMethod, seller, filteredInvoices]);
   // عند الضغط على زر البحث: جلب البيانات مع الفلاتر
   const handleSearch = () => {
     console.log('DEBUG - handleSearch calling fetchInvoices');
@@ -1515,7 +1538,9 @@ const InvoicePreferred: React.FC = () => {
               </>
             ) : "بحث"}
           </motion.button>
-          <span className="text-gray-500 text-sm">نتائج البحث: {getFilteredRows().length}</span>
+          <span className="text-gray-500 text-sm">
+            نتائج البحث: {getFilteredRows().length} - عرض الصفحة {currentPage} من {getTotalPages()}
+          </span>
         </div>
         <motion.div
           whileHover={{ scale: 1.05 }}
@@ -1602,9 +1627,9 @@ const InvoicePreferred: React.FC = () => {
                 </thead>
                 <tbody className="bg-white">
 
-                  {getFilteredRows().length > 0 ? (
+                  {getPaginatedRows().length > 0 ? (
                     <>
-                      {getFilteredRows().map((inv, idx) => {
+                      {getPaginatedRows().map((inv, idx) => {
                         const sign = inv.invoiceType === 'مرتجع' ? -1 : 1;
                         return (
                           <tr
@@ -1664,7 +1689,7 @@ const InvoicePreferred: React.FC = () => {
                       {/* صف الإجمالي */}
                       {
                         (() => {
-                          const rows = getFilteredRows();
+                          const rows = getFilteredRows(); // استخدم كل البيانات المفلترة، ليس فقط المعروضة في الصفحة
                           let totalDiscount = 0, totalAfterDiscount = 0, totalTax = 0, totalNet = 0;
                           rows.forEach(inv => {
                             const sign = inv.invoiceType === 'مرتجع' ? -1 : 1;
@@ -1711,6 +1736,148 @@ const InvoicePreferred: React.FC = () => {
             </div>
           </div>
         </div>
+        
+        {/* Pagination Controls */}
+        {getFilteredRows().length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.1 }}
+            className="flex flex-col sm:flex-row justify-between items-center mt-6 gap-4"
+          >
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span>عرض</span>
+              <span className="font-semibold">
+                {Math.min((currentPage - 1) * pageSize + 1, getFilteredRows().length)} - {Math.min(currentPage * pageSize, getFilteredRows().length)}
+              </span>
+              <span>من</span>
+              <span className="font-semibold">{getFilteredRows().length}</span>
+              <span>نتيجة</span>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* Previous Button */}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  currentPage === 1
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </motion.button>
+
+              {/* Page Numbers */}
+              <div className="flex items-center gap-1">
+                {(() => {
+                  const totalPages = getTotalPages();
+                  const pages = [];
+                  
+                  // Show first page
+                  if (totalPages > 0) {
+                    pages.push(
+                      <motion.button
+                        key={1}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setCurrentPage(1)}
+                        className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                          currentPage === 1
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        1
+                      </motion.button>
+                    );
+                  }
+
+                  // Show ellipsis if needed
+                  if (currentPage > 3) {
+                    pages.push(
+                      <span key="dots1" className="px-2 text-gray-400">...</span>
+                    );
+                  }
+
+                  // Show pages around current page
+                  const start = Math.max(2, currentPage - 1);
+                  const end = Math.min(totalPages - 1, currentPage + 1);
+                  
+                  for (let i = start; i <= end; i++) {
+                    if (i !== 1 && i !== totalPages) {
+                      pages.push(
+                        <motion.button
+                          key={i}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => setCurrentPage(i)}
+                          className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                            currentPage === i
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {i}
+                        </motion.button>
+                      );
+                    }
+                  }
+
+                  // Show ellipsis if needed
+                  if (currentPage < totalPages - 2) {
+                    pages.push(
+                      <span key="dots2" className="px-2 text-gray-400">...</span>
+                    );
+                  }
+
+                  // Show last page
+                  if (totalPages > 1) {
+                    pages.push(
+                      <motion.button
+                        key={totalPages}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setCurrentPage(totalPages)}
+                        className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                          currentPage === totalPages
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {totalPages}
+                      </motion.button>
+                    );
+                  }
+
+                  return pages;
+                })()}
+              </div>
+
+              {/* Next Button */}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, getTotalPages()))}
+                disabled={currentPage === getTotalPages()}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  currentPage === getTotalPages()
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </motion.button>
+            </div>
+          </motion.div>
+        )}
       </motion.div>
     {/* مودال تفاصيل الفاتورة */}
 {

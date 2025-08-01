@@ -19,6 +19,7 @@ import { Routes, Route } from "react-router-dom";
 import DailySales from "./reports/daily-sales";
 import PurchasesReturnPage from "./stores/purchases-return";
 import EditSalesPage from "./edit/editsales";
+import EditReturnPage from "./edit/edit-return";
 import Stockpage from "./stores/stock";
 import InvoiceProfitsReport from "./reports/invoice-profits";
 import Footer from "@/components/Footer";
@@ -29,22 +30,36 @@ import Invoice from "./reports/invoice";
 import SettingsPage from "./SettingsPage";
 import ItemCardPage from "./stores/item";
 import SalesPage from "./stores/sales";
-import WarehouseManagement from "./stores/manage";
+import WarehouseManagementOld from "./stores/manage";
 import SalesReturnPage from "./stores/sales-return";
 import Branches from "./business/branches";
 import PaymentMethodsPage from "./business/payment-methods";
 import Suppliers from "./suppliers";
 import NotFound from "./NotFound";
 import { useAuth } from "@/contexts/useAuth";
+import {
+  FinancialManagement,
+  HumanResources,
+  WarehouseManagement,
+  ProjectManagement,
+  SalesManagement,
+  PurchaseManagement,
+  // ContractManagement,
+  EquipmentManagement
+} from "../pages/management";
 type AppState = "login" | "data-completion" | "dashboard";
 
-
+interface CompanyData {
+  arabicName?: string;
+  englishName?: string;
+  [key: string]: unknown;
+}
 
 const Index = () => {
   const { user, loading } = useAuth();
   const [appState, setAppState] = useState<AppState>("login");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-  const [companyData, setCompanyData] = useState<any>(null);
+  const [companyData, setCompanyData] = useState<CompanyData | null>(null);
   const [companyLoading, setCompanyLoading] = useState(true);
 
   // عند أول تحميل الصفحة، جلب بيانات الشركة من قاعدة البيانات
@@ -72,7 +87,7 @@ const Index = () => {
   };
 
   // استقبل بيانات الشركة من DataCompletionPage
-  const handleDataCompletion = (data?: any) => {
+  const handleDataCompletion = (data?: CompanyData) => {
     if (data) setCompanyData(data);
     setAppState("dashboard");
   };
@@ -129,7 +144,7 @@ const Index = () => {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/stores/item" element={<ItemCardPage />} />
             <Route path="/stores/sales" element={<SalesPage />} />
-            <Route path="/stores/manage" element={<WarehouseManagement />} />
+            <Route path="/stores/manage" element={<WarehouseManagementOld />} />
             <Route path="/stores/sales-return" element={<SalesReturnPage />} />
             <Route path="/business/branches" element={<Branches />} />
             <Route path="/profile" element={<ProfilePage />} />
@@ -139,12 +154,21 @@ const Index = () => {
             <Route path="/reports/invoice-preferred" element={<InvoicePreferred />} />
             <Route path="/stores/purchases-return" element={<PurchasesReturnPage />} />
             <Route path="/edit/editsales" element={<EditSalesPage />} />
+            <Route path="/edit/edit-return/:id" element={<EditReturnPage />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/admin/admins" element={<Managers />} />
             <Route path="/business/payment-methods" element={<PaymentMethodsPage />} />
             <Route path="/reports/daily-sales" element={<DailySales />} />
            <Route path="/reports/invoice" element={<Invoice />} />
-
+           {/* Management Routes */}
+            <Route path="/management/financial" element={<FinancialManagement />} />
+            <Route path="/management/hr" element={<HumanResources />} />
+            <Route path="/management/warehouse" element={<WarehouseManagement />} />
+            <Route path="/management/projects" element={<ProjectManagement />} />
+            <Route path="/management/sales" element={<SalesManagement />} />
+            <Route path="/management/purchase" element={<PurchaseManagement />} />
+            {/* <Route path="/management/contracts" element={<ContractManagement />} /> */}
+            <Route path="/management/equipment" element={<EquipmentManagement />} />
             
             <Route path="/suppliers" element={<Suppliers />} />
             <Route path="/" element={<Dashboard />} />
