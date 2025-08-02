@@ -1,0 +1,47 @@
+// Firestore Security Rules للحسابات
+// يجب إضافة هذه القواعد في Firebase Console > Firestore Database > Rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // قواعد مجموعة الحسابات
+    match /accounts/{accountId} {
+      // السماح بالقراءة والكتابة للمستخدمين المصادق عليهم فقط
+      allow read, write: if request.auth != null;
+      
+      // التحقق من صحة البيانات عند الكتابة
+      allow create: if request.auth != null 
+        && validateAccountData(request.resource.data);
+      
+      allow update: if request.auth != null 
+        && validateAccountData(request.resource.data);
+      
+      allow delete: if request.auth != null;
+    }
+  }
+  
+  // دالة التحقق من صحة بيانات الحساب
+  function validateAccountData(data) {
+    return data.keys().hasAll(['code', 'nameAr', 'nameEn', 'nature', 'balance', 'createdAt'])
+      && data.code is string 
+      && data.code.size() > 0
+      && data.nameAr is string 
+      && data.nameAr.size() >= 2
+      && data.nameEn is string 
+      && data.nameEn.size() >= 2
+      && data.nature in ['مدينة', 'دائنة']
+      && data.balance is number 
+      && data.balance >= 0
+      && data.createdAt is timestamp;
+  }
+}
+
+// قواعد بديلة أكثر تساهلاً (للتطوير فقط)
+// rules_version = '2';
+// service cloud.firestore {
+//   match /databases/{database}/documents {
+//     match /accounts/{document=**} {
+//       allow read, write: if request.auth != null;
+//     }
+//   }
+// }
