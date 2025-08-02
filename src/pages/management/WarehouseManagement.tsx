@@ -4,7 +4,7 @@ import {
   Plus, ArrowLeft, Filter, Download,
   Archive, TrendingDown, TrendingUp, Box
 } from 'lucide-react';
-import ManagementLayout from '@/components/ManagementLayout';
+
 import { useNavigate } from 'react-router-dom';
 
 const WarehouseManagement = () => {

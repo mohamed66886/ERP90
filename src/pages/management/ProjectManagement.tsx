@@ -1,13 +1,11 @@
 import { motion } from 'framer-motion';
 import { FileText, Calendar, Users, CheckCircle, ArrowLeft, Plus, Filter, Download } from 'lucide-react';
-import ManagementLayout from '@/components/ManagementLayout';
 import { useNavigate } from 'react-router-dom';
 
 const ProjectManagement = () => {
   const navigate = useNavigate();
   
   return (
-    <ManagementLayout>
       <div className="min-h-screen bg-gray-50 rtl" dir="rtl">
         <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
         <motion.div 
@@ -40,7 +38,6 @@ const ProjectManagement = () => {
         </motion.div>
         </div>
       </div>
-    </ManagementLayout>
   );
 };
 

@@ -1,13 +1,11 @@
 import { motion } from 'framer-motion';
 import { ShoppingCart, Users, TrendingUp, DollarSign, ArrowLeft, Plus, Filter, Download } from 'lucide-react';
-import ManagementLayout from '@/components/ManagementLayout';
 import { useNavigate } from 'react-router-dom';
 
 const SalesManagement = () => {
   const navigate = useNavigate();
   
   return (
-    <ManagementLayout>
       <div className="min-h-screen bg-gray-50 rtl" dir="rtl">
         <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
         <motion.div 
@@ -40,7 +38,6 @@ const SalesManagement = () => {
         </motion.div>
         </div>
       </div>
-    </ManagementLayout>
   );
 };
 

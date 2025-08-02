@@ -1,6 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import AccountsSettlementPage from '../accounting/AccountsSettlementPage';
+import AddAccountPage from '../accounting/AddAccountPage';
+import EditAccountPage from '../accounting/EditAccountPage';
+import ChartOfAccountsPage from '../accounting/ChartOfAccountsPage';
 import { 
   Settings, 
   FileText, 
@@ -33,19 +37,140 @@ import {
   Crown
 } from 'lucide-react';
 
+interface Account {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string;
+  nature: 'مدينة' | 'دائنة';
+  balance: number;
+  createdAt: string;
+}
+
 const FinancialManagement: React.FC = () => {
+  const [currentPage, setCurrentPage] = useState<string | null>(null);
+  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
+  const [accounts, setAccounts] = useState<Account[]>([
+    {
+      id: '1',
+      code: '1001',
+      nameAr: 'النقدية بالصندوق',
+      nameEn: 'Cash on Hand',
+      nature: 'مدينة',
+      balance: 15000,
+      createdAt: '2024-01-15'
+    },
+    {
+      id: '2',
+      code: '2001',
+      nameAr: 'حسابات دائنة',
+      nameEn: 'Accounts Payable',
+      nature: 'دائنة',
+      balance: 25000,
+      createdAt: '2024-01-20'
+    },
+    {
+      id: '3',
+      code: '3001',
+      nameAr: 'رأس المال',
+      nameEn: 'Capital',
+      nature: 'دائنة',
+      balance: 100000,
+      createdAt: '2024-01-10'
+    }
+  ]);
+
+  const handleNavigateToAdd = () => {
+    setCurrentPage('add-account');
+  };
+
+  const handleNavigateToEdit = (account: Account) => {
+    setSelectedAccount(account);
+    setCurrentPage('edit-account');
+  };
+
+  const handleSaveAccount = (newAccount: Omit<Account, 'id' | 'createdAt'>) => {
+    const account: Account = {
+      ...newAccount,
+      id: Date.now().toString(),
+      createdAt: new Date().toISOString().split('T')[0]
+    };
+    setAccounts([...accounts, account]);
+    setCurrentPage('accounts-settlement');
+  };
+
+  const handleUpdateAccount = (updatedAccount: Omit<Account, 'id' | 'createdAt'>) => {
+    if (selectedAccount) {
+      setAccounts(accounts.map(account =>
+        account.id === selectedAccount.id
+          ? { ...account, ...updatedAccount }
+          : account
+      ));
+      setCurrentPage('accounts-settlement');
+      setSelectedAccount(null);
+    }
+  };
+
+  const handleDeleteAccount = (id: string) => {
+    setAccounts(accounts.filter(account => account.id !== id));
+  };
+
+  const handleBackToAccounts = () => {
+    setCurrentPage('accounts-settlement');
+    setSelectedAccount(null);
+  };
+
+  // If a specific page is selected, render it
+  if (currentPage === 'accounts-settlement') {
+    return (
+      <AccountsSettlementPage 
+        accounts={accounts}
+        onNavigateToAdd={handleNavigateToAdd}
+        onNavigateToEdit={handleNavigateToEdit}
+        onDeleteAccount={handleDeleteAccount}
+      />
+    );
+  }
+  
+  if (currentPage === 'add-account') {
+    return (
+      <AddAccountPage 
+        onBack={handleBackToAccounts}
+        onSave={handleSaveAccount}
+        existingCodes={accounts.map(account => account.code)}
+      />
+    );
+  }
+  
+  if (currentPage === 'edit-account') {
+    return (
+      <EditAccountPage 
+        account={selectedAccount || undefined}
+        onBack={handleBackToAccounts}
+        onSave={handleUpdateAccount}
+        existingCodes={accounts.filter(acc => acc.id !== selectedAccount?.id).map(account => account.code)}
+      />
+    );
+  }
+  
+  if (currentPage === 'chart-of-accounts') {
+    return <ChartOfAccountsPage />;
+  }
+
   const settingsCards = [
     {
       title: "تصفية الحسابات",
       description: "إدارة وتصفية الحسابات المالية",
       icon: <FileText className="h-6 w-6" />,
-      color: "bg-blue-500"
+      color: "bg-blue-500",
+      onClick: () => setCurrentPage('accounts-settlement')
     },
     {
       title: "دليل الحسابات",
       description: "عرض وإدارة دليل الحسابات الكامل",
       icon: <BookOpen className="h-6 w-6" />,
-      color: "bg-green-500"
+      color: "bg-green-500",
+      onClick: () => setCurrentPage('chart-of-accounts')
     },
     {
       title: "دليل الحسابات الشجري",
@@ -288,12 +413,14 @@ const FinancialManagement: React.FC = () => {
     description: string;
     icon: React.ReactNode;
     color: string;
+    onClick?: () => void;
   }
 
   const CardComponent = ({ card, index }: { card: CardType, index: number }) => (
     <Card 
       key={index}
       className="group hover:shadow-lg transition-all duration-300 cursor-pointer hover:scale-105"
+      onClick={card.onClick}
     >
       <CardContent className="p-4">
         <div className="flex items-center space-x-2 space-x-reverse">
@@ -319,7 +446,7 @@ const FinancialManagement: React.FC = () => {
         {/* تأثيرات إضافية */}
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]"></div>
       </div>
-      <style jsx global>{`
+      <style>{`
   @keyframes bounce {
     0%, 100% {
       transform: translateY(0);

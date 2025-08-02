@@ -1,6 +1,5 @@
 import { motion } from 'framer-motion';
 import { Settings, Cog, Wrench, BarChart3, ArrowLeft, Plus, Filter, Download } from 'lucide-react';
-import ManagementLayout from '@/components/ManagementLayout';
 import { useNavigate } from 'react-router-dom';
 
 const EquipmentManagement = () => {

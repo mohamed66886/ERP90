@@ -4,7 +4,6 @@ import {
   DollarSign, Award, TrendingUp, UserCheck,
   ArrowLeft, Plus, Filter, Download
 } from 'lucide-react';
-import ManagementLayout from '@/components/ManagementLayout';
 import { useNavigate } from 'react-router-dom';
 
 const HumanResources = () => {
@@ -24,7 +23,6 @@ const HumanResources = () => {
   ];
 
   return (
-    <ManagementLayout>
       <div className="min-h-screen bg-gray-50 rtl" dir="rtl">
         <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
         {/* Header */}
@@ -164,7 +162,6 @@ const HumanResources = () => {
         </motion.div>
         </div>
       </div>
-    </ManagementLayout>
   );
 };
 

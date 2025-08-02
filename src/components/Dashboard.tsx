@@ -9,10 +9,13 @@ import {
   Search, Plus, ArrowRight, ChevronLeft, ChevronRight,
   Zap, Server, Clock, AlertCircle, CheckCircle
 } from 'lucide-react';
+import { useSidebar } from '../hooks/useSidebar';
+import { SectionType } from '../contexts/SidebarContext';
 
 const ERP90Dashboard = () => {
   const [activeSlide, setActiveSlide] = useState(0);
   const navigate = useNavigate();
+  const { setCurrentSection } = useSidebar();
   const [notifications, setNotifications] = useState([
     { id: 1, text: 'فاتورة جديدة من العميل أحمد', time: 'منذ 5 دقائق', read: false },
     { id: 2, text: 'دفعة مستحقة للموردين', time: 'منذ ساعة', read: false },
@@ -20,6 +23,24 @@ const ERP90Dashboard = () => {
   ]);
 
   const controls = useAnimation();
+
+  // ربط الروابط بأقسام القائمة الجانبية
+  const routeToSectionMap: Record<string, SectionType> = {
+    '/management/financial': 'financial',
+    '/management/hr': 'hr',
+    '/management/warehouse': 'warehouse',
+    '/management/projects': 'projects',
+    '/management/sales': 'sales',
+    '/management/purchase': 'purchase',
+    '/management/contracts': 'contracts',
+    '/management/equipment': 'equipment',
+  };
+
+  const handleQuickActionClick = (route: string) => {
+    const section = routeToSectionMap[route] || 'default';
+    setCurrentSection(section);
+    navigate(route);
+  };
 
   const quickActions = [
     { title: "الإدارة المالية", icon: <CreditCard className="w-5 h-5" />, color: "bg-gradient-to-br from-blue-500 to-blue-600", hoverColor: "hover:from-blue-600 hover:to-blue-700", bgColor: "bg-blue-50", borderColor: "border-blue-200", description: "إدارة الحسابات والميزانيات", route: "/management/financial" },
@@ -81,7 +102,10 @@ const ERP90Dashboard = () => {
       transition: { duration: 0.5 }
     });
     AOS.init({ duration: 700, once: true });
-  }, [controls]);
+    
+    // إعادة تعيين القائمة الجانبية للوضع الافتراضي في الصفحة الرئيسية
+    setCurrentSection('default');
+  }, [controls, setCurrentSection]);
 
   const markAllAsRead = () => {
     setNotifications(notifications.map(n => ({ ...n, read: true })));
@@ -224,7 +248,7 @@ const ERP90Dashboard = () => {
                   key={index}
                   whileHover={{ y: -8, scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
-                  onClick={() => navigate(action.route)}
+                  onClick={() => handleQuickActionClick(action.route)}
                   className={`flex flex-col items-center justify-center text-center gap-4 p-6 md:p-8 rounded-2xl border-2 ${action.borderColor} ${action.bgColor} hover:shadow-xl transition-all duration-300 group relative overflow-hidden min-h-[180px] cursor-pointer`}
                 >
                   {/* Background Pattern */}
