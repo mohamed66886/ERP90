@@ -73,12 +73,20 @@ const ChartOfAccountsPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [branches, setBranches] = useState<Branch[]>([]);
   
-  // Load accounts from Firebase
-  const loadAccounts = async () => {
+  // Load accounts from Firebase with timeout and retry
+  const loadAccounts = async (retryCount = 0) => {
     try {
       setIsLoading(true);
-      console.log('Loading accounts from Firebase...');
-      const firebaseAccounts = await getAccounts();
+      console.log(`Loading accounts from Firebase... (attempt ${retryCount + 1})`);
+      
+      // Add timeout to prevent infinite loading (reduced to 5 seconds)
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('انتهت مهلة التحميل')), 5000)
+      );
+      
+      const accountsPromise = getAccounts();
+      
+      const firebaseAccounts = await Promise.race([accountsPromise, timeoutPromise]) as Account[];
       console.log('Accounts loaded:', firebaseAccounts);
       
       // Build hierarchical structure
@@ -92,8 +100,20 @@ const ChartOfAccountsPage: React.FC = () => {
       }
     } catch (error) {
       console.error('Error loading accounts:', error);
-      toast.error(`فشل في تحميل الحسابات: ${error.message || 'خطأ غير معروف'}`);
+      const errorMessage = error instanceof Error ? error.message : 'خطأ غير معروف';
+      
+      // Retry logic
+      if (retryCount < 2) {
+        console.log(`Retrying to load accounts... (${retryCount + 1}/2)`);
+        toast.warning(`فشل في التحميل، جاري المحاولة مرة أخرى... (${retryCount + 1}/2)`);
+        setTimeout(() => loadAccounts(retryCount + 1), 2000);
+        return;
+      }
+      
+      toast.error(`فشل في تحميل الحسابات بعد عدة محاولات: ${errorMessage}`);
       setAccounts([]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -183,12 +203,23 @@ const ChartOfAccountsPage: React.FC = () => {
     const initializeData = async () => {
       try {
         setIsLoading(true);
-        await Promise.all([
-          loadAccounts(),
-          loadBranches()
-        ]);
+        
+        // Load data sequentially with better error handling
+        console.log('Initializing chart of accounts page...');
+        
+        // Load branches first (less critical)
+        try {
+          await loadBranches();
+        } catch (branchError) {
+          console.warn('Failed to load branches, using defaults:', branchError);
+        }
+        
+        // Then load accounts (critical)
+        await loadAccounts();
+        
       } catch (error) {
         console.error('Error initializing data:', error);
+        toast.error('حدث خطأ أثناء تحميل البيانات');
       } finally {
         setIsLoading(false);
       }
@@ -927,28 +958,48 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
                 <span>شجرة الحسابات</span>
                 <Button 
                   size="sm" 
-                  className="h-8 bg-green-500 hover:bg-green-600 text-white" 
-                  onClick={() => loadAccounts()}
+                  className="h-8 bg-green-500 hover:bg-green-600 text-white disabled:bg-gray-400" 
+                  onClick={() => loadAccounts(0)}
                   disabled={isLoading}
                 >
-                  <RefreshCw className="h-4 w-4 mr-1" />
-                  تحديث
+                  <RefreshCw className={`h-4 w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+                  {isLoading ? 'جاري التحميل...' : 'تحديث'}
                 </Button>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-auto h-[600px] p-4">
                 {isLoading ? (
-                  <div className="flex flex-col items-center justify-center h-full">
-                    <Loader2 className="h-8 w-8 text-blue-600 animate-spin mb-2" />
-                    <p className="text-gray-500">جاري تحميل الحسابات...</p>
+                  <div className="flex flex-col items-center justify-center h-full space-y-4">
+                    <div className="relative">
+                      <Loader2 className="h-12 w-12 text-blue-600 animate-spin" />
+                      <div className="absolute inset-0 h-12 w-12 border-2 border-blue-200 rounded-full animate-pulse"></div>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-gray-700 font-medium mb-2">جاري تحميل الحسابات...</p>
+                      <p className="text-gray-500 text-sm">يرجى الانتظار قليلاً</p>
+                    </div>
+                    <div className="w-48 bg-gray-200 rounded-full h-2">
+                      <div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{width: '60%'}}></div>
+                    </div>
                   </div>
                 ) : accounts.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center">
                     <BookOpen className="h-16 w-16 text-gray-400 mb-4" />
                     <h3 className="text-lg font-medium text-gray-900 mb-2">لا توجد حسابات</h3>
-                    <p className="text-gray-500 mb-4">يمكنك إضافة حسابات رئيسية من صفحة "تصنيف الحسابات"</p>
-                    <p className="text-blue-600 text-sm">💡 استخدم هذه الصفحة لإضافة الحسابات الفرعية فقط</p>
+                    <p className="text-gray-500 mb-4">يبدو أن قاعدة البيانات فارغة أو لم يتم الاتصال بها بعد</p>
+                    <div className="space-y-2">
+                      <p className="text-blue-600 text-sm">💡 يمكنك إضافة حسابات رئيسية من صفحة "تصنيف الحسابات"</p>
+                      <p className="text-orange-600 text-sm">� أو جرب الضغط على زر "تحديث" أعلاه</p>
+                    </div>
+                    <Button 
+                      className="mt-4 bg-blue-500 hover:bg-blue-600 text-white"
+                      onClick={() => loadAccounts(0)}
+                      disabled={isLoading}
+                    >
+                      <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                      إعادة تحميل
+                    </Button>
                   </div>
                 ) : (
                   renderAccountTree(accounts)

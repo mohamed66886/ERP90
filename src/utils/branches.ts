@@ -1,4 +1,4 @@
-import { db } from '@/services/firebase';
+import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 
 export interface Branch {

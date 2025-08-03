@@ -1,6 +1,7 @@
 // Firebase implementation of accountsService.ts
-import { db } from './firebase';
+import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { debugLog, debugError, debugTime, debugTimeEnd } from '@/utils/debug';
 
 export interface Account {
   id: string;
@@ -65,15 +66,38 @@ export interface Account {
 
 export const getAccounts = async (): Promise<Account[]> => {
   try {
+    debugTime('getAccounts');
+    debugLog('Fetching accounts from Firebase...');
+    
     const querySnapshot = await getDocs(collection(db, 'accounts'));
     const accounts: Account[] = [];
+    
     querySnapshot.forEach((doc) => {
-      accounts.push({ id: doc.id, ...doc.data() } as Account);
+      const data = doc.data();
+      accounts.push({ 
+        id: doc.id, 
+        ...data,
+        // Ensure required fields have defaults
+        level: data.level || 1,
+        balance: data.balance || 0,
+        status: data.status || 'نشط',
+        hasSubAccounts: data.hasSubAccounts || false,
+        nature: data.nature || 'مدينة'
+      } as Account);
     });
+    
+    debugTimeEnd('getAccounts');
+    debugLog(`Successfully fetched ${accounts.length} accounts from Firebase`, accounts);
     return accounts;
   } catch (error) {
-    console.error('Error fetching accounts:', error);
-    return [];
+    debugError('Error fetching accounts from Firebase', error);
+    
+    // Return empty array instead of throwing to prevent app crash
+    if (error instanceof Error) {
+      throw new Error(`خطأ في تحميل الحسابات: ${error.message}`);
+    } else {
+      throw new Error('خطأ غير معروف في تحميل الحسابات');
+    }
   }
 };
 
