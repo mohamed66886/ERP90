@@ -23,7 +23,7 @@ import {
   RefreshCw,
   Link
 } from 'lucide-react';
-import { getAccounts, addAccount, type Account } from '@/services/accountsService';
+import { getAccounts, addAccount, updateAccount, type Account } from '@/services/accountsService';
 import { syncCashBoxesToAccounts } from '@/scripts/syncCashBoxesToAccounts';
 import { toast } from 'sonner';
 
@@ -158,6 +158,7 @@ const ChartOfAccountsPage: React.FC = () => {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['1', '11', '2']));
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Account>>({});
+  const [isSaving, setIsSaving] = useState(false);
 
   // جلب التصنيفات من الملف الخارجي
 
@@ -366,21 +367,44 @@ const ChartOfAccountsPage: React.FC = () => {
     setShowAddForm(false);
   };
 
-  const handleSave = () => {
-    // للحسابات الرئيسية: التصنيف = اسم الحساب
-    if (selectedAccount && selectedAccount.level === 1) {
-      editForm.classification = editForm.nameAr;
+  const handleSave = async () => {
+    if (!selectedAccount || !editForm.nameAr || !editForm.nameEn) {
+      toast.error('يرجى ملء جميع الحقول المطلوبة');
+      return;
     }
-    
-    // Here you would implement the save logic
-    console.log('Saving account:', editForm);
-    setIsEditing(false);
-    setSelectedAccount(editForm as Account);
+
+    try {
+      setIsSaving(true);
+      
+      // للحسابات الرئيسية: التصنيف = اسم الحساب
+      const updatedForm = { ...editForm };
+      if (selectedAccount && selectedAccount.level === 1) {
+        updatedForm.classification = editForm.nameAr;
+      }
+
+      // حفظ التعديلات في قاعدة البيانات
+      await updateAccount(selectedAccount.id, updatedForm);
+      
+      // تحديث الحالة المحلية
+      setIsEditing(false);
+      setSelectedAccount(updatedForm as Account);
+      
+      // إعادة تحميل الحسابات لضمان التحديث
+      await loadAccounts();
+      
+      toast.success('تم حفظ التعديلات بنجاح');
+    } catch (error) {
+      console.error('Error saving account:', error);
+      toast.error(`فشل في حفظ التعديلات: ${error.message || 'خطأ غير معروف'}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancel = () => {
     setIsEditing(false);
     setEditForm(selectedAccount || {});
+    setIsSaving(false);
   };
 
 const renderAccountTree = (accountList: Account[], level = 0) => {
@@ -552,15 +576,25 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
               </>
             ) : isEditing ? (
               <div className="flex gap-2">
-                <Button size="sm" onClick={handleSave} className="h-8">
-                  <Save className="h-4 w-4 mr-1" />
-                  حفظ
+                <Button 
+                  size="sm" 
+                  onClick={handleSave} 
+                  className="h-8" 
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-1" />
+                  )}
+                  {isSaving ? 'جاري الحفظ...' : 'حفظ التعديل'}
                 </Button>
                 <Button 
                   size="sm" 
                   variant="outline" 
                   onClick={handleCancel} 
                   className="h-8"
+                  disabled={isSaving}
                 >
                   <X className="h-4 w-4 mr-1" />
                   إلغاء
