@@ -17,6 +17,50 @@ export interface Account {
   isClosed?: boolean;
   status?: 'نشط' | 'غير نشط';
   hasSubAccounts?: boolean;
+  // الخصائص الجديدة للربط مع الصفحات
+  linkedToPage?: 'customers' | 'suppliers' | 'cashboxes' | 'banks';
+  customerData?: {
+    nameAr?: string;
+    nameEn?: string;
+    branch?: string;
+    commercialReg?: string;
+    regDate?: string;
+    regAuthority?: string;
+    businessType?: string;
+    activity?: string;
+    startDate?: string;
+    city?: string;
+    creditLimit?: string;
+    region?: string;
+    district?: string;
+    street?: string;
+    buildingNo?: string;
+    postalCode?: string;
+    countryCode?: string;
+    phone?: string;
+    mobile?: string;
+    email?: string;
+    status?: "نشط" | "متوقف";
+    taxFileNumber?: string;
+    taxFileExpiry?: string;
+  };
+  supplierData?: {
+    name?: string;
+    companyNumber?: string;
+    phone?: string;
+    address?: string;
+    branch?: string;
+  };
+  cashboxData?: {
+    nameAr?: string;
+    nameEn?: string;
+    branch?: string;
+  };
+  bankData?: {
+    arabicName?: string;
+    englishName?: string;
+    branch?: string;
+  };
 }
 
 export const getAccounts = async (): Promise<Account[]> => {
@@ -35,7 +79,17 @@ export const getAccounts = async (): Promise<Account[]> => {
 
 export const addAccount = async (account: Omit<Account, 'id'>): Promise<void> => {
   try {
-    await addDoc(collection(db, 'accounts'), account);
+    // تنظيف البيانات من القيم undefined قبل الحفظ
+    const cleanAccount: Record<string, unknown> = { ...account };
+    
+    // إزالة الحقول undefined
+    Object.keys(cleanAccount).forEach(key => {
+      if (cleanAccount[key] === undefined) {
+        delete cleanAccount[key];
+      }
+    });
+    
+    await addDoc(collection(db, 'accounts'), cleanAccount);
     console.log('Account added successfully to Firebase');
   } catch (error) {
     console.error('Error adding account:', error);
@@ -74,7 +128,17 @@ export const getAccountCodes = async (): Promise<string[]> => {
 
 export const updateAccount = async (id: string, updates: Partial<Account>): Promise<void> => {
   try {
-    await updateDoc(doc(db, 'accounts', id), updates);
+    // تنظيف البيانات من القيم undefined قبل التحديث
+    const cleanUpdates: Record<string, unknown> = { ...updates };
+    
+    // إزالة الحقول undefined
+    Object.keys(cleanUpdates).forEach(key => {
+      if (cleanUpdates[key] === undefined) {
+        delete cleanUpdates[key];
+      }
+    });
+    
+    await updateDoc(doc(db, 'accounts', id), cleanUpdates);
     console.log('Account updated successfully in Firebase');
   } catch (error) {
     console.error('Error updating account:', error);

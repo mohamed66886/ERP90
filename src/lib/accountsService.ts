@@ -17,6 +17,50 @@ export interface Account {
   isClosed?: boolean;
   status?: 'نشط' | 'غير نشط';
   hasSubAccounts?: boolean;
+  // الخصائص الجديدة للربط مع الصفحات
+  linkedToPage?: 'customers' | 'suppliers' | 'cashboxes' | 'banks';
+  customerData?: {
+    nameAr?: string;
+    nameEn?: string;
+    branch?: string;
+    commercialReg?: string;
+    regDate?: string;
+    regAuthority?: string;
+    businessType?: string;
+    activity?: string;
+    startDate?: string;
+    city?: string;
+    creditLimit?: string;
+    region?: string;
+    district?: string;
+    street?: string;
+    buildingNo?: string;
+    postalCode?: string;
+    countryCode?: string;
+    phone?: string;
+    mobile?: string;
+    email?: string;
+    status?: "نشط" | "متوقف";
+    taxFileNumber?: string;
+    taxFileExpiry?: string;
+  };
+  supplierData?: {
+    name?: string;
+    companyNumber?: string;
+    phone?: string;
+    address?: string;
+    branch?: string;
+  };
+  cashboxData?: {
+    nameAr?: string;
+    nameEn?: string;
+    branch?: string;
+  };
+  bankData?: {
+    arabicName?: string;
+    englishName?: string;
+    branch?: string;
+  };
 }
 
 export const getAccounts = async (): Promise<Account[]> => {
