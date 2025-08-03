@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,17 +14,8 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, ArrowRight, Edit } from 'lucide-react';
 import { toast } from 'sonner';
-import { updateAccount, getAccountCodes, type AccountInput } from '@/services/accountsService';
-
-interface Account {
-  id: string;
-  code: string;
-  nameAr: string;
-  nameEn: string;
-  nature: 'مدينة' | 'دائنة';
-  balance: number;
-  createdAt: string;
-}
+import { updateAccount, getAccountCodes, getAccountById, type Account } from '@/services/accountsService';
+import Breadcrumb from '@/components/Breadcrumb';
 
 interface EditAccountPageProps {
   account?: Account;
@@ -33,11 +25,20 @@ interface EditAccountPageProps {
 }
 
 const EditAccountPage: React.FC<EditAccountPageProps> = ({ 
-  account, 
+  account: propAccount, 
   onBack, 
   onSave, 
   existingCodes: propExistingCodes = [] 
 }) => {
+  
+  // Routing hooks for direct navigation support
+  const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  // Account state - can come from props or routing
+  const [account, setAccount] = useState<Account | null>(propAccount || null);
+  const [isLoadingAccount, setIsLoadingAccount] = useState(false);
   
   const [formData, setFormData] = useState({
     code: '',
@@ -50,6 +51,39 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [existingCodes, setExistingCodes] = useState<string[]>(propExistingCodes);
+
+  // Load account from routing if not provided as prop
+  useEffect(() => {
+    const loadAccountFromRouting = async () => {
+      // Check if account is passed via location state first
+      if (location.state?.account) {
+        setAccount(location.state.account);
+        return;
+      }
+      
+      // If no prop account and we have an ID, load from Firebase
+      if (!propAccount && id) {
+        setIsLoadingAccount(true);
+        try {
+          const loadedAccount = await getAccountById(id);
+          if (loadedAccount) {
+            setAccount(loadedAccount);
+          } else {
+            toast.error('لم يتم العثور على الحساب المطلوب');
+            navigate('/accounting/accounts-settlement');
+          }
+        } catch (error) {
+          console.error('Error loading account:', error);
+          toast.error('فشل في تحميل بيانات الحساب');
+          navigate('/accounting/accounts-settlement');
+        } finally {
+          setIsLoadingAccount(false);
+        }
+      }
+    };
+
+    loadAccountFromRouting();
+  }, [id, propAccount, location.state, navigate]);
 
   // Load existing codes from Firebase
   useEffect(() => {
@@ -143,6 +177,9 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
       toast.info('لم يتم إجراء أي تغييرات');
       if (onBack) {
         onBack();
+      } else {
+        // Navigate to accounts settlement page after save
+        navigate('/accounting/accounts-settlement');
       }
       return;
     }
@@ -150,29 +187,36 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
     setIsSubmitting(true);
 
     try {
-      const accountData: AccountInput = {
+      // Build accountData and remove undefined fields
+      const rawAccountData = {
         code: formData.code,
         nameAr: formData.nameAr,
         nameEn: formData.nameEn,
         nature: formData.nature as 'مدينة' | 'دائنة',
-        balance: formData.balance
+        balance: formData.balance,
+        classification: account.classification,
+        level: account.level,
+        parentId: account.parentId,
+        costCenter: account.costCenter,
+        isClosed: account.isClosed,
+        status: account.status,
+        hasSubAccounts: account.hasSubAccounts
       };
+      // Remove undefined fields (replace with null if needed)
+      const accountData = Object.fromEntries(
+        Object.entries(rawAccountData).filter(([_, v]) => v !== undefined)
+      );
 
       if (onSave) {
-        // Update in Firebase first, then use parent component's save function
         await updateAccount(account.id, accountData);
         toast.success('تم تحديث الحساب بنجاح');
-        onSave(accountData);
+        onSave(accountData as unknown as Omit<Account, 'id' | 'createdAt'>);
       } else {
-        // Update in Firebase directly
         await updateAccount(account.id, accountData);
         toast.success('تم تحديث الحساب بنجاح');
       }
-      
-      // Go back to accounts list
-      if (onBack) {
-        onBack();
-      }
+      // Always navigate to accounts settlement page after save
+      navigate('/accounting/accounts-settlement');
     } catch (error) {
       console.error('Error updating account:', error);
       if (error instanceof Error) {
@@ -188,6 +232,9 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
   const handleCancel = () => {
     if (onBack) {
       onBack();
+    } else {
+      // Navigate back to accounts settlement page
+      navigate('/accounting/accounts-settlement');
     }
   };
 
@@ -217,7 +264,7 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
     }
   };
 
-  if (!account) {
+  if (!account || isLoadingAccount) {
     return (
       <div className="w-full p-6 space-y-6 min-h-screen" dir="rtl">
         <div className="flex items-center justify-center h-64">
@@ -239,36 +286,22 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
       </div>
 
-      {/* Back Button */}
-      <Button 
-        variant="outline" 
-        onClick={handleCancel}
-        className="flex items-center gap-2 mb-4 h-11 px-6 font-medium transition-all duration-200"
-        style={{
-          fontFamily: 'Cairo, Tajawal, sans-serif',
-          borderColor: '#3b82f6',
-          color: '#3b82f6',
-          backgroundColor: '#fff',
-          borderRadius: 8,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-        }}
-      >
-        <ArrowRight className="h-4 w-4" />
-        العودة إلى قائمة الحسابات
-      </Button>
+                         <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "الادارة الماليه", to: "/management/financial" }, 
+          { label: "تصنيف الحسابات" , to: "/accounting/accounts-settlement"}, 
+          { label: "تعديل الحساب"},
+        ]}
+      />
 
       {/* Form Card */}
-      <Card className="shadow-lg" style={{ fontFamily: 'Cairo, Tajawal, sans-serif' }}>
+      <Card className="shadow-md" style={{ fontFamily: 'Cairo, Tajawal, sans-serif', boxShadow: '0 1px 4px rgba(0,0,0,0.07)' }}>
         <CardHeader>
           <CardTitle style={{ fontFamily: 'Cairo, Tajawal, sans-serif', fontSize: 18, fontWeight: 700 }}>
             تعديل بيانات الحساب
           </CardTitle>
-          <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600">
-            <p><strong>الكود الأصلي:</strong> {account.code}</p>
-            <p><strong>الاسم الأصلي:</strong> {account.nameAr} - {account.nameEn}</p>
-            <p><strong>الطبيعة الأصلية:</strong> {account.nature}</p>
-            <p><strong>الرصيد الأصلي:</strong> {account.balance.toLocaleString()} ريال</p>
-          </div>
+
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -286,7 +319,8 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
                   id="code"
                   type="text"
                   value={formData.code}
-                  onChange={(e) => handleInputChange('code', e.target.value)}
+                  disabled
+                  // onChange={(e) => handleInputChange('code', e.target.value)}
                   placeholder="مثال: 1001"
                   className={`h-11 transition-all duration-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                     errors.code ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 hover:border-blue-400'
@@ -295,7 +329,7 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
                     fontFamily: 'Cairo, Tajawal, sans-serif',
                     fontSize: 14,
                     borderRadius: 8,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.07)'
                   }}
                 />
                 {errors.code && (
@@ -327,7 +361,7 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
                       fontFamily: 'Cairo, Tajawal, sans-serif',
                       fontSize: 14,
                       borderRadius: 8,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.07)'
                     }}
                   >
                     <SelectValue placeholder="اختر طبيعة الحساب" />
@@ -367,7 +401,7 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
                     fontFamily: 'Cairo, Tajawal, sans-serif',
                     fontSize: 14,
                     borderRadius: 8,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.07)'
                   }}
                 />
                 {errors.nameAr && (
@@ -400,7 +434,7 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
                     fontFamily: 'Cairo, Tajawal, sans-serif',
                     fontSize: 14,
                     borderRadius: 8,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.07)'
                   }}
                 />
                 {errors.nameEn && (
@@ -435,7 +469,7 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
                     fontFamily: 'Cairo, Tajawal, sans-serif',
                     fontSize: 14,
                     borderRadius: 8,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.07)'
                   }}
                 />
                 {errors.balance && (
@@ -459,7 +493,7 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
                   background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
                   border: 'none',
                   borderRadius: 8,
-                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4)',
+                  boxShadow: '0 2px 6px rgba(59, 130, 246, 0.15)',
                   minWidth: 150
                 }}
               >
@@ -477,7 +511,7 @@ const EditAccountPage: React.FC<EditAccountPageProps> = ({
                   color: '#6b7280',
                   backgroundColor: '#fff',
                   borderRadius: 8,
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.07)',
                   minWidth: 150
                 }}
               >

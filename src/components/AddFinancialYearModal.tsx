@@ -27,6 +27,7 @@ interface AddFinancialYearModalProps {
     endYear: string;
     status: string;
   };
+  saveButtonClassName?: string;
 }
 
 const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
@@ -34,7 +35,8 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
   onClose,
   onSave,
   existingYears,
-  initialData
+  initialData,
+  saveButtonClassName
 }) => {
   const currentYear = new Date().getFullYear();
   const yearsList = Array.from({length: 20}, (_, i) => (currentYear - 10 + i).toString());
@@ -82,13 +84,15 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
   }, [initialData, isOpen, currentYear]);
 
   const [errors, setErrors] = useState<{[key: string]: string}>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    setSaveSuccess(false);
+    setIsSaving(true);
     // Validation
     const newErrors: {[key: string]: string} = {};
-    
     const startDate = `${formData.startYear}-${formData.startMonth}-${formData.startDay}`;
     const endDate = `${formData.endYear}-${formData.endMonth}-${formData.endDay}`;
     if (!formData.year || Number(formData.year) < 1900 || Number(formData.year) > 2100) {
@@ -114,24 +118,21 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
         endDate,
         status: formData.status
       };
-      // حفظ في فايربيز
-      if (!initialData) {
-        addFinancialYear(yearData)
-          .then(() => {
-            onSave(yearData);
-            handleClose();
-          })
-          .catch((err) => {
-            setErrors({ firebase: 'حدث خطأ أثناء الحفظ في قاعدة البيانات' });
-          });
-      } else {
+      try {
+        if (!initialData) {
+          await addFinancialYear(yearData);
+        }
         onSave(yearData);
-        handleClose();
+        setSaveSuccess(true);
+        setTimeout(() => {
+          setSaveSuccess(false);
+          handleClose();
+        }, 1200);
+      } catch (err) {
+        setErrors({ firebase: 'حدث خطأ أثناء الحفظ في قاعدة البيانات' });
       }
     }
-            {errors.firebase && (
-              <p className="text-sm text-red-600">{errors.firebase}</p>
-            )}
+    setIsSaving(false);
   };
 
   const handleClose = () => {
@@ -288,19 +289,28 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
             <div className="flex items-center justify-end space-x-2 space-x-reverse pt-4">
               <Button
                 type="button"
-                variant="outline"
                 onClick={handleClose}
+                className="bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800 text-white"
+                disabled={isSaving}
               >
                 إلغاء
               </Button>
               <Button
                 type="submit"
-                className="flex items-center space-x-2 space-x-reverse"
+                className={`flex items-center space-x-2 space-x-reverse ${saveButtonClassName ? saveButtonClassName : ''}`}
+                disabled={isSaving}
               >
-                <Save className="h-4 w-4" />
-                <span>حفظ</span>
+                {isSaving ? (
+                  <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                <span>{isSaving ? 'جاري الحفظ...' : saveSuccess ? 'تم الحفظ' : 'حفظ'}</span>
               </Button>
             </div>
+            {saveSuccess && (
+              <div className="text-green-600 text-center mt-2">تم الحفظ بنجاح</div>
+            )}
           </form>
         </CardContent>
       </Card>

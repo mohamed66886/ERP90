@@ -103,6 +103,27 @@ export const getSubAccounts = async (parentId: string): Promise<Account[]> => {
   }
 };
 
+export const getAccountsByLevel = async (level: number): Promise<Account[]> => {
+  try {
+    const allAccounts = await getAccounts();
+    return allAccounts.filter(account => account.level === level);
+  } catch (error) {
+    console.error('Error fetching accounts by level:', error);
+    return [];
+  }
+};
+
+export const getAccountLevels = async (): Promise<number[]> => {
+  try {
+    const allAccounts = await getAccounts();
+    const levels = [...new Set(allAccounts.map(account => account.level || 1))];
+    return levels.sort((a, b) => a - b);
+  } catch (error) {
+    console.error('Error fetching account levels:', error);
+    return [1];
+  }
+};
+
 export const generateSubAccountCode = async (parentAccountId: string): Promise<string> => {
   try {
     const allAccounts = await getAccounts();
@@ -134,6 +155,17 @@ export const generateSubAccountCode = async (parentAccountId: string): Promise<s
   } catch (error) {
     console.error('Error generating sub account code:', error);
     throw error;
+  }
+};
+
+export const getAccountById = async (id: string): Promise<Account | null> => {
+  try {
+    const allAccounts = await getAccounts();
+    const account = allAccounts.find(account => account.id === id);
+    return account || null;
+  } catch (error) {
+    console.error('Error fetching account by ID:', error);
+    return null;
   }
 };
 

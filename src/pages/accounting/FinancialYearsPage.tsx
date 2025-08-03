@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getFinancialYears, deleteFinancialYear, updateFinancialYear } from '@/services/financialYearsService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
+import Breadcrumb from '@/components/Breadcrumb';
 import type { FinancialYear } from '@/services/financialYearsService';
 
 interface FinancialYearsPageProps {
@@ -36,6 +37,7 @@ interface FinancialYearsPageProps {
 }
 
 const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
+  const navigate = useNavigate();
   const [financialYears, setFinancialYears] = useState<FinancialYear[]>([]);
   useEffect(() => {
     getFinancialYears().then((years) => {
@@ -154,36 +156,34 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
   return (
     <div className="w-full p-6 space-y-6 min-h-screen bg-gray-50 dark:bg-gray-900" dir="rtl">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4 space-x-reverse">
-          {onBack && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={onBack}
-              className="flex items-center space-x-2 space-x-reverse"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span>رجوع</span>
-            </Button>
-          )}
-          <div className="flex items-center space-x-3 space-x-reverse">
-            <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg">
+ 
+            <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+              <div className="flex items-center">
               <Calendar className="h-6 w-6 text-purple-600 dark:text-purple-300" />
+                <h1 className="text-2xl font-bold text-gray-800">  السنوات المالية</h1>
+              </div>
+              <p className="text-gray-600 mt-2">إدارة السنوات المالية للشركة</p>
+              <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800 dark:text-white">السنوات المالية</h1>
-              <p className="text-gray-600 dark:text-gray-400">إدارة السنوات المالية للشركة</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Actions Bar */}
+      {/* Actions Bar removed, buttons moved to table card header */}
+      <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "الادارة الماليه", to: "/management/financial" }, 
+          { label: "السنوات المالية" }
+        ]}
+      />
+      {/* Financial Years Table */}
       <Card className="border border-gray-200 dark:border-gray-700">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4 space-x-reverse">
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <CardTitle className="text-xl font-semibold text-gray-800 dark:text-white">قائمة السنوات المالية</CardTitle>
+              <CardDescription className="text-gray-600 dark:text-gray-400">
+                عرض وتعديل السنوات المالية المسجلة في النظام
+              </CardDescription>
+            </div>
+            <div className="flex items-center space-x-2 space-x-reverse mt-2 sm:mt-0">
               <Button 
                 onClick={handleAddYear}
                 className="flex items-center space-x-2 space-x-reverse bg-purple-600 hover:bg-purple-700 dark:bg-purple-700 dark:hover:bg-purple-800"
@@ -191,31 +191,18 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
                 <Plus className="h-4 w-4" />
                 <span>إضافة سنة مالية</span>
               </Button>
-              
               <Button 
-                variant="outline"
                 onClick={handleExport}
-                className="flex items-center space-x-2 space-x-reverse border-gray-300 dark:border-gray-600"
+                className="flex items-center space-x-2 space-x-reverse bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800 text-white"
               >
                 <FileDown className="h-4 w-4" />
                 <span>تصدير</span>
               </Button>
             </div>
-
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              إجمالي السنوات المالية: <span className="font-medium">{financialYears.length}</span>
-            </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Financial Years Table */}
-      <Card className="border border-gray-200 dark:border-gray-700">
-        <CardHeader>
-          <CardTitle className="text-xl font-semibold text-gray-800 dark:text-white">قائمة السنوات المالية</CardTitle>
-          <CardDescription className="text-gray-600 dark:text-gray-400">
-            عرض وتعديل السنوات المالية المسجلة في النظام
-          </CardDescription>
+          <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+            إجمالي السنوات المالية: <span className="font-medium">{financialYears.length}</span>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -293,6 +280,7 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
         onClose={() => { setIsAddModalOpen(false); setEditYear(null); }}
         onSave={handleSaveYear}
         existingYears={financialYears.map(year => year.year)}
+        saveButtonClassName="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white"
         {...(editYear ? {
           initialData: {
             year: editYear.year,

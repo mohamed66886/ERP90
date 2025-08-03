@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Select, Checkbox, Badge } from 'antd';
+import { Input as AntdInput, Select, Checkbox as AntdCheckbox } from 'antd';
+import type { BadgeProps } from "@/components/ui/badge";
+import { Badge } from '@/components/ui/badge';
 import type { SelectProps } from 'antd';
+import Breadcrumb from '../../components/Breadcrumb';
+
 import { 
   BookOpen,
   ChevronRight,
@@ -269,6 +273,12 @@ const ChartOfAccountsPage: React.FC = () => {
   };
 
   const handleAddClick = () => {
+    // التحقق من أن الحساب المحدد له حسابات تحليلية
+    if (selectedAccount && !selectedAccount.hasSubAccounts) {
+      toast.error(`لا يمكن إضافة حساب فرعي تحت "${selectedAccount.nameAr}" - الحساب ليس له حسابات تحليلية`);
+      return;
+    }
+
     setShowAddForm(true);
     
     // إذا كان هناك حساب محدد، اجعل الحساب الجديد فرعي منه
@@ -323,7 +333,7 @@ const ChartOfAccountsPage: React.FC = () => {
         level: newAccount.level || 1,
         status: 'نشط',
         isClosed: false,
-        hasSubAccounts: false,
+        hasSubAccounts: newAccount.hasSubAccounts || false,
         nature: 'مدينة',
         ...(newAccount.parentId && { parentId: newAccount.parentId })
       };
@@ -460,7 +470,13 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
         <p className="text-gray-600 mt-2">عرض وإدارة دليل الحسابات الكامل</p>
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 to-blue-500"></div>
       </div>
-
+                   <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "الادارة الماليه", to: "/management/financial" }, 
+          { label: "دليل الحسابات الشجري" },
+        ]}
+      />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Account Tree - Right Side */}
         <div className="lg:col-span-1">
@@ -468,16 +484,14 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <span>شجرة الحسابات</span>
-                {/* زر إضافة حساب فرعي فقط */}
                 <Button 
                   size="sm" 
-                  className="h-8 bg-blue-500 hover:bg-blue-600 text-white disabled:bg-gray-400 disabled:cursor-not-allowed" 
-                  onClick={handleAddClick}
-                  disabled={isLoading || !selectedAccount}
-                  title={selectedAccount ? `إضافة حساب فرعي تحت: ${selectedAccount.nameAr}` : 'اختر حساباً أولاً لإضافة حساب فرعي تحته'}
+                  className="h-8 bg-green-500 hover:bg-green-600 text-white" 
+                  onClick={() => loadAccounts()}
+                  disabled={isLoading}
                 >
-                  <Plus className="h-4 w-4 mr-1" />
-                  إضافة حساب فرعي
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                  تحديث
                 </Button>
               </CardTitle>
             </CardHeader>
@@ -498,63 +512,6 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
                 ) : (
                   renderAccountTree(accounts)
                 )}
-                {showAddForm && (
-                  <div className="mt-4 p-4 bg-gray-50 border rounded space-y-3">
-                    {selectedAccount && (
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg mb-3">
-                        <div className="text-sm text-blue-800 font-medium mb-1">
-                          إضافة حساب فرعي تحت:
-                        </div>
-                        <div className="text-sm text-blue-700">
-                          {selectedAccount.code} - {selectedAccount.nameAr}
-                        </div>
-                        <div className="text-xs text-blue-600 mt-1">
-                          المستوى: {(selectedAccount.level || 1) + 1}
-                        </div>
-                        {selectedAccount.level !== 1 && (
-                          <div className="text-xs text-blue-600 mt-1">
-                            التصنيف: {getRootAccount(selectedAccount, accounts).nameAr} (موروث من الحساب الرئيسي)
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <div className="grid grid-cols-1 gap-2">
-                      <Input 
-                        placeholder="اسم الحساب (عربي)" 
-                        value={newAccount.nameAr} 
-                        onChange={e => setNewAccount({
-                          ...newAccount, 
-                          nameAr: e.target.value,
-                          ...(newAccount.level === 1 && { classification: e.target.value })
-                        })}
-                        size="large"
-                      />
-                      <Input 
-                        placeholder="اسم الحساب (إنجليزي)" 
-                        value={newAccount.nameEn} 
-                        onChange={e => setNewAccount({...newAccount, nameEn: e.target.value})}
-                        size="large"
-                      />
-                      {/* إزالة اختيار التصنيف - سيتم تحديده تلقائياً */}
-                      {!selectedAccount && newAccount.level === 1 && (
-                        <div className="p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
-                          💡 التصنيف سيكون نفس اسم الحساب العربي، والكود سيتم إنشاؤه تلقائياً (1000، 2000، 3000...)
-                        </div>
-                      )}
-                      {selectedAccount && (
-                        <div className="p-2 bg-green-50 border border-green-200 rounded text-sm text-green-800">
-                          💡 سيتم إنشاء كود الحساب الفرعي تلقائياً بناءً على كود الحساب الأب: {selectedAccount.code} (مثال: {selectedAccount.code}1)
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex gap-2 justify-end">
-                      <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white" onClick={handleAddAccount}>
-                        {selectedAccount ? 'إضافة حساب فرعي' : 'إضافة حساب رئيسي'}
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={handleCancelAdd}>إلغاء</Button>
-                    </div>
-                  </div>
-                )}
               </div>
             </CardContent>
           </Card>
@@ -568,16 +525,32 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
         <span>تفاصيل الحساب</span>
         {selectedAccount && (
           <div className="flex gap-2">
-            {!isEditing ? (
-              <Button 
-                size="sm" 
-                onClick={handleEdit} 
-                className="h-8 bg-blue-500 hover:bg-blue-600 text-white"
-              >
-                <Edit className="h-4 w-4 mr-1" />
-                تعديل
-              </Button>
-            ) : (
+            {!isEditing && !showAddForm ? (
+              <>
+                <Button 
+                  size="sm" 
+                  onClick={handleAddClick} 
+                  className="h-8 bg-green-500 hover:bg-green-600 text-white disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  disabled={!selectedAccount.hasSubAccounts}
+                  title={
+                    selectedAccount.hasSubAccounts 
+                      ? `إضافة حساب فرعي تحت: ${selectedAccount.nameAr}` 
+                      : `لا يمكن إضافة حساب فرعي تحت: ${selectedAccount.nameAr} - الحساب ليس له حسابات تحليلية`
+                  }
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  إضافة حساب فرعي
+                </Button>
+                <Button 
+                  size="sm" 
+                  onClick={handleEdit} 
+                  className="h-8 bg-blue-500 hover:bg-blue-600 text-white"
+                >
+                  <Edit className="h-4 w-4 mr-1" />
+                  تعديل
+                </Button>
+              </>
+            ) : isEditing ? (
               <div className="flex gap-2">
                 <Button size="sm" onClick={handleSave} className="h-8">
                   <Save className="h-4 w-4 mr-1" />
@@ -593,7 +566,23 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
                   إلغاء
                 </Button>
               </div>
-            )}
+            ) : showAddForm ? (
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleAddAccount} className="h-8 bg-green-500 hover:bg-green-600 text-white">
+                  <Save className="h-4 w-4 mr-1" />
+                  إضافة
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={handleCancelAdd} 
+                  className="h-8"
+                >
+                  <X className="h-4 w-4 mr-1" />
+                  إلغاء
+                </Button>
+              </div>
+            ) : null}
           </div>
         )}
       </CardTitle>
@@ -602,7 +591,102 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
     <CardContent className="space-y-4 overflow-auto h-[600px]">
       {selectedAccount ? (
         <div className="space-y-6">
-          {/* الصف الأول: 3 أعمدة */}
+          {/* رسالة تحذيرية للحسابات التي ليس لها حسابات تحليلية */}
+          {!selectedAccount.hasSubAccounts && (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-center">
+                <div className="text-yellow-800">
+                  <span className="font-medium">تنبيه:</span> هذا الحساب ليس له حسابات تحليلية، لذا لا يمكن إضافة حسابات فرعية تحته.
+                </div>
+              </div>
+              <div className="text-sm text-yellow-700 mt-2">
+                💡 لتمكين إضافة حسابات فرعية، قم بتعديل الحساب وتفعيل خيار "له حسابات تحليلية"
+              </div>
+            </div>
+          )}
+
+          {/* فورم إضافة حساب فرعي */}
+          {showAddForm && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-blue-800">إضافة حساب فرعي</h3>
+              </div>
+              
+              {/* معلومات الحساب الأب */}
+              <div className="p-3 bg-white border border-blue-200 rounded-lg">
+                <div className="text-sm text-blue-800 font-medium mb-2">
+                  سيتم إضافة الحساب الفرعي تحت:
+                </div>
+                <div className="flex items-center space-x-3 space-x-reverse">
+                  <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-300">
+                    {selectedAccount.code}
+                  </Badge>
+                  <span className="text-sm font-medium">{selectedAccount.nameAr}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-2 text-xs text-blue-600">
+                  <div>المستوى الجديد: {(selectedAccount.level || 1) + 1}</div>
+                  <div>التصنيف: {getRootAccount(selectedAccount, accounts).nameAr}</div>
+                </div>
+              </div>
+
+              {/* حقول إدخال البيانات */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">اسم الحساب (عربي) *</label>
+                  <AntdInput 
+                    placeholder="أدخل اسم الحساب بالعربية" 
+                    value={newAccount.nameAr} 
+                    onChange={(e) => setNewAccount({
+                      ...newAccount, 
+                      nameAr: e.target.value,
+                      ...(newAccount.level === 1 && { classification: e.target.value })
+                    })}
+                    size="large"
+                    className="text-right"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">اسم الحساب (إنجليزي) *</label>
+                  <AntdInput 
+                    placeholder="Enter account name in English" 
+                    value={newAccount.nameEn} 
+                    onChange={(e) => setNewAccount({...newAccount, nameEn: e.target.value})}
+                    size="large"
+                    className="text-left"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              {/* حقل له حسابات تحليلية */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">إعدادات الحساب</label>
+                <div className="p-3 bg-white border border-gray-200 rounded-lg">
+                  <div className="flex items-center space-x-2 space-x-reverse">
+                    <AntdCheckbox
+                      checked={newAccount.hasSubAccounts || false}
+                      onChange={(e) => setNewAccount({...newAccount, hasSubAccounts: e.target.checked})}
+                    >
+                      له حسابات تحليلية (يمكن إضافة حسابات فرعية تحته)
+                    </AntdCheckbox>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    💡 إذا لم يتم تحديد هذا الخيار، لن يمكن إضافة حسابات فرعية تحت هذا الحساب مستقبلاً
+                  </div>
+                </div>
+              </div>
+
+              {/* معلومة إضافية */}
+              <div className="p-3 bg-green-50 border border-green-200 rounded text-sm text-green-800">
+                💡 سيتم إنشاء كود الحساب الفرعي تلقائياً بناءً على كود الحساب الأب: {selectedAccount.code} (مثال: {selectedAccount.code}1)
+              </div>
+            </div>
+          )}
+
+          {/* تفاصيل الحساب الحالي */}
+          {!showAddForm && (
+            <>
+              {/* الصف الأول: 3 أعمدة */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* تصنيف الحساب */}
             <div className="space-y-2">
@@ -612,9 +696,9 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
                   <div className="p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
                     💡 التصنيف للحساب الرئيسي هو اسم الحساب نفسه
                   </div>
-                  <Input
+                  <AntdInput
                     value={editForm.nameAr || ''}
-                    onChange={e => setEditForm({
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({
                       ...editForm,
                       nameAr: e.target.value,
                       classification: e.target.value
@@ -669,12 +753,12 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
             <div className="space-y-2">
             <div className="font-semibold mb-1">رقم الحساب</div>
             {isEditing ? (
-              <Input
+              <AntdInput
                 value={editForm.code || ''}
-                onChange={e => setEditForm({ ...editForm, code: e.target.value })}
                 className="text-right"
-                dir="ltr"
                 size="large"
+                readOnly
+                disabled
               />
             ) : (
               <div className="p-2 bg-gray-50 rounded border font-mono">
@@ -687,9 +771,9 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
             <div className="space-y-2">
             <div className="font-semibold mb-1">اسم الحساب (عربي)</div>
             {isEditing ? (
-              <Input
+              <AntdInput
                 value={editForm.nameAr || ''}
-                onChange={e => setEditForm({ ...editForm, nameAr: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({ ...editForm, nameAr: e.target.value })}
                 className="text-right"
                 size="large"
               />
@@ -704,11 +788,10 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
             <div className="space-y-2">
             <div className="font-semibold mb-1">اسم الحساب (إنجليزي)</div>
             {isEditing ? (
-              <Input
+              <AntdInput
                 value={editForm.nameEn || ''}
-                onChange={e => setEditForm({ ...editForm, nameEn: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({ ...editForm, nameEn: e.target.value })}
                 className="text-left"
-                dir="ltr"
                 size="large"
               />
             ) : (
@@ -758,9 +841,7 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
               </Select>
             ) : (
               <div className="p-2 bg-gray-50 rounded border">
-                <Badge style={{ background: selectedAccount.status === 'نشط' ? '#e8f5e9' : '#f5f5f5', color: selectedAccount.status === 'نشط' ? '#388e3c' : '#757575' }}>
-                  {selectedAccount.status}
-                </Badge>
+                <Badge style={{ background: selectedAccount.status === 'نشط' ? '#e8f5e9' : '#f5f5f5', color: selectedAccount.status === 'نشط' ? '#388e3c' : '#757575' }}>{selectedAccount.status}</Badge>
               </div>
             )}
             </div>
@@ -770,16 +851,16 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
             <div className="font-semibold mb-1">الإقفال</div>
             {isEditing ? (
               <div className="flex items-center space-x-2 space-x-reverse p-2">
-                <Checkbox
+                <AntdCheckbox
                   checked={editForm.isClosed || false}
                   onChange={e => setEditForm({ ...editForm, isClosed: e.target.checked })}
-                >مقفل</Checkbox>
+                >
+                  مقفل
+                </AntdCheckbox>
               </div>
             ) : (
               <div className="p-2 bg-gray-50 rounded border">
-                <Badge style={{ background: selectedAccount.isClosed ? '#ffebee' : '#e8f5e9', color: selectedAccount.isClosed ? '#c62828' : '#388e3c' }}>
-                  {selectedAccount.isClosed ? 'مقفل' : 'مفتوح'}
-                </Badge>
+                <Badge style={{ background: selectedAccount.isClosed ? '#ffebee' : '#e8f5e9', color: selectedAccount.isClosed ? '#c62828' : '#388e3c' }}>{selectedAccount.isClosed ? 'مقفل' : 'مفتوح'}</Badge>
               </div>
             )}
             </div>
@@ -791,20 +872,22 @@ const renderAccountTree = (accountList: Account[], level = 0) => {
               <div className="font-semibold mb-1">له حسابات تحليلية</div>
               {isEditing ? (
                 <div className="flex items-center justify-center space-x-2 space-x-reverse p-2">
-                  <Checkbox
+                  <AntdCheckbox
                     checked={editForm.hasSubAccounts || false}
                     onChange={e => setEditForm({ ...editForm, hasSubAccounts: e.target.checked })}
-                  >له حسابات فرعية</Checkbox>
+                  >
+                    له حسابات فرعية
+                  </AntdCheckbox>
                 </div>
               ) : (
                 <div className="p-2 bg-gray-50 rounded border text-center">
-                  <Badge style={{ background: selectedAccount.hasSubAccounts ? '#e3f2fd' : '#f5f5f5', color: selectedAccount.hasSubAccounts ? '#1565c0' : '#757575' }}>
-                    {selectedAccount.hasSubAccounts ? 'نعم' : 'لا'}
-                  </Badge>
+                  <Badge style={{ background: selectedAccount.hasSubAccounts ? '#e3f2fd' : '#f5f5f5', color: selectedAccount.hasSubAccounts ? '#1565c0' : '#757575' }}>{selectedAccount.hasSubAccounts ? 'نعم' : 'لا'}</Badge>
                 </div>
               )}
             </div>
           </div>
+            </>
+          )}
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center h-full text-center">

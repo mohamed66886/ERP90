@@ -47,6 +47,15 @@ import {
   // ContractManagement,
   EquipmentManagement
 } from "../pages/management";
+
+// Accounting Pages
+import AccountsSettlementPage from "./accounting/AccountsSettlementPage";
+import AddAccountPage from "./accounting/AddAccountPage";
+import EditAccountPage from "./accounting/EditAccountPage";
+import ChartOfAccountsPage from "./accounting/ChartOfAccountsPage";
+import FinancialYearsPage from "./accounting/FinancialYearsPage";
+import BankAccountsPage from "./accounting/BankAccountsPage";
+import CashBoxesPage from "./management/CashBoxesPage";
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -169,6 +178,15 @@ const Index = () => {
             <Route path="/management/purchase" element={<PurchaseManagement />} />
             {/* <Route path="/management/contracts" element={<ContractManagement />} /> */}
             <Route path="/management/equipment" element={<EquipmentManagement />} />
+            
+            {/* Financial Management Sub-Routes */}
+            <Route path="/accounting/accounts-settlement" element={<AccountsSettlementPage />} />
+            <Route path="/accounting/add-account" element={<AddAccountPage />} />
+            <Route path="/accounting/edit-account/:id" element={<EditAccountPage />} />
+            <Route path="/accounting/chart-of-accounts" element={<ChartOfAccountsPage />} />
+            <Route path="/accounting/financial-years" element={<FinancialYearsPage />} />
+            <Route path="/accounting/bank-accounts" element={<BankAccountsPage />} />
+            <Route path="/accounting/cash-boxes" element={<CashBoxesPage />} />
             
             <Route path="/suppliers" element={<Suppliers />} />
             <Route path="/" element={<Dashboard />} />

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAccounts, addAccount, deleteAccount, type Account } from '@/services/accountsService';
-  // ...existing code...
+import Breadcrumb from '@/components/Breadcrumb';
 
 
 interface AccountsSettlementPageProps {
@@ -150,13 +151,21 @@ const AccountsSettlementPage: React.FC<AccountsSettlementPageProps> = ({
     toast.info(`جاري تحميل بيانات الحساب: ${account.nameAr}`);
     if (onNavigateToEdit) {
       onNavigateToEdit(account);
+    } else {
+      // التنقل مباشرة إلى صفحة التعديل مع تمرير بيانات الحساب
+      navigate(`/accounting/edit-account/${account.id}`, { 
+        state: { account } 
+      });
     }
   };
 
+  const navigate = useNavigate();
   const handleAddClick = () => {
-    console.log('Add button clicked');
+    // إذا كان هناك دالة onNavigateToAdd استخدمها، وإلا استخدم التنقل
     if (onNavigateToAdd) {
       onNavigateToAdd();
+    } else {
+      navigate('/accounting/add-account');
     }
   };
 
@@ -197,7 +206,13 @@ const AccountsSettlementPage: React.FC<AccountsSettlementPageProps> = ({
         <p className="text-gray-600 mt-2">إدارة وتصنيف الحسابات المالية</p>
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
       </div>
-
+                         <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "الادارة الماليه", to: "/management/financial" }, 
+          { label: "تصنيف الحسابات" },
+        ]}
+      />
       <Card>
         <CardHeader>
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">

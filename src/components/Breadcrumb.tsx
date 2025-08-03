@@ -6,7 +6,8 @@ import {
   FileTextFilled, 
   ApartmentOutlined, 
   RollbackOutlined, 
-  CreditCardFilled 
+  CreditCardFilled, 
+  CarFilled 
 } from "@ant-design/icons";
 import { motion } from "framer-motion";
 
@@ -32,7 +33,15 @@ const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => {
       "ادارة طرق الدفع": <CreditCardFilled className={iconStyle} />, 
       "تقارير المبيعات اليوميه": <FileTextFilled className={iconStyle} />, 
       "تقرير بارباح الفواتير": <FileTextFilled className={iconStyle} />, 
-      "رجوع": <RollbackOutlined className={iconStyle} />
+      "رجوع": <RollbackOutlined className={iconStyle} />, 
+      "الادارة الماليه": <FileTextFilled className={iconStyle} />, 
+      "دليل الحسابات الشجري": <ApartmentOutlined className={iconStyle} />, 
+      "تصنيف الحسابات": <ApartmentOutlined className={iconStyle} />, 
+      "السنوات المالية": <FileTextFilled className={iconStyle} />, 
+      "إضافة حساب جديد": <CreditCardFilled className={iconStyle} />, 
+      "تعديل الحساب": <CreditCardFilled className={iconStyle} />, 
+      "الصناديق النقدية": <CarFilled className={iconStyle} />, 
+      "البنوك": <CreditCardFilled className={iconStyle} />
     };
     return iconMap[label] || null;
   };

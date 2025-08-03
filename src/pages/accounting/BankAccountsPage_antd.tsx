@@ -117,12 +117,7 @@ const BankAccountsPage: React.FC<BankAccountsPageProps> = ({ onBack }) => {
     form.setFieldsValue({ mainAccount: undefined });
   };
 
-  const onFinish = async (values: {
-    arabicName: string;
-    englishName: string;
-    branch: string;
-    mainAccount: string;
-  }) => {
+  const onFinish = async (values: any) => {
     setSubmitting(true);
     try {
       if (editingAccount && editingAccount.id) {
@@ -176,7 +171,7 @@ const BankAccountsPage: React.FC<BankAccountsPageProps> = ({ onBack }) => {
       key: 'index',
       width: 80,
       align: 'center' as const,
-      render: (_: unknown, __: unknown, index: number) => (
+      render: (_: any, __: any, index: number) => (
         <Tag color="blue">{index + 1}</Tag>
       ),
     },
@@ -214,7 +209,7 @@ const BankAccountsPage: React.FC<BankAccountsPageProps> = ({ onBack }) => {
       key: 'actions',
       width: 120,
       align: 'center' as const,
-      render: (_: unknown, record: BankAccount) => (
+      render: (_: any, record: BankAccount) => (
         <Space>
           <Button
             type="text"
@@ -245,7 +240,7 @@ const BankAccountsPage: React.FC<BankAccountsPageProps> = ({ onBack }) => {
       <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
         <div className="flex items-center">
           <BankOutlined className="text-2xl text-blue-600 ml-3" />
-          <Title level={2} className="mb-0 text-gray-800">ادارة الحسابات البنكية</Title>
+          <Title level={2} className="mb-0 text-2xl  text-gray-800">ادارة الحسابات البنكية</Title>
         </div>
         <Text type="secondary" className="mt-2">إدارة الحسابات البنكية</Text>
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>

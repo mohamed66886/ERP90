@@ -1,18 +1,15 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { addAccount, getAccounts } from '@/services/accountsService';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import Input from 'antd/lib/input';
+import Select from 'antd/lib/select';
+import Typography from 'antd/lib/typography';
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { toast } from 'sonner';
 import { AlertCircle, ArrowRight, Plus } from 'lucide-react';
+import Breadcrumb from '@/components/Breadcrumb';
 
 interface Account {
   id: string;
@@ -35,6 +32,7 @@ const AddAccountPage: React.FC<AddAccountPageProps> = ({
   onBack, 
   existingCodes = [] 
 }) => {
+  const navigate = useNavigate();
   
   const [formData, setFormData] = useState({
     nameAr: '',
@@ -122,9 +120,18 @@ const AddAccountPage: React.FC<AddAccountPageProps> = ({
     }
     setIsSubmitting(true);
     try {
+      // جلب جميع الحسابات الرئيسية للتحقق من التكرار
+      const allAccounts = await getAccounts();
+      const level1Accounts = allAccounts.filter(acc => acc.level === 1);
+      const existsAr = level1Accounts.some(acc => acc.nameAr.trim() === formData.nameAr.trim());
+      const existsEn = level1Accounts.some(acc => acc.nameEn.trim().toLowerCase() === formData.nameEn.trim().toLowerCase());
+      if (existsAr || existsEn) {
+        toast.error('يوجد حساب رئيسي بنفس الاسم العربي أو الإنجليزي بالفعل');
+        setIsSubmitting(false);
+        return;
+      }
       // إنشاء كود تلقائي للحساب الرئيسي
       const autoCode = await generateAccountCode();
-      
       // إضافة الحساب مباشرة إلى Firebase كمستوى أول
       const newAccount = {
         code: autoCode,
@@ -137,12 +144,13 @@ const AddAccountPage: React.FC<AddAccountPageProps> = ({
         createdAt: new Date().toISOString()
       };
       await addAccount(newAccount);
-      console.log('Account added successfully to Firebase as level 1 with auto code:', autoCode);
-      if (onBack) {
-        onBack();
-      }
+      toast.success('تم حفظ الحساب بنجاح');
+      setTimeout(() => {
+        navigate('/accounting/accounts-settlement');
+      }, 800);
     } catch (error) {
       console.error('Error adding account:', error);
+      toast.error('حدث خطأ أثناء حفظ الحساب');
     } finally {
       setIsSubmitting(false);
     }
@@ -181,15 +189,14 @@ const AddAccountPage: React.FC<AddAccountPageProps> = ({
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
       </div>
 
-      {/* Back Button */}
-      <Button 
-        variant="outline" 
-        onClick={handleCancel}
-        className="flex items-center gap-2 mb-4 border-blue-500 text-blue-600 hover:bg-blue-50 transition-colors"
-      >
-        <ArrowRight className="h-4 w-4" />
-        العودة إلى قائمة الحسابات
-      </Button>
+                         <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "الادارة الماليه", to: "/management/financial" }, 
+          { label: "تصنيف الحسابات" , to: "/accounting/accounts-settlement" },
+          { label: "إضافة حساب جديد" },
+        ]}
+      />
 
       {/* Form Card */}
       <Card>
@@ -199,86 +206,84 @@ const AddAccountPage: React.FC<AddAccountPageProps> = ({
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Account Nature */}
-              <div className="space-y-2">
-                <Label htmlFor="nature" className="text-sm font-medium text-gray-700">طبيعة الحساب *</Label>
-                <Select 
-                  value={formData.nature} 
-                  onValueChange={(value) => handleInputChange('nature', value)}
-                >
-                  <SelectTrigger className={`h-11 transition-all duration-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.nature ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 hover:border-blue-400'}`}>
-                    <SelectValue placeholder="اختر طبيعة الحساب" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white border border-gray-200 shadow-lg">
-                    <SelectItem value="مدينة" className="hover:bg-blue-50 focus:bg-blue-50">مدينة</SelectItem>
-                    <SelectItem value="دائنة" className="hover:bg-blue-50 focus:bg-blue-50">دائنة</SelectItem>
-                  </SelectContent>
-                </Select>
-                {errors.nature && (
-                  <Alert variant="destructive" className="py-2">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription className="text-sm">{errors.nature}</AlertDescription>
-                  </Alert>
-                )}
+              {/* Account Nature & Arabic Name */}
+              <div className="flex flex-col md:flex-row gap-6 w-full md:col-span-2">
+                <div className="space-y-2 w-full">
+                  <Typography.Text className="text-sm font-medium text-gray-700">طبيعة الحساب *</Typography.Text>
+                  <Select
+                    value={formData.nature || undefined}
+                    onChange={(value) => handleInputChange('nature', value)}
+                    placeholder="اختر طبيعة الحساب"
+                    style={{ width: '100%' }}
+                    size="large"
+                    allowClear
+                  >
+                    <Select.Option value="مدينة">مدينة</Select.Option>
+                    <Select.Option value="دائنة">دائنة</Select.Option>
+                  </Select>
+                  {errors.nature && (
+                    <Alert variant="destructive" className="py-2">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">{errors.nature}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+                <div className="space-y-2 w-full">
+                  <Typography.Text className="text-sm font-medium text-gray-700">اسم الحساب (عربي) *</Typography.Text>
+                  <Input
+                    id="nameAr"
+                    value={formData.nameAr}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange('nameAr', e.target.value)}
+                    placeholder="مثال: النقدية بالصندوق"
+                    size="large"
+                    status={errors.nameAr ? 'error' : ''}
+                  />
+                  {errors.nameAr && (
+                    <Alert variant="destructive" className="py-2">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">{errors.nameAr}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
               </div>
 
-              {/* Arabic Name */}
-              <div className="space-y-2">
-                <Label htmlFor="nameAr" className="text-sm font-medium text-gray-700">اسم الحساب (عربي) *</Label>
-                <Input
-                  id="nameAr"
-                  type="text"
-                  value={formData.nameAr}
-                  onChange={(e) => handleInputChange('nameAr', e.target.value)}
-                  placeholder="مثال: النقدية بالصندوق"
-                  className={`h-11 transition-all duration-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.nameAr ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 hover:border-blue-400'}`}
-                />
-                {errors.nameAr && (
-                  <Alert variant="destructive" className="py-2">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription className="text-sm">{errors.nameAr}</AlertDescription>
-                  </Alert>
-                )}
-              </div>
-
-              {/* English Name */}
-              <div className="space-y-2">
-                <Label htmlFor="nameEn" className="text-sm font-medium text-gray-700">اسم الحساب (انجليزي) *</Label>
-                <Input
-                  id="nameEn"
-                  type="text"
-                  value={formData.nameEn}
-                  onChange={(e) => handleInputChange('nameEn', e.target.value)}
-                  placeholder="Example: Cash on Hand"
-                  className={`h-11 transition-all duration-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.nameEn ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 hover:border-blue-400'}`}
-                />
-                {errors.nameEn && (
-                  <Alert variant="destructive" className="py-2">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription className="text-sm">{errors.nameEn}</AlertDescription>
-                  </Alert>
-                )}
-              </div>
-
-              {/* Balance */}
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="balance" className="text-sm font-medium text-gray-700">الرصيد الافتتاحي</Label>
-                <Input
-                  id="balance"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.balance}
-                  onChange={(e) => handleInputChange('balance', parseFloat(e.target.value) || 0)}
-                  placeholder="0.00"
-                  className={`h-11 transition-all duration-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.balance ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 hover:border-blue-400'}`}
-                />
-                {errors.balance && (
-                  <Alert variant="destructive" className="py-2">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription className="text-sm">{errors.balance}</AlertDescription>
-                  </Alert>
-                )}
+              {/* English Name & Balance */}
+              <div className="flex flex-col md:flex-row gap-6 w-full md:col-span-2">
+                <div className="space-y-2 w-full">
+                  <Typography.Text className="text-sm font-medium text-gray-700">اسم الحساب (انجليزي) *</Typography.Text>
+                  <Input
+                    id="nameEn"
+                    value={formData.nameEn}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange('nameEn', e.target.value)}
+                    placeholder="Example: Cash on Hand"
+                    size="large"
+                    status={errors.nameEn ? 'error' : ''}
+                  />
+                  {errors.nameEn && (
+                    <Alert variant="destructive" className="py-2">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">{errors.nameEn}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+                <div className="space-y-2 w-full">
+                  <Typography.Text className="text-sm font-medium text-gray-700">الرصيد الافتتاحي</Typography.Text>
+                  <Input
+                    id="balance"
+                    type="number"
+                    value={formData.balance}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange('balance', parseFloat(e.target.value) || 0)}
+                    placeholder="0.00"
+                    size="large"
+                    status={errors.balance ? 'error' : ''}
+                  />
+                  {errors.balance && (
+                    <Alert variant="destructive" className="py-2">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">{errors.balance}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -287,17 +292,9 @@ const AddAccountPage: React.FC<AddAccountPageProps> = ({
               <Button 
                 type="submit" 
                 disabled={isSubmitting}
-                className="flex-1 md:flex-none"
+                className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white"
               >
                 {isSubmitting ? 'جاري الحفظ...' : 'حفظ الحساب'}
-              </Button>
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={handleCancel}
-                className="flex-1 md:flex-none"
-              >
-                إلغاء
               </Button>
             </div>
           </form>

@@ -1,13 +1,13 @@
-import { LogOut, Menu, X, Calendar, Search, Bell, User, Settings, HelpCircle, Sun, Moon, DollarSign, PieChart } from "lucide-react";
+import { LogOut, Menu, X, Calendar, Search, Bell, User, Settings, HelpCircle, Sun, Moon, PieChart } from "lucide-react";
 import MobileSidebar from "./MobileSidebar";
 import { BiSolidBadgeCheck } from "react-icons/bi";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
-import { Select as AntdSelect } from 'antd';
+import { Select as AntdSelect, AutoComplete } from 'antd';
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/utils/utils";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth } from "@/contexts/useAuth";
 import { db } from "@/services/firebase";
 import { getDocs, collection, query, where } from "firebase/firestore";
@@ -26,6 +26,7 @@ import { useTheme } from "next-themes";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { searchService, SearchResult } from "@/services/searchService";
 
 interface HeaderProps {
   onLogout: () => void;
@@ -57,37 +58,44 @@ const Header = ({
         setFiscalYear(years[0].year.toString());
       }
     });
-  }, []);
+  }, [fiscalYear]);
   const [taxRate, setTaxRate] = useState<string>("");
   const [todayInvoices, setTodayInvoices] = useState<number>(0);
   const [todayRevenue, setTodayRevenue] = useState<number>(0);
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchOptions, setSearchOptions] = useState<{label: string, value: string}[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string>("");
+  const searchTimeoutRef = useRef<NodeJS.Timeout>();
 
   // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchQuery.trim()) {
-        // هنا يمكنك جلب نتائج البحث من فايربيز أو API
-        // مثال: نتائج وهمية
-        setSearchOptions([
-          { label: `فاتورة: ${searchQuery}`, value: `/invoices?q=${encodeURIComponent(searchQuery)}` },
-          { label: `عميل: ${searchQuery}`, value: `/customers?q=${encodeURIComponent(searchQuery)}` },
-          { label: `منتج: ${searchQuery}`, value: `/products?q=${encodeURIComponent(searchQuery)}` },
-        ]);
-      } else {
-        setSearchOptions([]);
-      }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  const performSearch = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+
+    try {
+      const results = await searchService.universalSearch({
+        query: query.trim(),
+        limit: 10
+      });
+      setSearchResults(results);
+    } catch (error) {
+      console.error('خطأ في البحث:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
 
   useEffect(() => {
     const fetchLogo = async () => {
@@ -171,11 +179,29 @@ const Header = ({
 
   const toggleMobileSearch = () => {
     setShowMobileSearch(!showMobileSearch);
-    if (!showMobileSearch) {
-      setTimeout(() => {
-        document.getElementById("mobile-search-input")?.focus();
-      }, 100);
-    }
+  };
+
+  const handleSearchResultClick = (result: SearchResult) => {
+    navigate(result.route);
+    setSearchQuery("");
+    setShowMobileSearch(false);
+  };
+
+  const getSearchResultIcon = (type: SearchResult['type']) => {
+    const icons = {
+      invoice: '📋',
+      customer: '👤',
+      supplier: '🏢',
+      item: '📦',
+      account: '💰',
+      branch: '🏪',
+      warehouse: '🏭',
+      return: '↩️',
+      purchase: '🛒',
+      delegate: '👨‍💼',
+      cashbox: '💳'
+    };
+    return icons[type] || '📄';
   };
 
   const markNotificationsAsRead = async () => {
@@ -184,10 +210,17 @@ const Header = ({
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('ar-SA', {
-      style: 'currency',
-      currency: 'SAR'
+    // تحويل الأرقام الإنجليزية إلى فارسية
+    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    const formatted = new Intl.NumberFormat('en-US', {
+      style: 'decimal',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
     }).format(amount);
+    
+    // تحويل الأرقام إلى فارسية
+    const persianFormatted = formatted.replace(/\d/g, (digit) => persianDigits[parseInt(digit)]);
+    return `${persianFormatted} ﷼`;
   };
 
   return (
@@ -235,7 +268,7 @@ const Header = ({
                         loading="eager"
                       />
                     ) : (
-                      <DollarSign className="h-5 w-5 text-white" />
+                      <PieChart className="h-5 w-5 text-white" />
                     )}
                   </div>
                   <div className="flex flex-col justify-center">
@@ -318,25 +351,64 @@ const Header = ({
             {/* Middle Section - Search (Desktop) */}
             {isDesktop && (
               <motion.div 
-                className="flex-1 max-w-xl mx-4"
+                className="flex-1 max-w-xl mx-4 relative"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.2 }}
               >
-                <AntdSelect
-                  showSearch
+                <AutoComplete
                   value={searchQuery}
+                  onChange={setSearchQuery}
+                  onSearch={performSearch}
                   placeholder="ابحث في الفواتير، العملاء، المنتجات..."
-                  style={{ width: '100%' }}
-                  filterOption={false}
-                  onSearch={setSearchQuery}
-                  onChange={(value) => {
-                    setSearchQuery("");
-                    if (value) navigate(value);
-                  }}
-                  notFoundContent={searchQuery ? 'لا توجد نتائج' : null}
-                  options={searchOptions}
+                  className="w-full"
+                  size="large"
                   allowClear
+                  style={{
+                    direction: 'rtl',
+                    textAlign: 'right'
+                  }}
+                  options={searchResults.map((result, index) => ({
+                    value: result.title,
+                    label: (
+                      <div 
+                        key={`${result.type}-${result.id}-${index}`}
+                        onClick={() => handleSearchResultClick(result)}
+                        className="flex items-center gap-3 p-2 cursor-pointer hover:bg-gray-50"
+                      >
+                        <span className="text-lg">{getSearchResultIcon(result.type)}</span>
+                        <div className="flex-1 min-w-0 text-right">
+                          <div className="font-medium text-gray-900 truncate">
+                            {result.title}
+                          </div>
+                          {result.subtitle && (
+                            <div className="text-sm text-gray-500 truncate">
+                              {result.subtitle}
+                            </div>
+                          )}
+                          {result.description && (
+                            <div className="text-xs text-gray-400 truncate">
+                              {result.description}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  }))}
+                  notFoundContent={
+                    isSearching ? (
+                      <div className="p-4 text-center">
+                        <div className="inline-flex items-center gap-2">
+                          <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                          <span className="text-gray-600">جاري البحث...</span>
+                        </div>
+                      </div>
+                    ) : searchQuery.trim() ? (
+                      <div className="p-4 text-center text-gray-500">
+                        لا توجد نتائج للبحث "{searchQuery}"
+                      </div>
+                    ) : null
+                  }
                 />
               </motion.div>
             )}
@@ -354,7 +426,7 @@ const Header = ({
                   <Tooltip delayDuration={300}>
                     <TooltipTrigger asChild>
                       <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-                        <DollarSign className="h-4 w-4 text-blue-600 dark:text-blue-300" />
+                        <PieChart className="h-4 w-4 text-blue-600 dark:text-blue-300" />
                         {isLoading ? (
                           <Skeleton className="h-5 w-20" />
                         ) : (
@@ -398,7 +470,7 @@ const Header = ({
                             value={fiscalYear}
                             onChange={setFiscalYear}
                             style={{ width: 100, background: 'transparent' }}
-                            styles={{ popup: { textAlign: 'right' } }}
+                            popupClassName="text-right"
                             size="small"
                             variant="borderless"
                             placeholder="السنة المالية"
@@ -515,22 +587,55 @@ const Header = ({
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.2 }}
               >
-                <AntdSelect
-                  showSearch
+                <AutoComplete
                   value={searchQuery}
+                  onChange={setSearchQuery}
+                  onSearch={performSearch}
                   placeholder="ابحث في الفواتير، العملاء..."
-                  style={{ width: '100%' }}
-                  filterOption={false}
-                  onSearch={setSearchQuery}
-                  onChange={(value) => {
-                    setSearchQuery("");
-                    setShowMobileSearch(false);
-                    if (value) navigate(value);
-                  }}
-                  notFoundContent={searchQuery ? 'لا توجد نتائج' : null}
-                  options={searchOptions}
+                  className="w-full"
+                  size="large"
                   allowClear
                   autoFocus
+                  style={{
+                    direction: 'rtl',
+                    textAlign: 'right'
+                  }}
+                  options={searchResults.map((result, index) => ({
+                    value: result.title,
+                    label: (
+                      <div 
+                        key={`mobile-${result.type}-${result.id}-${index}`}
+                        onClick={() => handleSearchResultClick(result)}
+                        className="flex items-center gap-3 p-2 cursor-pointer hover:bg-gray-50"
+                      >
+                        <span className="text-lg">{getSearchResultIcon(result.type)}</span>
+                        <div className="flex-1 min-w-0 text-right">
+                          <div className="font-medium text-gray-900 truncate text-sm">
+                            {result.title}
+                          </div>
+                          {result.subtitle && (
+                            <div className="text-xs text-gray-500 truncate">
+                              {result.subtitle}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  }))}
+                  notFoundContent={
+                    isSearching ? (
+                      <div className="p-4 text-center">
+                        <div className="inline-flex items-center gap-2">
+                          <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                          <span className="text-gray-600">جاري البحث...</span>
+                        </div>
+                      </div>
+                    ) : searchQuery.trim() ? (
+                      <div className="p-4 text-center text-gray-500 text-sm">
+                        لا توجد نتائج للبحث "{searchQuery}"
+                      </div>
+                    ) : null
+                  }
                 />
               </motion.div>
             )}

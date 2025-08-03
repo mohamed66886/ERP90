@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 // @ts-expect-error - Antd types issue
 import { Card, Table, Button, Modal, Form, Input, Select, message } from 'antd';
 import { PlusOutlined, DownloadOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { GiStrongbox } from 'react-icons/gi';
 
 import { fetchBranches, Branch } from '../../utils/branches';
 import {
@@ -11,8 +12,8 @@ import {
   deleteCashBoxWithSubAccount,
   updateCashBox,
 } from '../../services/cashBoxesService';
-import { getMainAccounts, Account } from '../../services/accountsService';
-
+import { getMainAccounts, getAccountsByLevel, getAccountLevels, Account } from '../../services/accountsService';
+import Breadcrumb from '@/components/Breadcrumb';
 
 interface CashBox {
   id?: string;
@@ -32,6 +33,9 @@ const CashBoxesPage: React.FC = () => {
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [mainAccounts, setMainAccounts] = useState<Account[]>([]);
+  const [accountLevels, setAccountLevels] = useState<number[]>([]);
+  const [accountsByLevel, setAccountsByLevel] = useState<Account[]>([]);
+  const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form] = Form.useForm();
@@ -39,6 +43,7 @@ const CashBoxesPage: React.FC = () => {
   useEffect(() => {
     fetchBranches().then(setBranches);
     getMainAccounts().then(setMainAccounts);
+    getAccountLevels().then(setAccountLevels);
     loadCashBoxes();
   }, []);
 
@@ -51,7 +56,17 @@ const CashBoxesPage: React.FC = () => {
 
   const handleAdd = () => {
     form.resetFields();
+    setSelectedLevel(null);
+    setAccountsByLevel([]);
     setIsModalOpen(true);
+  };
+
+  const handleLevelChange = async (level: number) => {
+    setSelectedLevel(level);
+    const accounts = await getAccountsByLevel(level);
+    setAccountsByLevel(accounts);
+    // Clear the selected account when level changes
+    form.setFieldsValue({ parentAccount: undefined });
   };
 
   const handleModalOk = async () => {
@@ -61,10 +76,12 @@ const CashBoxesPage: React.FC = () => {
         nameAr: values.nameAr,
         nameEn: values.nameEn,
         branch: values.branch,
-        mainAccount: values.mainAccount,
+        mainAccount: values.parentAccount, // استخدام الحساب الأب المختار
       });
       setIsModalOpen(false);
       form.resetFields();
+      setSelectedLevel(null);
+      setAccountsByLevel([]);
       loadCashBoxes();
       message.success('تمت إضافة الصندوق والحساب الفرعي بنجاح');
     } catch (err) {
@@ -148,7 +165,24 @@ const CashBoxesPage: React.FC = () => {
   ];
 
   return (
-    <div style={{ width: '100%', padding: 24, minHeight: '100vh', direction: 'rtl' }}>
+    <div className="w-full p-6 space-y-6 min-h-screen" dir="rtl">
+      {/* Header */}
+      <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+        <div className="flex items-center">
+          <GiStrongbox className="h-8 w-8 text-blue-600 ml-3" />
+          <h1 className="text-2xl font-bold text-gray-800">إدارة الصناديق النقدية</h1>
+        </div>
+        <p className="text-gray-600 mt-2">إضافة وتعديل وحذف الصناديق النقدية وربطها بالحسابات المالية</p>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
+      </div>    
+                               <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "الادارة الماليه", to: "/management/financial" }, 
+          { label: "الصناديق النقدية" },
+        ]}
+      />
+
       <Modal
         title="إضافة صندوق جديد"
         open={isModalOpen}
@@ -160,7 +194,7 @@ const CashBoxesPage: React.FC = () => {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ nameAr: '', nameEn: '', branch: '', mainAccount: '' }}
+          initialValues={{ nameAr: '', nameEn: '', branch: '', accountLevel: '', parentAccount: '' }}
         >
           <Form.Item
             label="اسم الصندوق (عربي)"
@@ -187,20 +221,32 @@ const CashBoxesPage: React.FC = () => {
             }))} />
           </Form.Item>
           <Form.Item
-            label="الحساب الرئيسي"
-            name="mainAccount"
-            rules={[{ required: true, message: 'يرجى اختيار الحساب الرئيسي' }]}
+            label="مستوى الحساب"
+            name="accountLevel"
+            rules={[{ required: true, message: 'يرجى اختيار مستوى الحساب' }]}
           >
-            <Select placeholder="اختر الحساب الرئيسي">
-              {mainAccounts.map(account => (
+            <Select placeholder="اختر مستوى الحساب" onChange={handleLevelChange}>
+              {accountLevels.map(level => (
+                <Select.Option key={level} value={level}>المستوى {level}</Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
+            label="الحساب الأب"
+            name="parentAccount"
+            rules={[{ required: true, message: 'يرجى اختيار الحساب الأب' }]}
+          >
+            <Select placeholder="اختر الحساب الأب" disabled={!selectedLevel}>
+              {accountsByLevel.map(account => (
                 <Select.Option key={account.id} value={account.id}>{account.nameAr} - {account.code}</Select.Option>
               ))}
             </Select>
           </Form.Item>
         </Form>
       </Modal>
+      <div className=" bg-white p-6 rounded-lg shadow-md mb-4">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <h2 style={{ fontSize: 24, fontWeight: 'bold', color: '#222' }}>الصناديق النقدية</h2>
+        <h2 style={{ fontSize: 24,  color: '#222' }}>الصناديق النقدية</h2>
         <div style={{ display: 'flex', gap: 8 }}>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
             إضافة صندوق
@@ -220,6 +266,7 @@ const CashBoxesPage: React.FC = () => {
           locale={{ emptyText: 'لا توجد صناديق' }}
         />
       </Card>
+    </div>
     </div>
   );
 };

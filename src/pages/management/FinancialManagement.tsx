@@ -1,13 +1,8 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import AccountsSettlementPage from '../accounting/AccountsSettlementPage';
-import AddAccountPage from '../accounting/AddAccountPage';
-import EditAccountPage from '../accounting/EditAccountPage';
-import ChartOfAccountsPage from '../accounting/ChartOfAccountsPage';
-import FinancialYearsPage from '../accounting/FinancialYearsPage';
-import BankAccountsPage from '../accounting/BankAccountsPage';
-import CashBoxesPage from './CashBoxesPage';
+import Breadcrumb from "@/components/Breadcrumb";
 import { 
   Settings, 
   FileText, 
@@ -40,137 +35,8 @@ import {
   Crown
 } from 'lucide-react';
 
-interface Account {
-  id: string;
-  code: string;
-  nameAr: string;
-  nameEn: string;
-  nature: 'مدينة' | 'دائنة';
-  balance: number;
-  createdAt: string;
-}
-
 const FinancialManagement: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<string | null>(null);
-  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
-  const [accounts, setAccounts] = useState<Account[]>([
-    {
-      id: '1',
-      code: '1001',
-      nameAr: 'النقدية بالصندوق',
-      nameEn: 'Cash on Hand',
-      nature: 'مدينة',
-      balance: 15000,
-      createdAt: '2024-01-15'
-    },
-    {
-      id: '2',
-      code: '2001',
-      nameAr: 'حسابات دائنة',
-      nameEn: 'Accounts Payable',
-      nature: 'دائنة',
-      balance: 25000,
-      createdAt: '2024-01-20'
-    },
-    {
-      id: '3',
-      code: '3001',
-      nameAr: 'رأس المال',
-      nameEn: 'Capital',
-      nature: 'دائنة',
-      balance: 100000,
-      createdAt: '2024-01-10'
-    }
-  ]);
-
-  const handleNavigateToAdd = () => {
-    setCurrentPage('add-account');
-  };
-
-  const handleNavigateToEdit = (account: Account) => {
-    setSelectedAccount(account);
-    setCurrentPage('edit-account');
-  };
-
-  const handleSaveAccount = (newAccount: Omit<Account, 'id' | 'createdAt'>) => {
-    const account: Account = {
-      ...newAccount,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-    setAccounts([...accounts, account]);
-    setCurrentPage('accounts-settlement');
-  };
-
-  const handleUpdateAccount = (updatedAccount: Omit<Account, 'id' | 'createdAt'>) => {
-    if (selectedAccount) {
-      setAccounts(accounts.map(account =>
-        account.id === selectedAccount.id
-          ? { ...account, ...updatedAccount }
-          : account
-      ));
-      setCurrentPage('accounts-settlement');
-      setSelectedAccount(null);
-    }
-  };
-
-  const handleDeleteAccount = (id: string) => {
-    setAccounts(accounts.filter(account => account.id !== id));
-  };
-
-  const handleBackToAccounts = () => {
-    setCurrentPage('accounts-settlement');
-    setSelectedAccount(null);
-  };
-
-  // If a specific page is selected, render it
-  if (currentPage === 'accounts-settlement') {
-    return (
-      <AccountsSettlementPage 
-        accounts={accounts}
-        onNavigateToAdd={handleNavigateToAdd}
-        onNavigateToEdit={handleNavigateToEdit}
-        onDeleteAccount={handleDeleteAccount}
-      />
-    );
-  }
-  
-  if (currentPage === 'add-account') {
-    return (
-      <AddAccountPage 
-        onBack={handleBackToAccounts}
-        onSave={handleSaveAccount}
-        existingCodes={accounts.map(account => account.code)}
-      />
-    );
-  }
-  
-  if (currentPage === 'edit-account') {
-    return (
-      <EditAccountPage 
-        account={selectedAccount || undefined}
-        onBack={handleBackToAccounts}
-        onSave={handleUpdateAccount}
-        existingCodes={accounts.filter(acc => acc.id !== selectedAccount?.id).map(account => account.code)}
-      />
-    );
-  }
-  
-  if (currentPage === 'chart-of-accounts') {
-    return <ChartOfAccountsPage />;
-  }
-
-  if (currentPage === 'financial-years') {
-    return <FinancialYearsPage onBack={() => setCurrentPage(null)} />;
-  }
-
-  if (currentPage === 'bank-accounts') {
-    return <BankAccountsPage onBack={() => setCurrentPage(null)} />;
-  }
-
-  if (currentPage === 'cash-boxes') {
-    return <CashBoxesPage />;
-  }
+  const navigate = useNavigate();
 
   const settingsCards = [
     {
@@ -178,14 +44,14 @@ const FinancialManagement: React.FC = () => {
       description: "إدارة وتصفية الحسابات المالية",
       icon: <FileText className="h-6 w-6" />,
       color: "bg-blue-500",
-      onClick: () => setCurrentPage('accounts-settlement')
+      onClick: () => navigate('/accounting/accounts-settlement')
     },
     {
       title: "دليل الحسابات",
       description: "عرض وإدارة دليل الحسابات الكامل",
       icon: <BookOpen className="h-6 w-6" />,
       color: "bg-green-500",
-      onClick: () => setCurrentPage('chart-of-accounts')
+      onClick: () => navigate('/accounting/chart-of-accounts')
     },
     {
       title: "دليل الحسابات الشجري",
@@ -198,7 +64,7 @@ const FinancialManagement: React.FC = () => {
       description: "إدارة السنوات المالية للشركة",
       icon: <Calendar className="h-6 w-6" />,
       color: "bg-purple-500",
-      onClick: () => setCurrentPage('financial-years')
+      onClick: () => navigate('/accounting/financial-years')
     },
     {
       title: "الفترات المحاسبية",
@@ -217,7 +83,7 @@ const FinancialManagement: React.FC = () => {
       description: "إدارة الحسابات البنكية للشركة",
       icon: <CreditCard className="h-6 w-6" />,
       color: "bg-indigo-500",
-      onClick: () => setCurrentPage('bank-accounts')
+      onClick: () => navigate('/accounting/bank-accounts')
     },
     {
       title: "دليل مركز التكلفة",
@@ -230,7 +96,7 @@ const FinancialManagement: React.FC = () => {
       description: "إدارة الصناديق النقدية",
       icon: <Wallet className="h-6 w-6" />, 
       color: "bg-cyan-500",
-      onClick: () => setCurrentPage('cash-boxes')
+      onClick: () => navigate('/accounting/cash-boxes')
     },
     {
       title: "إعدادات عامة",
@@ -455,47 +321,22 @@ const FinancialManagement: React.FC = () => {
     <div className="w-full p-6 space-y-8 min-h-screen" dir="rtl">
       {/* Header */}
     
-            <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] animate-[bounce_2s_infinite] relative overflow-hidden">
-        <div className="flex items-center">
-          <h1 className="text-2xl font-bold  text-gray-800">الإدارة المالية </h1>
-          {/* إيموجي متحركة باي باي */}
-          <span className="animate-[wave_2s_infinite] text-3xl mr-3">👋</span>
-        </div>
-        {/* تأثيرات إضافية */}
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]"></div>
-      </div>
-      <style>{`
-  @keyframes bounce {
-    0%, 100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-5px);
-    }
-  }
-  
-  @keyframes wave {
-    0%, 100% {
-      transform: rotate(0deg);
-    }
-    25% {
-      transform: rotate(20deg);
-    }
-    75% {
-      transform: rotate(-20deg);
-    }
-  }
-  
-  @keyframes pulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-  }
-`}</style>
+       <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+         <div className="flex items-center">
+           <FileText className="h-8 w-8 text-blue-600 ml-3" />
+           <h1 className="text-2xl font-bold text-gray-800">الاداره الماليه</h1>
+         </div>
+         <p className="text-gray-600 mt-2">إدارة النظام المالي والمحاسبي</p>
+         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
+       </div>
 
+       <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "الادارة الماليه" }, 
+
+        ]}
+      />
       {/* الإعدادات Section */}
       <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
         <div className="flex items-center space-x-3 space-x-reverse">
