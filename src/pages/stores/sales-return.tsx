@@ -65,6 +65,53 @@ const initialTotals: InvoiceTotals = {
   taxValue: 0,
   net: 0
 };
+// دالة توليد رقم مرجع جديد بناءً على رقم الفرع والتاريخ والتسلسل اليومي
+async function generateReferenceNumberAsync(branchId: string, branches: any[] = []): Promise<string> {
+  try {
+    const date = new Date();
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${y}${m}${d}`;
+    
+    // البحث عن رقم الفرع الحقيقي من بيانات الفروع
+    const branchObj = branches.find(b => b.id === branchId);
+    const branchNumber = branchObj?.code || branchObj?.number || branchObj?.branchNumber || '1';
+    
+    // جلب عدد المرتجعات لنفس الفرع في نفس اليوم
+    const { getDocs, collection, query, where } = await import('firebase/firestore');
+    const { db } = await import('../../lib/firebase');
+    
+    // استخدام النطاق الزمني بشكل أدق
+    const startOfDay = `${y}-${m}-${d}T00:00:00.000Z`;
+    const endOfDay = `${y}-${m}-${d}T23:59:59.999Z`;
+    
+    const q = query(
+      collection(db, 'sales_returns'),
+      where('createdAt', '>=', startOfDay),
+      where('createdAt', '<=', endOfDay)
+    );
+    
+    const snapshot = await getDocs(q);
+    
+    // فلترة المرتجعات حسب الفرع يدوياً
+    const branchReturns = snapshot.docs.filter(doc => {
+      const data = doc.data();
+      return data.branch === branchId || data.branch === branchObj?.name;
+    });
+    
+    const count = branchReturns.length + 1;
+    
+    return `REF-${branchNumber}-${dateStr}-${count}`;
+  } catch (error) {
+    console.error('خطأ في توليد رقم المرجع:', error);
+    // في حالة الخطأ، إرجاع رقم مرجع افتراضي
+    const date = new Date();
+    const dateStr = date.getFullYear() + String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0');
+    return `REF-1-${dateStr}-1`;
+  }
+}
+
 const SalesReturnPage: React.FC = () => {
   // حفظ معرف المخزن الأصلي من الفاتورة
   // بيانات الشركة من صفحة الإعدادات
@@ -370,6 +417,22 @@ const SalesReturnPage: React.FC = () => {
   const [originalWarehouseId, setOriginalWarehouseId] = useState<string>('');
   // قائمة المخازن
   const [warehouseOptions, setWarehouseOptions] = useState<{ id: string; name: string }[]>([]);
+  // جلب قائمة الفروع من قاعدة البيانات
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const { getDocs, collection } = await import('firebase/firestore');
+        const { db } = await import('../../lib/firebase');
+        const snap = await getDocs(collection(db, 'branches'));
+        const branchesData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setBranches(branchesData);
+      } catch {
+        setBranches([]);
+      }
+    };
+    fetchBranches();
+  }, []);
+
   // جلب قائمة المخازن من قاعدة البيانات
   useEffect(() => {
     const fetchWarehouses = async () => {
@@ -544,11 +607,9 @@ const SalesReturnPage: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState('');
   // State
   const [invoiceNumber, setInvoiceNumber] = useState('');
-  // رقم المرجع تلقائي
-  const [referenceNumber] = useState(() => {
-    // يمكن توليد رقم عشوائي أو بناء على الوقت
-    return 'REF-' + Date.now();
-  });
+  const [branches, setBranches] = useState<any[]>([]);
+  // رقم المرجع سيتم توليده عند جلب بيانات الفاتورة
+  const [referenceNumber, setReferenceNumber] = useState('');
   const [invoiceData, setInvoiceData] = useState<InvoiceData>(initialInvoiceData);
   const [totals, setTotals] = useState<InvoiceTotals>(initialTotals);
   const [items, setItems] = useState<InvoiceItem[]>([]);
@@ -625,13 +686,35 @@ const SalesReturnPage: React.FC = () => {
         return;
       }
       const doc = snap.docs[0].data();
+      console.log('بيانات الفاتورة:', doc); // للتشخيص
+      
       // حفظ معرف المخزن الأصلي في state
       setOriginalWarehouseId(doc.warehouse || '');
+      
+      // توليد رقم المرجع بناءً على الفرع
+      let generatedRefNumber = '';
+      try {
+        generatedRefNumber = await generateReferenceNumberAsync(doc.branch || '', branches);
+      } catch (refError) {
+        console.error('خطأ في توليد رقم المرجع:', refError);
+        // استخدام رقم مرجع افتراضي في حالة الخطأ
+        const date = new Date();
+        const dateStr = date.getFullYear() + String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0');
+        generatedRefNumber = `REF-1-${dateStr}-1`;
+      }
+      setReferenceNumber(generatedRefNumber);
+      
       // جلب اسم الفرع الحقيقي
       let branchName = doc.branch || '';
       if (branchName) {
-        branchName = await fetchBranchName(branchName);
+        try {
+          branchName = await fetchBranchName(branchName);
+        } catch (branchError) {
+          console.error('خطأ في جلب اسم الفرع:', branchError);
+          branchName = doc.branch || 'غير محدد';
+        }
       }
+      
       setInvoiceData({
         invoiceNumber: doc.invoiceNumber || '',
         entryNumber: doc.entryNumber || '',
@@ -655,23 +738,24 @@ const SalesReturnPage: React.FC = () => {
       });
       setItems(
         (doc.items || []).map((item: any) => ({
-          itemNumber: item.itemNumber,
-          itemName: item.itemName,
-          quantity: item.quantity,
-          unit: item.unit,
-          price: item.price,
-          discountPercent: item.discountPercent,
-          discountValue: item.discountValue,
-          taxPercent: item.taxPercent,
-          taxValue: item.taxValue,
-          total: item.total,
+          itemNumber: item.itemNumber || '',
+          itemName: item.itemName || '',
+          quantity: item.quantity || '0',
+          unit: item.unit || '',
+          price: item.price || '0',
+          discountPercent: item.discountPercent || '0',
+          discountValue: item.discountValue || 0,
+          taxPercent: item.taxPercent || '0',
+          taxValue: item.taxValue || 0,
+          total: item.total || 0,
           returnedQty: '',
           previousReturns: item.previousReturns || 0 // جلب المرتجعات السابقة من قاعدة البيانات
         }))
       );
       message.success('تم تحميل بيانات الفاتورة بنجاح');
     } catch (err) {
-      message.error('حدث خطأ أثناء جلب البيانات');
+      console.error('خطأ تفصيلي في جلب البيانات:', err);
+      message.error(`حدث خطأ أثناء جلب البيانات: ${err instanceof Error ? err.message : 'خطأ غير معروف'}`);
       setInvoiceData(initialInvoiceData);
       setTotals(initialTotals);
       setItems([]);
@@ -833,38 +917,41 @@ const SalesReturnPage: React.FC = () => {
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]"></div>
       </div>
 
-<style jsx global>{`
-  @keyframes bounce {
-    0%, 100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-5px);
-    }
-  }
-  
-  @keyframes wave {
-    0%, 100% {
-      transform: rotate(0deg);
-    }
-    25% {
-      transform: rotate(20deg);
-    }
-    75% {
-      transform: rotate(-20deg);
-    }
-  }
-  
-  @keyframes pulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-  }
-`}</style>
-            <Breadcrumb
+      <style>
+        {`
+          @keyframes bounce {
+            0%, 100% {
+              transform: translateY(0);
+            }
+            50% {
+              transform: translateY(-5px);
+            }
+          }
+          
+          @keyframes wave {
+            0%, 100% {
+              transform: rotate(0deg);
+            }
+            25% {
+              transform: rotate(20deg);
+            }
+            75% {
+              transform: rotate(-20deg);
+            }
+          }
+          
+          @keyframes pulse {
+            0%, 100% {
+              opacity: 1;
+            }
+            50% {
+              opacity: 0.5;
+            }
+          }
+        `}
+      </style>
+
+      <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
           { label: "مرتجع مبيعات" }

@@ -10,6 +10,7 @@ import Breadcrumb from "../../components/Breadcrumb";
 import Card from 'antd/es/card';
 import { PlusOutlined, SaveOutlined, UserOutlined } from '@ant-design/icons';
 import { db } from '@/lib/firebase';
+import { FileText } from 'lucide-react';
 
 // تعريف نوع العنصر
 interface InventoryItem {
@@ -105,24 +106,29 @@ const initialItem: InvoiceItem = {
 
 
 // دالة توليد رقم فاتورة جديد بناءً على رقم الفرع والتاريخ والتسلسل اليومي
-async function generateInvoiceNumberAsync(branchCode: string): Promise<string> {
+async function generateInvoiceNumberAsync(branchId: string, branches: any[] = []): Promise<string> {
   const date = new Date();
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   const dateStr = `${y}${m}${d}`;
-  const branchPart = branchCode && !isNaN(Number(branchCode)) ? String(Number(branchCode)).padStart(3, '0') : '000';
+  
+  // البحث عن رقم الفرع الحقيقي من بيانات الفروع
+  const branchObj = branches.find(b => b.id === branchId);
+  const branchNumber = branchObj?.code || branchObj?.number || branchObj?.branchNumber || '1';
+  
   // جلب عدد الفواتير لنفس الفرع في نفس اليوم
   const { getDocs, collection, query, where } = await import('firebase/firestore');
   const q = query(
     collection(db, 'sales_invoices'),
-    where('branch', '==', branchCode),
+    where('branch', '==', branchId),
     where('date', '==', `${y}-${m}-${d}`)
   );
   const snapshot = await getDocs(q);
   const count = snapshot.size + 1;
-  const serial = String(count).padStart(4, '0');
-  return `INV-${branchPart}-${dateStr}-${serial}`;
+  const serial = count;
+  
+  return `INV-${branchNumber}-${dateStr}-${serial}`;
 }
 
 function getTodayString(): string {
@@ -569,8 +575,8 @@ const SalesPage: React.FC = () => {
     return 'EN-' + Math.floor(100000 + Math.random() * 900000);
   }
 
-  const generateAndSetInvoiceNumber = async (branchCodeValue: string) => {
-    const invoiceNumber = await generateInvoiceNumberAsync(branchCodeValue);
+  const generateAndSetInvoiceNumber = async (branchIdValue: string) => {
+    const invoiceNumber = await generateInvoiceNumberAsync(branchIdValue, branches);
     setInvoiceData(prev => ({ ...prev, invoiceNumber, entryNumber: generateEntryNumber() }));
   };
 
@@ -1890,51 +1896,15 @@ const handlePrint = () => {
 
   return (
     <div className="p-2 sm:p-6 w-full max-w-none">
-      <div className="p-4 font-['Tajawal'] bg-white rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] mb-4 animate-[bounce_2s_infinite] relative overflow-hidden">
+      <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
         <div className="flex items-center">
-          <h1 className="text-2xl font-bold text-blue-800">فاتورة مبيعات جديده</h1>
-          {/* إيموجي متحركة باي باي */}
-          <span className="animate-[wave_2s_infinite] text-3xl mr-3">👋</span>
+          <FileText className="h-8 w-8 text-blue-600 ml-3" />
+          <h1 className="text-2xl font-bold text-gray-800">فاتورة مبيعات</h1>
         </div>
-        {/* زر توليد الفواتير العشوائية */}
-        <Button type="primary" danger style={{ marginTop: 16, fontWeight: 700 }} onClick={generateRandomInvoices}>
-          توليد 3000 فاتورة عشوائية
-        </Button>
-        {/* تأثيرات إضافية */}
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]" />
+        <p className="text-gray-600 mt-2">إدارة فاتورة المبيعات</p>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
       </div>
 
-<style>{`
-  @keyframes bounce {
-    0%, 100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-5px);
-    }
-  }
-  
-  @keyframes wave {
-    0%, 100% {
-      transform: rotate(0deg);
-    }
-    25% {
-      transform: rotate(20deg);
-    }
-    75% {
-      transform: rotate(-20deg);
-    }
-  }
-  
-  @keyframes pulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-  }
-`}</style>
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
@@ -2073,15 +2043,12 @@ const handlePrint = () => {
                 <Select
                   showSearch
                   value={invoiceData.branch}
-                  onChange={(value) => {
+                  onChange={async (value) => {
                     // توليد رقم فاتورة احترافي: INV-رقم الفرع الحقيقي-التاريخ-رقم الفاتورة
                     setBranchCode('');
-                    const today = dayjs().format('YYYYMMDD');
-                    // جلب رقم الفرع الحقيقي من كائن الفروع
-                    const branchObj = branches.find(b => b.id === value);
-                    const branchCode = branchObj?.code || branchObj?.id || value;
-                    const serial = Math.floor(1000 + Math.random() * 9000); // رقم عشوائي بين 1000 و9999
-                    const invoiceNumber = `INV-${branchCode}-${today}-${serial}`;
+                    
+                    // توليد رقم فاتورة باستخدام الدالة المحسنة
+                    const invoiceNumber = await generateInvoiceNumberAsync(value, branches);
                     setInvoiceData(prev => ({
                       ...prev,
                       branch: value,
@@ -2426,13 +2393,13 @@ const handlePrint = () => {
 
               <div style={{ width: '100%' }}>
                 <div style={{ marginBottom: 0, fontWeight: 500 }}>اسم الصنف</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Input.Group compact style={{ display: 'flex' }}>
                   <Select
                     ref={itemNameSelectRef}
                     showSearch
                     value={item.itemName}
                     placeholder="اسم الصنف"
-                    style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
+                    style={{ flex: 1, fontFamily: 'Cairo, sans-serif' }}
                     onChange={async (value) => {
                       const selected = itemNames.find(i => i.name === value);
                       let price = selected && selected.salePrice ? String(selected.salePrice) : '';
@@ -2461,16 +2428,27 @@ const handlePrint = () => {
                   </Select>
                   <Button
                     type="default"
-                    style={{ marginRight: 4, padding: 4, background: 'transparent', boxShadow: 'none', border: '1.5px solid #2563eb', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 32, minHeight: 32, borderRadius: '50%' }}
+                    size="middle"
+                    style={{ 
+                      borderLeft: 0,
+                      borderTopLeftRadius: 0,
+                      borderBottomLeftRadius: 0,
+                      backgroundColor: '#ffffff',
+                      borderColor: '#d1d5db',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minWidth: 40
+                    }}
                     onClick={() => setShowAddItemModal(true)}
                     title="إضافة صنف جديد"
                   >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <circle cx="12" cy="12" r="10" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5" />
-                      <path d="M12 8v8m4-4H8" stroke="#2563eb" strokeWidth="1.5" strokeLinecap="round" />
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <rect x="3" y="3" width="18" height="18" rx="3" stroke="#2563eb" strokeWidth="2" fill="none"/>
+                      <path d="M9 12h6m-3-3v6" stroke="#2563eb" strokeWidth="2" strokeLinecap="round"/>
                     </svg>
                   </Button>
-                </div>
+                </Input.Group>
                 {/* مودال إضافة صنف جديد */}
 <Modal
   open={showAddItemModal}
@@ -2867,12 +2845,8 @@ const handlePrint = () => {
                   if (typeof fetchLists === 'function') {
                     await fetchLists();
                   }
-                  // بعد الحفظ: توليد رقم فاتورة احترافي: INV-رقم الفرع الحقيقي-التاريخ-رقم الفاتوره
-                  const today = dayjs().format('YYYYMMDD');
-                  const branchObj = branches.find(b => b.id === invoiceData.branch);
-                  const branchCode = branchObj?.code || branchObj?.id || invoiceData.branch || '000';
-                  const serial = Math.floor(1000 + Math.random() * 9000); // رقم عشوائي بين 1000 و9999
-                  const newInvoiceNumber = `INV-${branchCode}-${today}-${serial}`;
+                  // بعد الحفظ: توليد رقم فاتورة جديد للفاتورة التالية
+                  const newInvoiceNumber = await generateInvoiceNumberAsync(invoiceData.branch, branches);
                   setInvoiceData(prev => ({
                     ...prev,
                     invoiceNumber: newInvoiceNumber

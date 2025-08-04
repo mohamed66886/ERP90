@@ -6,13 +6,22 @@ import { useSidebar } from "../hooks/useSidebar";
 import { getSidebarMenus } from "../utils/sidebarMenus";
 
 const Sidebar = () => {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // حفظ حالة القائمة الجانبية في localStorage
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    const saved = localStorage.getItem('sidebarOpen');
+    return saved ? JSON.parse(saved) : false;
+  });
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [submenuPosition, setSubmenuPosition] = useState({ top: 0, left: 0 });
   const { currentSection } = useSidebar();
 
   const sidebarRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
+
+  // حفظ حالة القائمة الجانبية عند تغييرها
+  useEffect(() => {
+    localStorage.setItem('sidebarOpen', JSON.stringify(sidebarOpen));
+  }, [sidebarOpen]);
 
   const toggleMenu = (menu: string) => {
     setActiveMenu(activeMenu === menu ? null : menu);

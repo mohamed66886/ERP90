@@ -237,8 +237,8 @@ export const generateSubAccountCode = async (parentAccountId: string): Promise<s
       nextSubCode = Math.max(...existingSubCodes) + 1;
     }
     
-    // Format sub-account code with leading zeros if needed
-    const subCodeStr = nextSubCode.toString().padStart(2, '0');
+    // Format sub-account code without leading zeros
+    const subCodeStr = nextSubCode.toString();
     return `${parentCode}${subCodeStr}`;
   } catch (error) {
     console.error('Error generating sub account code:', error);

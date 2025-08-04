@@ -134,7 +134,7 @@ const Branches: React.FC = () => {
       <div className="flex justify-end">
         <Button
           onClick={() => {
-            const maxCode = branches.length > 0 ? Math.max(...branches.map(b => parseInt(b.code, 10) || 0)) : 100;
+            const maxCode = branches.length > 0 ? Math.max(...branches.map(b => parseInt(b.code, 10) || 0)) : 0;
             setForm({ 
               code: String(maxCode + 1), 
               name: '', 

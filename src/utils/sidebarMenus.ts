@@ -23,6 +23,65 @@ export interface SidebarMenus {
   [key: string]: MenuItem[];
 }
 
+// دالة لتحديد القسم بناءً على URL بشكل مفصل أكثر
+export const getSectionFromPath = (pathname: string): SectionType => {
+  // فحص المسارات المختلفة وتحديد القسم المناسب
+  if (pathname.startsWith('/financial') || 
+      pathname.includes('accounts') ||
+      pathname.includes('balance-sheet') ||
+      pathname.includes('income-statement') ||
+      pathname.includes('cash-flow')) {
+    return 'financial';
+  }
+  
+  if (pathname.startsWith('/hr') || 
+      pathname.includes('employees') ||
+      pathname.includes('payroll') ||
+      pathname.includes('attendance')) {
+    return 'hr';
+  }
+  
+  if (pathname.startsWith('/warehouse') || 
+      pathname.startsWith('/stores') ||
+      pathname.includes('inventory') ||
+      pathname.includes('items') ||
+      pathname.includes('stock')) {
+    return 'warehouse';
+  }
+  
+  if (pathname.startsWith('/projects') ||
+      pathname.includes('tasks') ||
+      pathname.includes('milestones')) {
+    return 'projects';
+  }
+  
+  if (pathname.startsWith('/sales') ||
+      pathname.includes('invoices') && pathname.includes('sales') ||
+      pathname.includes('customers') ||
+      pathname.includes('quotations')) {
+    return 'sales';
+  }
+  
+  if (pathname.startsWith('/purchase') ||
+      pathname.includes('suppliers') ||
+      pathname.includes('purchases')) {
+    return 'purchase';
+  }
+  
+  if (pathname.startsWith('/contracts') ||
+      pathname.includes('tenders')) {
+    return 'contracts';
+  }
+  
+  if (pathname.startsWith('/equipment') ||
+      pathname.includes('maintenance') ||
+      pathname.includes('production')) {
+    return 'equipment';
+  }
+  
+  return 'default';
+};
+
 export const getSidebarMenus = (section: SectionType): MenuItem[] => {
   const commonItems = [
     { label: "الصفحة الرئيسية", icon: React.createElement(FaHome), path: "/" }
