@@ -3,6 +3,7 @@ import AccountsSettlementPage from './AccountsSettlementPage';
 import AddAccountPage from './AddAccountPage';
 import EditAccountPage from './EditAccountPage';
 import { type Account } from '@/services/accountsService';
+import { jaHira } from 'date-fns/locale';
 
 type PageType = 'list' | 'add' | 'edit';
 
@@ -63,5 +64,6 @@ const AccountsMainPage: React.FC = () => {
     />
   );
 };
+
 
 export default AccountsMainPage;

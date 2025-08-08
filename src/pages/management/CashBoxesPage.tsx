@@ -28,7 +28,6 @@ interface CashBox {
 
 
 
-
 const CashBoxesPage: React.FC = () => {
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);

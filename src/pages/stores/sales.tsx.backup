@@ -2123,134 +2123,145 @@ const handlePrint = () => {
           { label: "فاتورة مبيعات" }
         ]}
       />
+
+      {/* رسائل التحذير والحالة */}
+      {loading && (
+        <div className="mb-4 p-3 bg-blue-50 border-l-4 border-blue-400 rounded-lg">
+          <div className="flex items-center">
+            <div className="text-blue-700 text-sm font-medium">
+              جاري المعالجة... يرجى الانتظار
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {branches.length === 0 && (
+        <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-400 rounded-lg">
+          <div className="flex items-center">
+            <div className="text-red-700 text-sm font-medium">
+              ⚠️ تحذير: يجب إضافة الفروع أولاً من إعدادات النظام
+            </div>
+          </div>
+        </div>
+      )}
+
+      {warehouses.length === 0 && (
+        <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-400 rounded-lg">
+          <div className="flex items-center">
+            <div className="text-red-700 text-sm font-medium">
+              ⚠️ تحذير: يجب إضافة المخازن أولاً من إعدادات النظام
+            </div>
+          </div>
+        </div>
+      )}
+
+      {customers.length === 0 && (
+        <div className="mb-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg">
+          <div className="flex items-center">
+            <div className="text-yellow-700 text-sm font-medium">
+              📌 ملاحظة: لا يوجد عملاء مسجلين، يمكنك إضافة عميل جديد من خلال زر "إضافة عميل"
+            </div>
+          </div>
+        </div>
+      )}
+
+      {itemNames.length === 0 && (
+        <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-400 rounded-lg">
+          <div className="flex items-center">
+            <div className="text-red-700 text-sm font-medium">
+              ⚠️ تحذير: يجب إضافة الأصناف أولاً من إدارة المخزون
+            </div>
+          </div>
+        </div>
+      )}
+
+      {paymentMethods.length === 0 && (
+        <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-400 rounded-lg">
+          <div className="flex items-center">
+            <div className="text-red-700 text-sm font-medium">
+              ⚠️ تحذير: يجب إضافة طرق الدفع أولاً من إعدادات النظام
+            </div>
+          </div>
+        </div>
+      )}
+
       <Spin spinning={fetchingItems}>
         {/* مودال الطباعة بعد الحفظ */}
 
         <Card 
           title={
-            <div className="flex items-center gap-4 px-3 py-2 bg-gray-50 rounded-lg">
-              <Select
-                value={invoiceType}
-                style={{ minWidth: 170, height: 38 }}
-                onChange={setInvoiceType}
-                size="middle"
-                placeholder="نوع الفاتورة"
-                options={[
-                  { label: 'ضريبة مبسطة', value: 'ضريبة مبسطة' },
-                  { label: 'ضريبة', value: 'ضريبة' }
-                ]}
-              />
+<div className="flex items-center gap-4 px-3 py-2 bg-gray-50 rounded-lg">
 
-              <Select
-                value={warehouseMode}
-                style={{ minWidth: 170, height: 38 }}
-                onChange={setWarehouseMode}
-                size="middle"
-                placeholder="نظام المخزن"
-                options={[
-                  { label: 'مخزن واحد', value: 'single' },
-                  { label: 'مخازن متعددة', value: 'multiple' }
-                ]}
-              />
+  
 
-              <Select
-                value={priceType}
-                style={{ minWidth: 170, height: 38, fontFamily: 'sans-serif' }}
-                onChange={async (value) => {
-                  setPriceType(value);
-                  if (value === 'آخر سعر العميل' && item.itemName && invoiceData.customerName) {
-                    try {
-                      const lastPrice = await fetchLastCustomerPrice(invoiceData.customerName, item.itemName);
-                      if (lastPrice) {
-                        setItem(prev => ({ ...prev, price: String(lastPrice) }));
-                        message.success('تم تطبيق آخر سعر للعميل بنجاح');
-                      }
-                    } catch (error) {
-                      console.error('فشل في جلب آخر سعر:', error);
-                      message.error('حدث خطأ أثناء جلب آخر سعر للعميل');
-                    }
-                  } else if (value === 'سعر البيع' && item.itemName) {
-                    const selected = itemNames.find(i => i.name === item.itemName);
-                    setItem(prev => ({
-                      ...prev,
-                      price: selected?.salePrice ? String(selected.salePrice) : ''
-                    }));
-                  }
-                }}
-                size="middle"
-                placeholder="نوع السعر"
-                options={[
-                  { label: 'سعر البيع', value: 'سعر البيع' },
-                  { label: 'آخر سعر العميل', value: 'آخر سعر العميل' }
-                ]}
-              />
-            </div>
+
+  <Select
+    value={invoiceType}
+    style={{ minWidth: 170, height: 38 }}
+    onChange={setInvoiceType}
+    size="middle"
+    placeholder="نوع الفاتورة"
+    options={[
+      { label: 'ضريبة مبسطة', value: 'ضريبة مبسطة' },
+      { label: 'ضريبة', value: 'ضريبة' }
+    ]}
+  />
+
+  <Select
+    value={warehouseMode}
+    style={{ minWidth: 170, height: 38 }}
+    onChange={setWarehouseMode}
+    size="middle"
+    placeholder="نظام المخزن"
+    options={[
+      { label: 'مخزن واحد', value: 'single' },
+      { label: 'مخازن متعددة', value: 'multiple' }
+    ]}
+  />
+
+  <Select
+    value={priceType}
+    style={{ minWidth: 170, height: 38, fontFamily: 'sans-serif' }}
+    onChange={async (value) => {
+      setPriceType(value);
+      if (value === 'آخر سعر العميل' && item.itemName && invoiceData.customerName) {
+        try {
+          const lastPrice = await fetchLastCustomerPrice(invoiceData.customerName, item.itemName);
+          if (lastPrice) {
+            setItem(prev => ({ ...prev, price: String(lastPrice) }));
+            message.success('تم تطبيق آخر سعر للعميل بنجاح');
+          }
+        } catch (error) {
+          console.error('فشل في جلب آخر سعر:', error);
+          message.error('حدث خطأ أثناء جلب آخر سعر للعميل');
+        }
+      } else if (value === 'سعر البيع' && item.itemName) {
+        const selected = itemNames.find(i => i.name === item.itemName);
+        setItem(prev => ({
+          ...prev,
+          price: selected?.salePrice ? String(selected.salePrice) : ''
+        }));
+      }
+    }}
+    size="middle"
+    placeholder="نوع السعر"
+    options={[
+      { label: 'سعر البيع', value: 'سعر البيع' },
+      { label: 'آخر سعر العميل', value: 'آخر سعر العميل' }
+    ]}
+  />
+</div>
           }
           className="shadow-md"
         >
-          {/* معلومات الفاتورة الأساسية */}
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 16 }}>
-            المعلومات الأساسية
+          {/* بيانات الفاتورة الأساسية */}
+          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', fontWeight: 'bold', color: '#1890ff' }}>
+            البيانات الأساسية
           </Divider>
+          
           <Row gutter={16} className="mb-4">
             <Col xs={24} sm={12} md={6}>
-              <Form.Item label="رقم الفاتورة">
-                <Input
-                  value={invoiceData.invoiceNumber || ''}
-                  placeholder="رقم الفاتورة"
-                  disabled
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="رقم القيد">
-                <Input 
-                  name="entryNumber"
-                  value={invoiceData.entryNumber}
-                  disabled
-                  placeholder="رقم القيد" 
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="التاريخ">
-                <DatePicker
-                  style={{ width: '100%' }}
-                  value={invoiceData.date ? dayjs(invoiceData.date) : null}
-                  onChange={(_, dateString) => setInvoiceData({
-                    ...invoiceData, 
-                    date: Array.isArray(dateString) ? dateString[0] : dateString as string
-                  })}
-                  format="YYYY-MM-DD"
-                  placeholder="التاريخ"
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="البائع">
-                <Select
-                  showSearch
-                  value={invoiceData.delegate}
-                  onChange={value => setInvoiceData({ ...invoiceData, delegate: value })}
-                  placeholder="اختر البائع"
-                  style={{ fontFamily: 'Cairo, sans-serif' }}
-                  filterOption={(input, option) =>
-                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  options={delegates?.map(d => ({ label: d.name || d.id, value: d.name || d.id })) || []}
-                  allowClear
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          {/* معلومات الفرع والمخزن */}
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 16 }}>
-            معلومات الفرع والمخزن
-          </Divider>
-          <Row gutter={16} className="mb-4">
-            <Col xs={24} sm={12} md={12}>
-              <Form.Item label="الفرع">
+              <Form.Item label="الفرع" required>
                 <Select
                   showSearch
                   value={invoiceData.branch}
@@ -2276,9 +2287,51 @@ const handlePrint = () => {
                 />
               </Form.Item>
             </Col>
+            
+            <Col xs={24} sm={12} md={6}>
+              <Form.Item label="رقم الفاتورة">
+                <Input
+                  value={invoiceData.invoiceNumber || ''}
+                  placeholder="رقم الفاتورة"
+                  disabled
+                  style={{ backgroundColor: '#f5f5f5' }}
+                />
+              </Form.Item>
+            </Col>
+            
+            <Col xs={24} sm={12} md={6}>
+              <Form.Item label="التاريخ" required>
+                <DatePicker
+                  style={{ width: '100%' }}
+                  value={invoiceData.date ? dayjs(invoiceData.date) : null}
+                  onChange={(_, dateString) => setInvoiceData({
+                    ...invoiceData, 
+                    date: Array.isArray(dateString) ? dateString[0] : dateString as string
+                  })}
+                  format="YYYY-MM-DD"
+                  placeholder="التاريخ"
+                />
+              </Form.Item>
+            </Col>
+            
+            <Col xs={24} sm={12} md={6}>
+              <Form.Item label="رقم القيد">
+                <Input 
+                  name="entryNumber"
+                  value={invoiceData.entryNumber}
+                  disabled
+                  placeholder="رقم القيد"
+                  style={{ backgroundColor: '#f5f5f5' }}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* إعدادات المخزن */}
+          <Row gutter={16} className="mb-4">
             {warehouseMode !== 'multiple' && (
-              <Col xs={24} sm={12} md={12}>
-                <Form.Item label="المخزن">
+              <Col xs={24} sm={12} md={6}>
+                <Form.Item label="المخزن" required>
                   <Select
                     showSearch
                     value={invoiceData.warehouse}
@@ -2297,15 +2350,33 @@ const handlePrint = () => {
                 </Form.Item>
               </Col>
             )}
+            
+            <Col xs={24} sm={12} md={6}>
+              <Form.Item label="البائع">
+                <Select
+                  showSearch
+                  value={invoiceData.delegate}
+                  onChange={value => setInvoiceData({ ...invoiceData, delegate: value })}
+                  placeholder="اختر البائع"
+                  style={{ fontFamily: 'Cairo, sans-serif' }}
+                  filterOption={(input, option) =>
+                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  options={delegates?.map(d => ({ label: d.name || d.id, value: d.name || d.id })) || []}
+                  allowClear
+                />
+              </Form.Item>
+            </Col>
           </Row>
 
-          {/* معلومات العميل */}
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 16 }}>
-            معلومات العميل
+          {/* بيانات العميل */}
+          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', fontWeight: 'bold', color: '#1890ff' }}>
+            بيانات العميل
           </Divider>
+          
           <Row gutter={16} className="mb-4">
-            <Col xs={24} sm={18} md={18}>
-              <Form.Item label="اسم العميل">
+            <Col xs={24} sm={24} md={18}>
+              <Form.Item label="اسم العميل" required>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <Button
                     type="default"
@@ -2356,151 +2427,822 @@ const handlePrint = () => {
                 </div>
               </Form.Item>
             </Col>
-            <Col xs={24} sm={6} md={6}>
+            
+            <Col xs={24} sm={12} md={6}>
               <Form.Item label="رقم العميل">
                 <Input
                   id="customerNumber"
                   value={invoiceData.customerNumber}
                   placeholder="رقم العميل"
                   disabled
+                  style={{ backgroundColor: '#f5f5f5' }}
                 />
               </Form.Item>
             </Col>
           </Row>
 
-
-
-          {/* معلومات الضريبة (للفاتورة الضريبية فقط) */}
           {invoiceType === 'ضريبة' && (
-            <>
-              <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 16 }}>
-                المعلومات الضريبية
-              </Divider>
-              <Row gutter={16} className="mb-4">
-                <Col xs={24} sm={12} md={12}>
-                  <Form.Item label="السجل التجاري">
-                    <Input
-                      id="commercialRecord"
-                      value={invoiceData.commercialRecord}
-                      placeholder="السجل التجاري"
-                      disabled
-                    />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={12} md={12}>
-                  <Form.Item label="الملف الضريبي">
-                    <Input
-                      id="taxFile"
-                      value={invoiceData.taxFile}
-                      placeholder="الملف الضريبي"
-                      disabled
-                    />
-                  </Form.Item>
-                </Col>
-              </Row>
-            </>
+            <Row gutter={16} className="mb-4">
+              <Col xs={24} sm={12} md={12}>
+                <Form.Item label="السجل التجاري">
+                  <Input
+                    id="commercialRecord"
+                    value={invoiceData.commercialRecord}
+                    placeholder="السجل التجاري"
+                    disabled
+                    style={{ backgroundColor: '#f5f5f5' }}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12} md={12}>
+                <Form.Item label="الملف الضريبي">
+                  <Input
+                    id="taxFile"
+                    value={invoiceData.taxFile}
+                    placeholder="الملف الضريبي"
+                    disabled
+                    style={{ backgroundColor: '#f5f5f5' }}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
           )}
 
-          {/* منطقة عرض الرسائل والتنبيهات */}
-          <div style={{ marginBottom: 24 }}>
-            <Card 
-              size="small" 
-              style={{ 
-                background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
-                border: '1px solid #dee2e6',
-                borderRadius: 8
-              }}
-            >
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: 12,
-                padding: '8px 0'
-              }}>
-                <div style={{
-                  backgroundColor: '#0ea5e9',
-                  borderRadius: '50%',
-                  padding: 8,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                  </svg>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ 
-                    fontWeight: 600, 
-                    color: '#495057',
-                    marginBottom: 4,
-                    fontFamily: 'Cairo, sans-serif'
-                  }}>
-                    حالة الفاتورة الحالية
-                  </div>
-                  <div style={{ 
-                    fontSize: 13, 
-                    color: '#6c757d',
-                    fontFamily: 'Cairo, sans-serif',
-                    lineHeight: 1.4
-                  }}>
-                    {!invoiceData.branch && (
-                      <span style={{ color: '#dc3545', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
-                        </svg>
-                        يرجى اختيار الفرع أولاً
-                      </span>
-                    )}
-                    {invoiceData.branch && !invoiceData.customerName && (
-                      <span style={{ color: '#fd7e14', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
-                        </svg>
-                        يرجى اختيار العميل
-                      </span>
-                    )}
-                    {warehouseMode !== 'multiple' && invoiceData.branch && !invoiceData.warehouse && (
-                      <span style={{ color: '#fd7e14', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
-                        </svg>
-                        يرجى اختيار المخزن
-                      </span>
-                    )}
-                    {invoiceData.branch && invoiceData.customerName && 
-                     (warehouseMode === 'multiple' || invoiceData.warehouse) && (
-                      <span style={{ color: '#198754', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                        </svg>
-                        يمكنك الآن إضافة الأصناف
-                      </span>
-                    )}
-                    {items.length > 0 && (
-                      <span style={{ color: '#0d6efd', fontWeight: 500, marginLeft: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12 2L2 7v10c0 5.55 3.84 9.74 9 10.95 5.16-1.21 9-5.4 9-10.95V7L12 2z"/>
-                          <path d="M10 14l-3-3 1.41-1.41L10 11.17l5.59-5.58L17 7l-7 7z" fill="white"/>
-                        </svg>
-                        تم إضافة {items.length} صنف | الإجمالي: {totals.afterTax.toFixed(2)} ر.س - يرجى اختيار طريقة الدفع
-                      </span>
-                    )}
-                    {items.length > 0 && invoiceData.paymentMethod && (
-                      <span style={{ color: '#198754', fontWeight: 500, marginLeft: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                        </svg>
-                        تم اختيار طريقة الدفع - الفاتورة جاهزة للحفظ
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </div>
+          {/* طرق الدفع */}
+          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', fontWeight: 'bold', color: '#1890ff' }}>
+            طريقة الدفع
+          </Divider>
+          
+          <Row gutter={16} className="mb-4">
+            <Col xs={24} sm={12} md={6}>
+              <Form.Item label="طريقة الدفع" required>
+                <Select
+                  showSearch
+                  value={invoiceData.paymentMethod}
+                  onChange={(value) => {
+                    const isMultiple = value === 'متعدد';
+                    setMultiplePaymentMode(isMultiple);
+                    setInvoiceData({
+                      ...invoiceData, 
+                      paymentMethod: value,
+                      cashBox: value === 'نقدي' ? invoiceData.cashBox : '', // إعادة تعيين الصندوق إذا لم تكن الطريقة نقدي
+                      multiplePayment: isMultiple ? invoiceData.multiplePayment : {} // إعادة تعيين الدفع المتعدد
+                    });
+                  }}
+                  disabled={paymentMethods.length === 0}
+                  placeholder="اختر طريقة الدفع"
+                  style={{ fontFamily: 'Cairo, sans-serif' }}
+                  filterOption={(input, option) =>
+                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  options={[
+                    ...paymentMethods.map(method => ({
+                      label: method.name || method.id,
+                      value: method.name || method.id
+                    })),
+                    { label: 'متعدد', value: 'متعدد' }
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            {invoiceData.paymentMethod === 'نقدي' && (
+              <Col xs={24} sm={12} md={6}>
+                <Form.Item label="الصندوق النقدي">
+                  <Select
+                    showSearch
+                    value={invoiceData.cashBox}
+                    onChange={(value) => setInvoiceData({...invoiceData, cashBox: value})}
+                    disabled={cashBoxes.length === 0}
+                    placeholder="اختر الصندوق النقدي"
+                    style={{ fontFamily: 'Cairo, sans-serif' }}
+                    filterOption={(input, option) =>
+                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                    }
+                    options={cashBoxes
+                      .filter(cashBox => !invoiceData.branch || cashBox.branch === invoiceData.branch)
+                      .map(cashBox => ({
+                        label: cashBox.nameAr,
+                        value: cashBox.id || cashBox.nameAr
+                      }))}
+                  />
+                </Form.Item>
+              </Col>
+            )}
+            {multiplePaymentMode && (
+              <>
+                <Col xs={24} sm={12} md={6}>
+                  <Form.Item label="الصندوق النقدي">
+                    <Select
+                      showSearch
+                      value={invoiceData.multiplePayment.cash?.cashBoxId || ''}
+                      onChange={(value) => setInvoiceData({
+                        ...invoiceData, 
+                        multiplePayment: {
+                          ...invoiceData.multiplePayment,
+                          cash: {
+                            ...invoiceData.multiplePayment.cash,
+                            cashBoxId: value,
+                            amount: invoiceData.multiplePayment.cash?.amount || ''
+                          }
+                        }
+                      })}
+                      disabled={cashBoxes.length === 0}
+                      placeholder="اختر الصندوق النقدي"
+                      style={{ fontFamily: 'Cairo, sans-serif' }}
+                      filterOption={(input, option) =>
+                        String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                      }
+                      options={cashBoxes
+                        .filter(cashBox => !invoiceData.branch || cashBox.branch === invoiceData.branch)
+                        .map(cashBox => ({
+                          label: cashBox.nameAr,
+                          value: cashBox.id || cashBox.nameAr
+                        }))}
+                      allowClear
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={3}>
+                  <Form.Item label="المبلغ نقدي">
+                    <Input
+                      value={invoiceData.multiplePayment.cash?.amount || ''}
+                      onChange={(e) => setInvoiceData({
+                        ...invoiceData, 
+                        multiplePayment: {
+                          ...invoiceData.multiplePayment,
+                          cash: {
+                            ...invoiceData.multiplePayment.cash,
+                            cashBoxId: invoiceData.multiplePayment.cash?.cashBoxId || '',
+                            amount: e.target.value
+                          }
+                        }
+                      })}
+                      onFocus={(e) => {
+                        // تعبئة تلقائية للمبلغ المتبقي إذا كان الحقل فارغ
+                        if (!e.target.value) {
+                          const currentTotal = parseFloat(invoiceData.multiplePayment.bank?.amount || '0') + 
+                                              parseFloat(invoiceData.multiplePayment.card?.amount || '0');
+                          const remaining = totals.afterTax - currentTotal;
+                          if (remaining > 0) {
+                            setInvoiceData({
+                              ...invoiceData, 
+                              multiplePayment: {
+                                ...invoiceData.multiplePayment,
+                                cash: {
+                                  ...invoiceData.multiplePayment.cash,
+                                  cashBoxId: invoiceData.multiplePayment.cash?.cashBoxId || '',
+                                  amount: remaining.toFixed(2)
+                                }
+                              }
+                            });
+                          }
+                        }
+                      }}
+                      placeholder="المبلغ"
+                      type="number"
+                      min={0}
+                      step={0.01}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <Form.Item label="البنك">
+                    <Select
+                      showSearch
+                      value={invoiceData.multiplePayment.bank?.bankId || ''}
+                      onChange={(value) => setInvoiceData({
+                        ...invoiceData, 
+                        multiplePayment: {
+                          ...invoiceData.multiplePayment,
+                          bank: {
+                            ...invoiceData.multiplePayment.bank,
+                            bankId: value,
+                            amount: invoiceData.multiplePayment.bank?.amount || ''
+                          }
+                        }
+                      })}
+                      disabled={banks.length === 0}
+                      placeholder="اختر البنك"
+                      style={{ fontFamily: 'Cairo, sans-serif' }}
+                      filterOption={(input, option) =>
+                        String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                      }
+                      options={banks.map(bank => ({
+                        label: bank.arabicName,
+                        value: bank.id || bank.arabicName
+                      }))}
+                      allowClear
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={3}>
+                  <Form.Item label="المبلغ بنكي">
+                    <Input
+                      value={invoiceData.multiplePayment.bank?.amount || ''}
+                      onChange={(e) => setInvoiceData({
+                        ...invoiceData, 
+                        multiplePayment: {
+                          ...invoiceData.multiplePayment,
+                          bank: {
+                            ...invoiceData.multiplePayment.bank,
+                            bankId: invoiceData.multiplePayment.bank?.bankId || '',
+                            amount: e.target.value
+                          }
+                        }
+                      })}
+                      onFocus={(e) => {
+                        // تعبئة تلقائية للمبلغ المتبقي إذا كان الحقل فارغ
+                        if (!e.target.value) {
+                          const currentTotal = parseFloat(invoiceData.multiplePayment.cash?.amount || '0') + 
+                                              parseFloat(invoiceData.multiplePayment.card?.amount || '0');
+                          const remaining = totals.afterTax - currentTotal;
+                          if (remaining > 0) {
+                            setInvoiceData({
+                              ...invoiceData, 
+                              multiplePayment: {
+                                ...invoiceData.multiplePayment,
+                                bank: {
+                                  ...invoiceData.multiplePayment.bank,
+                                  bankId: invoiceData.multiplePayment.bank?.bankId || '',
+                                  amount: remaining.toFixed(2)
+                                }
+                              }
+                            });
+                          }
+                        }
+                      }}
+                      placeholder="المبلغ"
+                      type="number"
+                      min={0}
+                      step={0.01}
+                    />
+                  </Form.Item>
+                </Col>
+              </>
+            )}
+          </Row>
 
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif' }}>إضافة أصناف المبيعات</Divider>
+          {multiplePaymentMode && (
+            <Row gutter={16} className="mb-4">
+              <Col xs={24} sm={12} md={6}>
+                <Form.Item label="شبكة">
+                  <Select
+                    showSearch
+                    value={invoiceData.multiplePayment.card?.bankId || ''}
+                    onChange={(value) => setInvoiceData({
+                      ...invoiceData, 
+                      multiplePayment: {
+                        ...invoiceData.multiplePayment,
+                        card: {
+                          ...invoiceData.multiplePayment.card,
+                          bankId: value,
+                          amount: invoiceData.multiplePayment.card?.amount || ''
+                        }
+                      }
+                    })}
+                    disabled={banks.length === 0}
+                    placeholder="اختر بنك"
+                    style={{ fontFamily: 'Cairo, sans-serif' }}
+                    filterOption={(input, option) =>
+                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                    }
+                    options={banks.map(bank => ({
+                      label: bank.arabicName,
+                      value: bank.id || bank.arabicName
+                    }))}
+                    allowClear
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12} md={3}>
+                <Form.Item label="المبلغ شبكة">
+                  <Input
+                    value={invoiceData.multiplePayment.card?.amount || ''}
+                    onChange={(e) => setInvoiceData({
+                      ...invoiceData, 
+                      multiplePayment: {
+                        ...invoiceData.multiplePayment,
+                        card: {
+                          ...invoiceData.multiplePayment.card,
+                          bankId: invoiceData.multiplePayment.card?.bankId || '',
+                          amount: e.target.value
+                        }
+                      }
+                    })}
+                    onFocus={(e) => {
+                      // تعبئة تلقائية للمبلغ المتبقي إذا كان الحقل فارغ
+                      if (!e.target.value) {
+                        const currentTotal = parseFloat(invoiceData.multiplePayment.cash?.amount || '0') + 
+                                            parseFloat(invoiceData.multiplePayment.bank?.amount || '0');
+                        const remaining = totals.afterTax - currentTotal;
+                        if (remaining > 0) {
+                          setInvoiceData({
+                            ...invoiceData, 
+                            multiplePayment: {
+                              ...invoiceData.multiplePayment,
+                              card: {
+                                ...invoiceData.multiplePayment.card,
+                                bankId: invoiceData.multiplePayment.card?.bankId || '',
+                                amount: remaining.toFixed(2)
+                              }
+                            }
+                          });
+                        }
+                      }
+                    }}
+                    placeholder="المبلغ"
+                    type="number"
+                    min={0}
+                    step={0.01}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          )}
+
+          {multiplePaymentMode && (
+            <Row gutter={16} className="mb-4">
+              <Col xs={24}>
+                <Card size="small" style={{ backgroundColor: '#f8f9fa' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: 16 }}>
+                      <span style={{ fontWeight: 600 }}>
+                        نقدي: {invoiceData.multiplePayment.cash?.amount || '0'}
+                      </span>
+                      <span style={{ fontWeight: 600 }}>
+                        بنكي: {invoiceData.multiplePayment.bank?.amount || '0'}
+                      </span>
+                      <span style={{ fontWeight: 600 }}>
+                        كارت: {invoiceData.multiplePayment.card?.amount || '0'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 16 }}>
+                      <span style={{ fontWeight: 600 }}>
+                        المجموع: {(
+                          parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                          parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                          parseFloat(invoiceData.multiplePayment.card?.amount || '0')
+                        ).toFixed(2)}
+                      </span>
+                      <span style={{ 
+                        fontWeight: 600,
+                        color: Math.abs(
+                          (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                           parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                           parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
+                        ) > 0.01 ? '#dc2626' : '#059669'
+                      }}>
+                        المتبقي: {(totals.afterTax - (
+                          parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                          parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                          parseFloat(invoiceData.multiplePayment.card?.amount || '0')
+                        )).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </Card>
+              </Col>
+            </Row>
+          )}
+
+          {multiplePaymentMode && (
+            <Row gutter={16} className="mb-4">
+              <Col xs={24}>
+                <Card size="small" style={{ backgroundColor: '#f8f9fa' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: 16 }}>
+                      <span style={{ fontWeight: 600 }}>
+                        نقدي: {invoiceData.multiplePayment.cash?.amount || '0'}
+                      </span>
+                      <span style={{ fontWeight: 600 }}>
+                        بنكي: {invoiceData.multiplePayment.bank?.amount || '0'}
+                      </span>
+                      <span style={{ fontWeight: 600 }}>
+                        كارت: {invoiceData.multiplePayment.card?.amount || '0'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 16 }}>
+                      <span style={{ fontWeight: 600 }}>
+                        المجموع: {(
+                          parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                          parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                          parseFloat(invoiceData.multiplePayment.card?.amount || '0')
+                        ).toFixed(2)}
+                      </span>
+                      <span style={{ 
+                        fontWeight: 600,
+                        color: Math.abs(
+                          (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                           parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                           parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
+                        ) > 0.01 ? '#dc2626' : '#059669'
+                      }}>
+                        المتبقي: {(totals.afterTax - (
+                          parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                          parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                          parseFloat(invoiceData.multiplePayment.card?.amount || '0')
+                        )).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </Card>
+              </Col>
+            </Row>
+          )}
+
+          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', fontWeight: 'bold', color: '#1890ff' }}>إضافة أصناف المبيعات</Divider>
+                <Button
+                    type="default"
+                    style={{ padding: '0 8px', fontWeight: 700, background: 'transparent', boxShadow: 'none', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}
+                    onClick={() => setShowAddCustomerModal(true)}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {/* Modern Add User Icon */}
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="10" cy="8" r="4" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5" />
+                        <path d="M4 20c0-2.5 3.5-4.5 8-4.5s8 2 8 4.5" stroke="#2563eb" strokeWidth="1.5" fill="none" />
+                        <g>
+                          <circle cx="17.5" cy="7.5" r="2.5" fill="#22c55e" stroke="#2563eb" strokeWidth="1.2" />
+                          <path d="M17.5 6v3M16 7.5h3" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" />
+                        </g>
+                      </svg>
+                    </span>
+                  </Button>
+                  <Select
+                    showSearch
+                    value={invoiceData.customerName}
+                    placeholder="اسم العميل"
+                    onChange={(value) => {
+                      const selected = customers.find(c => c.nameAr === value);
+                      setInvoiceData({
+                        ...invoiceData,
+                        customerName: value || '',
+                        customerNumber: selected ? (selected.phone || selected.mobile || selected.phoneNumber || '') : '',
+                        commercialRecord: selected ? (selected.commercialReg || '') : '',
+                        taxFile: selected ? (selected.taxFileNumber || selected.taxFile || '') : ''
+                      });
+                    }}
+                    style={{ fontFamily: 'Cairo, sans-serif', fontWeight: 500, fontSize: 16, width: '100%' }}
+                    filterOption={(input, option) =>
+                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                    }
+                    allowClear
+                    options={customers.map(customer => ({ 
+                      label: customer.nameAr, 
+                      value: customer.nameAr 
+                    }))}
+                  />
+
+      {/* Add Customer Modal */}
+      <Modal
+        open={showAddCustomerModal}
+        onCancel={() => setShowAddCustomerModal(false)}
+        footer={null}
+        title={<span style={{fontFamily:'Cairo',fontWeight:700}}>إضافة عميل جديد</span>}
+        width={420}
+        bodyStyle={{ background: '#f8fafc', borderRadius: 12, padding: 24 }}
+      >
+        <div style={{ marginBottom: 12, padding: 8, background: '#e0e7ef', borderRadius: 8, textAlign: 'center', fontWeight: 500, color: '#305496', fontFamily: 'Cairo', fontSize: 15 }}>
+          يرجى تعبئة بيانات العميل بدقة
+        </div>
+        <Form layout="vertical" onFinish={handleAddCustomer} style={{ gap: 0 }}>
+          <Form.Item label={<span style={{fontWeight:600}}>اسم العميل</span>} required style={{ marginBottom: 14 }}>
+            <input
+              className="ant-input"
+              value={addCustomerForm.nameAr}
+              onChange={e => handleAddCustomerChange('nameAr', e.target.value)}
+              placeholder="اسم العميل"
+              style={{
+                fontFamily: 'Cairo',
+                fontWeight: 500,
+                fontSize: 15,
+                borderRadius: 6,
+                border: '1.5px solid #b6c2d6',
+                background: '#fff',
+                width: '100%',
+                display: 'block',
+                padding: '6px 12px',
+                boxSizing: 'border-box'
+              }}
+              required
+              autoFocus
+            />
+          </Form.Item>
+          <Form.Item label={<span style={{fontWeight:600}}>رقم الهاتف</span>} required style={{ marginBottom: 14 }}>
+            <input
+              className="ant-input"
+              value={addCustomerForm.phone}
+              onChange={e => handleAddCustomerChange('phone', e.target.value)}
+              placeholder="رقم الهاتف"
+              
+                 style={{
+                fontFamily: 'Cairo',
+                fontWeight: 500,
+                fontSize: 15,
+                borderRadius: 6,
+                border: '1.5px solid #b6c2d6',
+                background: '#fff',
+                width: '100%',
+                display: 'block',
+                padding: '6px 12px',
+                boxSizing: 'border-box'
+              }}
+              required
+            />
+          </Form.Item>
+          <Form.Item label={<span style={{fontWeight:600}}>نوع العمل</span>} required style={{ marginBottom: 14 }}>
+            <select
+              className="ant-select"
+              value={addCustomerForm.businessType || 'فرد'}
+              onChange={e => handleAddCustomerChange('businessType', e.target.value)}
+              style={{ fontFamily: 'Cairo', fontWeight: 500, fontSize: 15, width: '100%', borderRadius: 6, border: '1.5px solid #b6c2d6', background: '#fff', padding: '6px 8px' }}
+              required
+            >
+              <option value="">اختر نوع العمل</option>
+              {businessTypes.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </Form.Item>
+          {(addCustomerForm.businessType === 'شركة' || addCustomerForm.businessType === 'مؤسسة') && (
+            <div style={{ background: '#f1f5f9', borderRadius: 8, padding: 12, marginBottom: 10, border: '1px solid #e0e7ef' }}>
+              <Form.Item label={<span style={{fontWeight:600}}>السجل التجاري</span>} required style={{ marginBottom: 12 }}>
+                <input
+                  className="ant-input"
+                  value={addCustomerForm.commercialReg}
+                  onChange={e => handleAddCustomerChange('commercialReg', e.target.value)}
+                  placeholder="السجل التجاري"
+              style={{
+                fontFamily: 'Cairo',
+                fontWeight: 500,
+                fontSize: 15,
+                borderRadius: 6,
+                border: '1.5px solid #b6c2d6',
+                background: '#fff',
+                width: '100%',
+                display: 'block',
+                padding: '6px 12px',
+                boxSizing: 'border-box'
+              }}
+                                required
+                />
+              </Form.Item>
+              <Form.Item label={<span style={{fontWeight:600}}>الملف الضريبي</span>} required style={{ marginBottom: 0 }}>
+                <input
+                  className="ant-input"
+                  value={addCustomerForm.taxFileNumber}
+                  onChange={e => handleAddCustomerChange('taxFileNumber', e.target.value)}
+                  placeholder="الملف الضريبي"
+              style={{
+                fontFamily: 'Cairo',
+                fontWeight: 500,
+                fontSize: 15,
+                borderRadius: 6,
+                border: '1.5px solid #b6c2d6',
+                background: '#fff',
+                width: '100%',
+                display: 'block',
+                padding: '6px 12px',
+                boxSizing: 'border-box'
+              }}                  required
+                />
+              </Form.Item>
+            </div>
+          )}
+          <Form.Item style={{ marginTop: 18, marginBottom: 0 }}>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={addCustomerLoading}
+              style={{ width: '100%', fontFamily: 'Cairo', fontWeight: 700, fontSize: 16, borderRadius: 8, height: 44, boxShadow: '0 2px 8px #e0e7ef' }}
+            >
+              إضافة
+            </Button>
+          </Form.Item>
+        </Form>
+        <div style={{fontSize:13, color:'#6b7280', marginTop:14, textAlign:'center'}}>
+          بعد الإضافة يمكنك تعديل باقي بيانات العميل من صفحة العملاء.
+        </div>
+      </Modal>
+                  <Button
+                    type="default"
+                    icon={<SearchOutlined />}
+                    style={{ minWidth: 40 }}
+                    onClick={() => setShowCustomerSearch(true)}
+                  />
+      {/* مودال البحث عن عميل */}
+      <Modal
+        open={showCustomerSearch}
+        onCancel={() => setShowCustomerSearch(false)}
+        footer={null}
+        title={<span style={{fontFamily:'Cairo',fontWeight:700}}>بحث عن عميل</span>}
+        width={600}
+      >
+        <Input
+          placeholder="ابحث بالاسم أو رقم الهاتف أو أي معلومة..."
+          value={customerSearchText}
+          onChange={e => setCustomerSearchText(e.target.value)}
+          style={{ marginBottom: 16, fontFamily: 'Cairo' }}
+          allowClear
+          prefix={<SearchOutlined />}
+        />
+        <Table
+          dataSource={filteredCustomers}
+          rowKey={row => row.id || row.nameAr}
+          columns={[
+            { title: 'الاسم', dataIndex: 'nameAr', key: 'nameAr' },
+            { title: 'الجوال', dataIndex: 'mobile', key: 'mobile' },
+            { title: 'الهاتف', dataIndex: 'phone', key: 'phone' },
+            { title: 'السجل التجاري', dataIndex: 'commercialReg', key: 'commercialReg' },
+            { title: 'الملف الضريبي', dataIndex: 'taxFile', key: 'taxFile' },
+            {
+              title: 'اختيار',
+              key: 'select',
+              render: (_, record) => (
+                <Button type="link" onClick={() => {
+                  setInvoiceData({
+                    ...invoiceData,
+                    customerName: record.nameAr || '',
+                    customerNumber: record.phone || record.mobile || record.phoneNumber || '',
+                    commercialRecord: record.commercialReg || '',
+                    taxFile: record.taxFileNumber || record.taxFile || ''
+                  });
+                  setShowCustomerSearch(false);
+                }}>اختيار</Button>
+              )
+            }
+          ]}
+          pagination={{ pageSize: 8 }}
+          size="small"
+        />
+      </Modal>
+
+      {/* Add Customer Modal */}
+      <Modal
+        open={showAddCustomerModal}
+        onCancel={() => setShowAddCustomerModal(false)}
+        footer={null}
+        title={<span style={{fontFamily:'Cairo',fontWeight:700}}>إضافة عميل جديد</span>}
+        width={420}
+        bodyStyle={{ background: '#f8fafc', borderRadius: 12, padding: 24 }}
+      >
+        <div style={{ marginBottom: 12, padding: 8, background: '#e0e7ef', borderRadius: 8, textAlign: 'center', fontWeight: 500, color: '#305496', fontFamily: 'Cairo', fontSize: 15 }}>
+          يرجى تعبئة بيانات العميل بدقة
+        </div>
+        <Form layout="vertical" onFinish={handleAddCustomer} style={{ gap: 0 }}>
+          <Form.Item label={<span style={{fontWeight:600}}>اسم العميل</span>} required style={{ marginBottom: 14 }}>
+            <input
+              className="ant-input"
+              value={addCustomerForm.nameAr}
+              onChange={e => handleAddCustomerChange('nameAr', e.target.value)}
+              placeholder="اسم العميل"
+              style={{
+                fontFamily: 'Cairo',
+                fontWeight: 500,
+                fontSize: 15,
+                borderRadius: 6,
+                border: '1.5px solid #b6c2d6',
+                background: '#fff',
+                width: '100%',
+                display: 'block',
+                padding: '6px 12px',
+                boxSizing: 'border-box'
+              }}
+              required
+              autoFocus
+            />
+          </Form.Item>
+          <Form.Item label={<span style={{fontWeight:600}}>رقم الهاتف</span>} required style={{ marginBottom: 14 }}>
+            <input
+              className="ant-input"
+              value={addCustomerForm.phone}
+              onChange={e => handleAddCustomerChange('phone', e.target.value)}
+              placeholder="رقم الهاتف"
+              style={{
+                fontFamily: 'Cairo',
+                fontWeight: 500,
+                fontSize: 15,
+                borderRadius: 6,
+                border: '1.5px solid #b6c2d6',
+                background: '#fff',
+                width: '100%',
+                display: 'block',
+                padding: '6px 12px',
+                boxSizing: 'border-box'
+              }}
+              required
+            />
+          </Form.Item>
+          <Form.Item label={<span style={{fontWeight:600}}>نوع العمل</span>} required style={{ marginBottom: 14 }}>
+            <select
+              className="ant-select"
+              value={addCustomerForm.businessType || 'فرد'}
+              onChange={e => handleAddCustomerChange('businessType', e.target.value)}
+              style={{ fontFamily: 'Cairo', fontWeight: 500, fontSize: 15, width: '100%', borderRadius: 6, border: '1.5px solid #b6c2d6', background: '#fff', padding: '6px 8px' }}
+              required
+            >
+              <option value="">اختر نوع العمل</option>
+              {businessTypes.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </Form.Item>
+          {(addCustomerForm.businessType === 'شركة' || addCustomerForm.businessType === 'مؤسسة') && (
+            <div style={{ background: '#f1f5f9', borderRadius: 8, padding: 12, marginBottom: 10, border: '1px solid #e0e7ef' }}>
+              <Form.Item label={<span style={{fontWeight:600}}>السجل التجاري</span>} required style={{ marginBottom: 12 }}>
+                <input
+                  className="ant-input"
+                  value={addCustomerForm.commercialReg}
+                  onChange={e => handleAddCustomerChange('commercialReg', e.target.value)}
+                  placeholder="السجل التجاري"
+                  style={{
+                    fontFamily: 'Cairo',
+                    fontWeight: 500,
+                    fontSize: 15,
+                    borderRadius: 6,
+                    border: '1.5px solid #b6c2d6',
+                    background: '#fff',
+                    width: '100%',
+                    display: 'block',
+                    padding: '6px 12px',
+                    boxSizing: 'border-box'
+                  }}
+                  required
+                />
+              </Form.Item>
+              <Form.Item label={<span style={{fontWeight:600}}>الملف الضريبي</span>} required style={{ marginBottom: 0 }}>
+                <input
+                  className="ant-input"
+                  value={addCustomerForm.taxFileNumber}
+                  onChange={e => handleAddCustomerChange('taxFileNumber', e.target.value)}
+                  placeholder="الملف الضريبي"
+                  style={{
+                    fontFamily: 'Cairo',
+                    fontWeight: 500,
+                    fontSize: 15,
+                    borderRadius: 6,
+                    border: '1.5px solid #b6c2d6',
+                    background: '#fff',
+                    width: '100%',
+                    display: 'block',
+                    padding: '6px 12px',
+                    boxSizing: 'border-box'
+                  }}
+                  required
+                />
+              </Form.Item>
+            </div>
+          )}
+          <Form.Item style={{ marginTop: 18, marginBottom: 0 }}>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={addCustomerLoading}
+              style={{ width: '100%', fontFamily: 'Cairo', fontWeight: 700, fontSize: 16, borderRadius: 8, height: 44, boxShadow: '0 2px 8px #e0e7ef' }}
+            >
+              إضافة
+            </Button>
+          </Form.Item>
+        </Form>
+        <div style={{fontSize:13, color:'#6b7280', marginTop:14, textAlign:'center'}}>
+          بعد الإضافة يمكنك تعديل باقي بيانات العميل من صفحة العملاء.
+        </div>
+      </Modal>
+                </div>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {invoiceType === 'ضريبة' && (
+            <Row gutter={16} className="mb-4">
+              <Col xs={24} sm={12} md={12}>
+                <Form.Item label="السجل التجاري">
+                  <Input
+                    id="commercialRecord"
+                    value={invoiceData.commercialRecord}
+                    placeholder="السجل التجاري"
+                    disabled
+                    style={{ backgroundColor: '#f5f5f5' }}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12} md={12}>
+                <Form.Item label="الملف الضريبي">
+                  <Input
+                    id="taxFile"
+                    value={invoiceData.taxFile}
+                    placeholder="الملف الضريبي"
+                    disabled
+                    style={{ backgroundColor: '#f5f5f5' }}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          )}
+
+          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', fontWeight: 'bold', color: '#1890ff' }}>
+            إضافة أصناف المبيعات
+          </Divider>
 
           {/* Item Entry */}
           <Row gutter={16} className="mb-4">
@@ -2882,9 +3624,12 @@ const handlePrint = () => {
               type="primary"
               onClick={handleAddItem}
               disabled={
+                !invoiceData.paymentMethod ||
                 !invoiceData.branch ||
                 (warehouseMode !== 'multiple' && !invoiceData.warehouse) ||
-                !invoiceData.customerName
+                !invoiceData.customerName ||
+                (invoiceData.paymentMethod === 'نقدي' && !invoiceData.cashBox) ||
+                (multiplePaymentMode && (!invoiceData.multiplePayment.cash?.cashBoxId && !invoiceData.multiplePayment.bank?.bankId && !invoiceData.multiplePayment.card?.bankId))
               }
               icon={
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2946,352 +3691,6 @@ const handlePrint = () => {
             </Col>
           </Row>
 
-          {/* معلومات الدفع */}
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 16 }}>
-            معلومات الدفع
-          </Divider>
-          <Row gutter={16} className="mb-4">
-            <Col xs={24} sm={12} md={6}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ minWidth: 80, fontWeight: 500 }}>طريقة الدفع:</span>
-                <Select
-                  showSearch
-                  value={invoiceData.paymentMethod}
-                  onChange={(value) => {
-                    const isMultiple = value === 'متعدد';
-                    setMultiplePaymentMode(isMultiple);
-                    setInvoiceData({
-                      ...invoiceData, 
-                      paymentMethod: value,
-                      cashBox: value === 'نقدي' ? invoiceData.cashBox : '',
-                      multiplePayment: isMultiple ? invoiceData.multiplePayment : {}
-                    });
-                  }}
-                  disabled={paymentMethods.length === 0}
-                  placeholder="اختر طريقة الدفع"
-                  style={{ fontFamily: 'Cairo, sans-serif', flex: 1 }}
-                  filterOption={(input, option) =>
-                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  options={[
-                    ...paymentMethods.map(method => ({
-                      label: method.name || method.id,
-                      value: method.name || method.id
-                    })),
-                  ]}
-                />
-              </div>
-            </Col>
-            {invoiceData.paymentMethod === 'نقدي' && (
-              <Col xs={24} sm={12} md={6}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ minWidth: 100, fontWeight: 500 }}>الصندوق النقدي:</span>
-                  <Select
-                    showSearch
-                    value={invoiceData.cashBox}
-                    onChange={(value) => setInvoiceData({...invoiceData, cashBox: value})}
-                    disabled={cashBoxes.length === 0}
-                    placeholder="اختر الصندوق النقدي"
-                    style={{ fontFamily: 'Cairo, sans-serif', flex: 1 }}
-                    filterOption={(input, option) =>
-                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                    }
-                    options={cashBoxes
-                      .filter(cashBox => !invoiceData.branch || cashBox.branch === invoiceData.branch)
-                      .map(cashBox => ({
-                        label: cashBox.nameAr,
-                        value: cashBox.id || cashBox.nameAr
-                      }))}
-                  />
-                </div>
-              </Col>
-            )}
-            {multiplePaymentMode && (
-              <>
-                <Col xs={24} sm={12} md={5}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ minWidth: 100, fontWeight: 500 }}>الصندوق النقدي:</span>
-                    <Select
-                      showSearch
-                      value={invoiceData.multiplePayment.cash?.cashBoxId || ''}
-                      onChange={(value) => setInvoiceData({
-                        ...invoiceData, 
-                        multiplePayment: {
-                          ...invoiceData.multiplePayment,
-                          cash: {
-                            ...invoiceData.multiplePayment.cash,
-                            cashBoxId: value,
-                            amount: invoiceData.multiplePayment.cash?.amount || ''
-                          }
-                        }
-                      })}
-                      disabled={cashBoxes.length === 0}
-                      placeholder="اختر الصندوق النقدي"
-                      style={{ fontFamily: 'Cairo, sans-serif', flex: 1 }}
-                      filterOption={(input, option) =>
-                        String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                      }
-                      options={cashBoxes
-                        .filter(cashBox => !invoiceData.branch || cashBox.branch === invoiceData.branch)
-                        .map(cashBox => ({
-                          label: cashBox.nameAr,
-                          value: cashBox.id || cashBox.nameAr
-                        }))}
-                      allowClear
-                    />
-                  </div>
-                </Col>
-                <Col xs={24} sm={12} md={4}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ minWidth: 70, fontWeight: 500 }}>المبلغ نقدي:</span>
-                    <Input
-                      value={invoiceData.multiplePayment.cash?.amount || ''}
-                      onChange={(e) => setInvoiceData({
-                        ...invoiceData, 
-                        multiplePayment: {
-                          ...invoiceData.multiplePayment,
-                          cash: {
-                            ...invoiceData.multiplePayment.cash,
-                            cashBoxId: invoiceData.multiplePayment.cash?.cashBoxId || '',
-                            amount: e.target.value
-                          }
-                        }
-                      })}
-                      onFocus={(e) => {
-                        // تعبئة تلقائية للمبلغ المتبقي إذا كان الحقل فارغ
-                        if (!e.target.value) {
-                          const currentTotal = parseFloat(invoiceData.multiplePayment.bank?.amount || '0') + 
-                                              parseFloat(invoiceData.multiplePayment.card?.amount || '0');
-                          const remaining = totals.afterTax - currentTotal;
-                          if (remaining > 0) {
-                            setInvoiceData({
-                              ...invoiceData, 
-                              multiplePayment: {
-                                ...invoiceData.multiplePayment,
-                                cash: {
-                                  ...invoiceData.multiplePayment.cash,
-                                  cashBoxId: invoiceData.multiplePayment.cash?.cashBoxId || '',
-                                  amount: remaining.toFixed(2)
-                                }
-                              }
-                            });
-                          }
-                        }
-                      }}
-                      placeholder="المبلغ"
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      style={{ flex: 1 }}
-                    />
-                  </div>
-                </Col>
-                <Col xs={24} sm={12} md={5}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ minWidth: 50, fontWeight: 500 }}>البنك:</span>
-                    <Select
-                      showSearch
-                      value={invoiceData.multiplePayment.bank?.bankId || ''}
-                      onChange={(value) => setInvoiceData({
-                        ...invoiceData, 
-                        multiplePayment: {
-                          ...invoiceData.multiplePayment,
-                          bank: {
-                            ...invoiceData.multiplePayment.bank,
-                            bankId: value,
-                            amount: invoiceData.multiplePayment.bank?.amount || ''
-                          }
-                        }
-                      })}
-                      disabled={banks.length === 0}
-                      placeholder="اختر البنك"
-                      style={{ fontFamily: 'Cairo, sans-serif', flex: 1 }}
-                      filterOption={(input, option) =>
-                        String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                      }
-                      options={banks.map(bank => ({
-                        label: bank.arabicName,
-                        value: bank.id || bank.arabicName
-                      }))}
-                      allowClear
-                    />
-                  </div>
-                </Col>
-                <Col xs={24} sm={12} md={4}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ minWidth: 70, fontWeight: 500 }}>المبلغ بنكي:</span>
-                    <Input
-                      value={invoiceData.multiplePayment.bank?.amount || ''}
-                      onChange={(e) => setInvoiceData({
-                        ...invoiceData, 
-                        multiplePayment: {
-                          ...invoiceData.multiplePayment,
-                          bank: {
-                            ...invoiceData.multiplePayment.bank,
-                            bankId: invoiceData.multiplePayment.bank?.bankId || '',
-                            amount: e.target.value
-                          }
-                        }
-                      })}
-                      onFocus={(e) => {
-                        // تعبئة تلقائية للمبلغ المتبقي إذا كان الحقل فارغ
-                        if (!e.target.value) {
-                          const currentTotal = parseFloat(invoiceData.multiplePayment.cash?.amount || '0') + 
-                                              parseFloat(invoiceData.multiplePayment.card?.amount || '0');
-                          const remaining = totals.afterTax - currentTotal;
-                          if (remaining > 0) {
-                            setInvoiceData({
-                              ...invoiceData, 
-                              multiplePayment: {
-                                ...invoiceData.multiplePayment,
-                                bank: {
-                                  ...invoiceData.multiplePayment.bank,
-                                  bankId: invoiceData.multiplePayment.bank?.bankId || '',
-                                  amount: remaining.toFixed(2)
-                                }
-                              }
-                            });
-                          }
-                        }
-                      }}
-                      placeholder="المبلغ"
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      style={{ flex: 1 }}
-                    />
-                  </div>
-                </Col>
-              </>
-            )}
-          </Row>
-
-          {multiplePaymentMode && (
-            <Row gutter={16} className="mb-4">
-              <Col xs={24} sm={12} md={6}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ minWidth: 50, fontWeight: 500 }}>شبكة:</span>
-                  <Select
-                    showSearch
-                    value={invoiceData.multiplePayment.card?.bankId || ''}
-                    onChange={(value) => setInvoiceData({
-                      ...invoiceData, 
-                      multiplePayment: {
-                        ...invoiceData.multiplePayment,
-                        card: {
-                          ...invoiceData.multiplePayment.card,
-                          bankId: value,
-                          amount: invoiceData.multiplePayment.card?.amount || ''
-                        }
-                      }
-                    })}
-                    disabled={banks.length === 0}
-                    placeholder="اختر بنك"
-                    style={{ fontFamily: 'Cairo, sans-serif', flex: 1 }}
-                    filterOption={(input, option) =>
-                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                    }
-                    options={banks.map(bank => ({
-                      label: bank.arabicName,
-                      value: bank.id || bank.arabicName
-                    }))}
-                    allowClear
-                  />
-                </div>
-              </Col>
-              <Col xs={24} sm={12} md={4}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ minWidth: 70, fontWeight: 500 }}>المبلغ شبكة:</span>
-                  <Input
-                    value={invoiceData.multiplePayment.card?.amount || ''}
-                    onChange={(e) => setInvoiceData({
-                      ...invoiceData, 
-                      multiplePayment: {
-                        ...invoiceData.multiplePayment,
-                        card: {
-                          ...invoiceData.multiplePayment.card,
-                          bankId: invoiceData.multiplePayment.card?.bankId || '',
-                          amount: e.target.value
-                        }
-                      }
-                    })}
-                    onFocus={(e) => {
-                      // تعبئة تلقائية للمبلغ المتبقي إذا كان الحقل فارغ
-                      if (!e.target.value) {
-                        const currentTotal = parseFloat(invoiceData.multiplePayment.cash?.amount || '0') + 
-                                            parseFloat(invoiceData.multiplePayment.bank?.amount || '0');
-                        const remaining = totals.afterTax - currentTotal;
-                        if (remaining > 0) {
-                          setInvoiceData({
-                            ...invoiceData, 
-                            multiplePayment: {
-                              ...invoiceData.multiplePayment,
-                              card: {
-                                ...invoiceData.multiplePayment.card,
-                                bankId: invoiceData.multiplePayment.card?.bankId || '',
-                                amount: remaining.toFixed(2)
-                              }
-                            }
-                          });
-                        }
-                      }
-                    }}
-                    placeholder="المبلغ"
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    style={{ flex: 1 }}
-                  />
-                </div>
-              </Col>
-            </Row>
-          )}
-
-          {multiplePaymentMode && (
-            <Row gutter={16} className="mb-4">
-              <Col xs={24}>
-                <Card size="small" style={{ backgroundColor: '#f8f9fa' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', gap: 16 }}>
-                      <span style={{ fontWeight: 600 }}>
-                        نقدي: {invoiceData.multiplePayment.cash?.amount || '0'}
-                      </span>
-                      <span style={{ fontWeight: 600 }}>
-                        بنكي: {invoiceData.multiplePayment.bank?.amount || '0'}
-                      </span>
-                      <span style={{ fontWeight: 600 }}>
-                        شبكه: {invoiceData.multiplePayment.card?.amount || '0'}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 16 }}>
-                      <span style={{ fontWeight: 600 }}>
-                        المجموع: {(
-                          parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                          parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                          parseFloat(invoiceData.multiplePayment.card?.amount || '0')
-                        ).toFixed(2)}
-                      </span>
-                      <span style={{ 
-                        fontWeight: 600,
-                        color: Math.abs(
-                          (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                           parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                           parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                        ) > 0.01 ? '#dc2626' : '#059669'
-                      }}>
-                        المتبقي: {(totals.afterTax - (
-                          parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                          parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                          parseFloat(invoiceData.multiplePayment.card?.amount || '0')
-                        )).toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                </Card>
-              </Col>
-            </Row>
-          )}
-
           {/* Save Button */}
           <Row justify="center" gutter={12}>
             <Col>
@@ -3305,30 +3704,6 @@ const handlePrint = () => {
                       message.error('لا يمكن حفظ الفاتورة إذا كان الإجمالي النهائي صفر أو أقل');
                     } else {
                       alert('لا يمكن حفظ الفاتورة إذا كان الإجمالي النهائي صفر أو أقل');
-                    }
-                    return;
-                  }
-                  if (!invoiceData.paymentMethod) {
-                    if (typeof message !== 'undefined' && message.error) {
-                      message.error('يرجى اختيار طريقة الدفع أولاً');
-                    } else {
-                      alert('يرجى اختيار طريقة الدفع أولاً');
-                    }
-                    return;
-                  }
-                  if (invoiceData.paymentMethod === 'نقدي' && !invoiceData.cashBox) {
-                    if (typeof message !== 'undefined' && message.error) {
-                      message.error('يرجى اختيار الصندوق النقدي');
-                    } else {
-                      alert('يرجى اختيار الصندوق النقدي');
-                    }
-                    return;
-                  }
-                  if (multiplePaymentMode && (!invoiceData.multiplePayment.cash?.cashBoxId && !invoiceData.multiplePayment.bank?.bankId && !invoiceData.multiplePayment.card?.bankId)) {
-                    if (typeof message !== 'undefined' && message.error) {
-                      message.error('يرجى اختيار وسائل الدفع للدفع المتعدد');
-                    } else {
-                      alert('يرجى اختيار وسائل الدفع للدفع المتعدد');
                     }
                     return;
                   }
@@ -3346,7 +3721,6 @@ const handlePrint = () => {
                 }}
                 style={{ width: 150 }}
                 loading={loading}
-                disabled={items.length === 0}
               >
                 حفظ الفاتورة 
               </Button>
