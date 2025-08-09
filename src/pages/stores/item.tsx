@@ -43,6 +43,7 @@ const ItemManagementPage: React.FC = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [selectedItem, setSelectedItem] = useState<ItemExtended | null>(null);
   const [activeTab, setActiveTab] = useState<'tree' | 'list'>('tree');
+  const [taxRate, setTaxRate] = useState<number>(0);
   
   // حالات النموذج
   const [formData, setFormData] = useState<Omit<ItemExtended, 'docId'>>({

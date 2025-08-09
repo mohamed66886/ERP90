@@ -1,43 +1,467 @@
-import { motion } from 'framer-motion';
-import { ShoppingCart, Users, TrendingUp, DollarSign, ArrowLeft, Plus, Filter, Download } from 'lucide-react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import Breadcrumb from "@/components/Breadcrumb";
+import { 
+  Settings, 
+  FileText, 
+  TreePine, 
+  Calendar, 
+  Clock, 
+  Target, 
+  CreditCard, 
+  Wallet, 
+  DollarSign,
+  Calculator,
+  BookOpen,
+  TrendingUp,
+  BarChart3,
+  PiggyBank,
+  Receipt,
+  ArrowUpCircle,
+  ArrowDownCircle,
+  FileBarChart,
+  Users,
+  Building,
+  UserCheck,
+  ClipboardList,
+  Package,
+  TrendingDown,
+  ShoppingCart,
+  Plus,
+  FileCheck,
+  UserCog,
+  Crown,
+  ShoppingBag,
+  UserPlus,
+  Phone,
+  Mail,
+  MapPin,
+  Star,
+  Tag,
+  Percent,
+  Gift,
+  Truck,
+  CreditCardIcon,
+  QrCode,
+  PieChart,
+  Eye,
+  Edit,
+  Trash2,
+  Search,
+  Filter,
+  Download,
+  Upload,
+  RefreshCw,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  TrendingUpIcon,
+  DollarSignIcon
+} from 'lucide-react';
 
-const SalesManagement = () => {
+const SalesManagement: React.FC = () => {
   const navigate = useNavigate();
-  
-  return (
-      <div className="min-h-screen bg-gray-50 rtl" dir="rtl">
-        <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between mb-8"
-        >
-          <div className="flex items-center gap-4">
-            <button onClick={() => window.history.back()} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-              <ArrowLeft className="w-6 h-6 text-gray-600" />
-            </button>
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-800 flex items-center gap-3">
-                <ShoppingCart className="w-8 h-8 text-rose-600" />
-                إدارة المبيعات والعملاء
-              </h1>
-              <p className="text-gray-600 mt-1">إدارة العملاء والمبيعات والفواتير</p>
-            </div>
+
+  const settingsCards = [
+    {
+      title: "إدارة العملاء",
+      description: "إضافة وتعديل بيانات العملاء",
+      icon: <Users className="h-6 w-6" />,
+      color: "bg-blue-500",
+      onClick: () => {
+        navigate('/customers');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "فئات العملاء",
+      description: "تصنيف العملاء حسب النوع والأهمية",
+      icon: <Star className="h-6 w-6" />,
+      color: "bg-yellow-500"
+    },
+    {
+      title: "إدارة المنتجات",
+      description: "إضافة وتعديل المنتجات والخدمات",
+      icon: <Package className="h-6 w-6" />,
+      color: "bg-green-500"
+    },
+    {
+      title: "فئات المنتجات",
+      description: "تصنيف المنتجات والخدمات",
+      icon: <Tag className="h-6 w-6" />,
+      color: "bg-purple-500"
+    },
+    {
+      title: "قوائم الأسعار",
+      description: "إدارة أسعار المنتجات والخدمات",
+      icon: <DollarSign className="h-6 w-6" />,
+      color: "bg-emerald-500"
+    },
+    {
+      title: "الخصومات والعروض",
+      description: "إدارة نظام الخصومات والعروض",
+      icon: <Percent className="h-6 w-6" />,
+      color: "bg-red-500"
+    },
+    {
+      title: "نقاط الولاء",
+      description: "برنامج نقاط الولاء للعملاء",
+      icon: <Gift className="h-6 w-6" />,
+      color: "bg-pink-500"
+    },
+    {
+      title: "طرق الدفع",
+      description: "إعداد طرق الدفع المختلفة",
+      icon: <CreditCard className="h-6 w-6" />,
+      color: "bg-indigo-500"
+    },
+    {
+      title: "طرق الشحن",
+      description: "إدارة طرق الشحن والتوصيل",
+      icon: <Truck className="h-6 w-6" />,
+      color: "bg-orange-500"
+    },
+    {
+      title: "إعدادات عامة",
+      description: "الإعدادات العامة لنظام المبيعات",
+      icon: <Settings className="h-6 w-6" />,
+      color: "bg-gray-500"
+    }
+  ];
+
+  const operationsCards = [
+    {
+      title: "فاتورة مبيعات",
+      description: "إنشاء فواتير المبيعات الجديدة",
+      icon: <FileText className="h-6 w-6" />,
+      color: "bg-blue-600",
+      onClick: () => {
+        navigate('/stores/sales');
+        window.scrollTo(0, 0);
+      }
+    },
+    // {
+    //   title: "عرض أسعار",
+    //   description: "إعداد عروض الأسعار للعملاء",
+    //   icon: <FileCheck className="h-6 w-6" />,
+    //   color: "bg-green-600"
+    // },
+    // {
+    //   title: "إذن بيع",
+    //   description: "إصدار أذونات البيع والتسليم",
+    //   icon: <ClipboardList className="h-6 w-6" />,
+    //   color: "bg-emerald-600"
+    // },
+    {
+      title: "مرتجع مبيعات",
+      description: "معالجة مرتجعات المبيعات",
+      icon: <ArrowDownCircle className="h-6 w-6" />,
+     color: "bg-blue-600",
+      onClick: () => {
+        navigate('/stores/sales-return');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "سند قبض",
+      description: "تسجيل سندات القبض من العملاء",
+      icon: <Receipt className="h-6 w-6" />,
+      color: "bg-purple-600"
+    },
+    // {
+    //   title: "طلب شراء",
+    //   description: "طلبات الشراء من العملاء",
+    //   icon: <ShoppingCart className="h-6 w-6" />,
+    //   color: "bg-teal-600"
+    // },
+    // {
+    //   title: "فاتورة مرتجع",
+    //   description: "إصدار فواتير المرتجعات",
+    //   icon: <RefreshCw className="h-6 w-6" />,
+    //   color: "bg-orange-600"
+    // },
+    // {
+    //   title: "نقطة البيع",
+    //   description: "نظام نقطة البيع السريع",
+    //   icon: <QrCode className="h-6 w-6" />,
+    //   color: "bg-indigo-600"
+    // }
+  ];
+
+  const reportsCards = [
+    {
+      title: "تقارير فواتير المبيعات",
+      description: "تقرير شامل بجميع فواتير المبيعات",
+      icon: <FileText className="h-6 w-6" />,
+      color: "bg-blue-700",
+      onClick: () => {
+        navigate('/reports/invoice');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تقارير المبيعات اليومية",
+      description: "مبيعات اليوم والفترة الحالية",
+      icon: <BarChart3 className="h-6 w-6" />,
+      color: "bg-green-700",
+      onClick: () => {
+        navigate('/reports/daily-sales');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تقارير أرباح الفواتير",
+      description: "تقرير أرباح فواتير المبيعات",
+      icon: <TrendingUp className="h-6 w-6" />,
+      color: "bg-emerald-700",
+      onClick: () => {
+        navigate('/reports/invoice-profits');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تقرير فواتير المبيعات التفصيلي",
+      description: "تقرير تفصيلي لجميع فواتير المبيعات",
+      icon: <FileBarChart className="h-6 w-6" />,
+      color: "bg-purple-700",
+      onClick: () => {
+        navigate('/reports/invoice-preferred');
+        window.scrollTo(0, 0);
+      }
+    }
+  ];
+
+  const customerManagementCards = [
+    {
+      title: "إضافة عميل جديد",
+      description: "تسجيل عميل جديد في النظام",
+      icon: <UserPlus className="h-6 w-6" />,
+      color: "bg-blue-600",
+      onClick: () => {
+        navigate('/customers/add');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تعديل بيانات العميل",
+      description: "تحديث معلومات العملاء الحاليين",
+      icon: <Edit className="h-6 w-6" />,
+      color: "bg-green-600",
+      onClick: () => {
+        navigate('/customers/directory');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "دليل العملاء",
+      description: "قائمة شاملة بجميع العملاء",
+      icon: <BookOpen className="h-6 w-6" />,
+      color: "bg-purple-600",
+      onClick: () => {
+        navigate('/customers/directory');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تفعيل/إلغاء العميل",
+      description: "إدارة حالة العملاء النشطة",
+      icon: <CheckCircle className="h-6 w-6" />,
+      color: "bg-emerald-600",
+      onClick: () => {
+        navigate('/customers/status');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تصنيف العملاء",
+      description: "تصنيف العملاء حسب النوع والقيمة",
+      icon: <Star className="h-6 w-6" />,
+      color: "bg-yellow-600",
+      onClick: () => {
+        navigate('/customers/classification');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "متابعة العملاء",
+      description: "متابعة وتقييم العملاء",
+      icon: <Eye className="h-6 w-6" />,
+      color: "bg-indigo-600",
+      onClick: () => {
+        navigate('/customers/follow-up');
+        window.scrollTo(0, 0);
+      }
+    }
+  ];
+
+  const salesTeamCards = [
+    {
+      title: "إدارة المندوبين",
+      description: "إدارة فريق المبيعات والمندوبين",
+      icon: <UserCog className="h-6 w-6" />,
+      color: "bg-purple-600"
+    },
+    {
+      title: "أهداف المبيعات",
+      description: "تحديد ومتابعة أهداف المبيعات",
+      icon: <Target className="h-6 w-6" />,
+      color: "bg-orange-600"
+    },
+    {
+      title: "عمولات المبيعات",
+      description: "حساب وإدارة عمولات المندوبين",
+      icon: <Crown className="h-6 w-6" />,
+      color: "bg-amber-600"
+    },
+    {
+      title: "تقييم الأداء",
+      description: "تقييم أداء فريق المبيعات",
+      icon: <BarChart3 className="h-6 w-6" />,
+      color: "bg-teal-600"
+    }
+  ];
+
+  interface CardType {
+    title: string;
+    description: string;
+    icon: React.ReactNode;
+    color: string;
+    onClick?: () => void;
+  }
+
+  const CardComponent = ({ card, index }: { card: CardType, index: number }) => (
+    <Card 
+      key={index}
+      className="group hover:shadow-lg transition-all duration-300 cursor-pointer hover:scale-105"
+      onClick={card.onClick}
+    >
+      <CardContent className="p-4">
+        <div className="flex items-center space-x-2 space-x-reverse">
+          <div className={`p-2 rounded-lg ${card.color} text-white`}>
+            {card.icon}
           </div>
-        </motion.div>
+          <CardTitle className="text-sm text-right">{card.title}</CardTitle>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  return (
+    <div className="w-full p-6 space-y-8 min-h-screen" dir="rtl">
+      {/* Header */}
+      <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+        <div className="flex items-center">
+          <ShoppingBag className="h-8 w-8 text-blue-600 ml-3" />
+          <h1 className="text-2xl font-bold text-gray-800">إدارة المبيعات</h1>
+        </div>
+        <p className="text-gray-600 mt-2">إدارة المبيعات والعملاء وفريق المبيعات</p>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
+      </div>
+
+      <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "إدارة المبيعات" }, 
+        ]}
+      />
+
+      {/* الإعدادات Section */}
+      <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
+        <div className="flex items-center space-x-3 space-x-reverse">
+          <div className="p-2 bg-blue-100 rounded-lg">
+            <Settings className="h-6 w-6 text-blue-600" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-800">الإعدادات</h2>
+            <p className="text-gray-600">إعدادات نظام المبيعات والعملاء</p>
+          </div>
+        </div>
         
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 text-center"
-        >
-          <ShoppingCart className="w-16 h-16 text-rose-600 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-gray-800 mb-2">إدارة المبيعات والعملاء</h2>
-          <p className="text-gray-600">جاري العمل على هذه الصفحة...</p>
-        </motion.div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {settingsCards.map((card, index) => (
+            <CardComponent key={`settings-${index}`} card={card} index={index} />
+          ))}
         </div>
       </div>
+
+      {/* العمليات Section */}
+      <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
+        <div className="flex items-center space-x-3 space-x-reverse">
+          <div className="p-2 bg-green-100 rounded-lg">
+            <ShoppingCart className="h-6 w-6 text-green-600" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-800">العمليات</h2>
+            <p className="text-gray-600">عمليات المبيعات والفواتير اليومية</p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {operationsCards.map((card, index) => (
+            <CardComponent key={`operations-${index}`} card={card} index={index} />
+          ))}
+        </div>
+      </div>
+
+      {/* التقارير Section */}
+      <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
+        <div className="flex items-center space-x-3 space-x-reverse">
+          <div className="p-2 bg-purple-100 rounded-lg">
+            <FileBarChart className="h-6 w-6 text-purple-600" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-800">التقارير</h2>
+            <p className="text-gray-600">تقارير المبيعات والعملاء الشاملة</p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {reportsCards.map((card, index) => (
+            <CardComponent key={`reports-${index}`} card={card} index={index} />
+          ))}
+        </div>
+      </div>
+
+      {/* إدارة العملاء Section */}
+      <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
+        <div className="flex items-center space-x-3 space-x-reverse">
+          <div className="p-2 bg-indigo-100 rounded-lg">
+            <Users className="h-6 w-6 text-indigo-600" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-800">إدارة العملاء</h2>
+            <p className="text-gray-600">إدارة بيانات ومعلومات العملاء</p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {customerManagementCards.map((card, index) => (
+            <CardComponent key={`customer-management-${index}`} card={card} index={index} />
+          ))}
+        </div>
+      </div>
+
+      {/* فريق المبيعات Section */}
+      <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
+        <div className="flex items-center space-x-3 space-x-reverse">
+          <div className="p-2 bg-purple-100 rounded-lg">
+            <UserCog className="h-6 w-6 text-purple-600" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-800">فريق المبيعات</h2>
+            <p className="text-gray-600">إدارة فريق المبيعات والأهداف</p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {salesTeamCards.map((card, index) => (
+            <CardComponent key={`sales-team-${index}`} card={card} index={index} />
+          ))}
+        </div>
+      </div>
+    </div>
   );
 };
 

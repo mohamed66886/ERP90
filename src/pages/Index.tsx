@@ -56,6 +56,15 @@ import ChartOfAccountsPage from "./accounting/ChartOfAccountsPage";
 import FinancialYearsPage from "./accounting/FinancialYearsPage";
 import BankAccountsPage from "./accounting/BankAccountsPage";
 import CashBoxesPage from "./management/CashBoxesPage";
+
+// Customer Management Pages
+import AddCustomerPage from "./customers/AddCustomerPage";
+import CustomersDirectoryPage from "./customers/CustomersDirectoryPage";
+import EditCustomerPage from "./customers/EditCustomerPage";
+import ViewCustomerPage from "./customers/ViewCustomerPage";
+import CustomerStatusPage from "./customers/CustomerStatusPage";
+import CustomerClassificationPage from "./customers/CustomerClassificationPage";
+import CustomerFollowUpPage from "./customers/CustomerFollowUpPage";
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -187,6 +196,15 @@ const Index = () => {
             <Route path="/accounting/financial-years" element={<FinancialYearsPage />} />
             <Route path="/accounting/bank-accounts" element={<BankAccountsPage />} />
             <Route path="/accounting/cash-boxes" element={<CashBoxesPage />} />
+            
+            {/* Customer Management Routes */}
+            <Route path="/customers/add" element={<AddCustomerPage />} />
+            <Route path="/customers/directory" element={<CustomersDirectoryPage />} />
+            <Route path="/customers/edit/:customerId" element={<EditCustomerPage />} />
+            <Route path="/customers/view/:customerId" element={<ViewCustomerPage />} />
+            <Route path="/customers/status" element={<CustomerStatusPage />} />
+            <Route path="/customers/classification" element={<CustomerClassificationPage />} />
+            <Route path="/customers/follow-up" element={<CustomerFollowUpPage />} />
             
             <Route path="/suppliers" element={<Suppliers />} />
             <Route path="/" element={<Dashboard />} />

@@ -48,7 +48,7 @@ const StockPage = () => {
     const fetchThirdLevelItems = async () => {
       try {
         const querySnapshot = await getDocs(collection(db, "inventory_items"));
-        const items = querySnapshot.docs.map(doc => ({ ...doc.data(), docId: doc.id }));
+        const items = querySnapshot.docs.map(doc => ({ ...doc.data(), docId: doc.id })) as any[];
         const filtered = items.filter(item => item && item.type === "مستوى ثاني");
         setThirdLevelItems(filtered);
         // جلب الأصناف مستوى أول
@@ -87,6 +87,8 @@ const StockPage = () => {
     outgoing: number;
     balance: number;
     parentOfModel?: string;
+    allowNegative?: boolean;
+    tempCodes?: boolean;
   };
 
 
@@ -244,6 +246,8 @@ const StockPage = () => {
             //console.warn('الصنف بدون فئة (جذر أعلى):', item, row);
           }
           row.country = item.country || '';
+          row.allowNegative = item.allowNegative || false;
+          row.tempCodes = item.tempCodes || false;
         }
         // الرصيد = الوارد - المنصرف
         row.balance = row.incoming - row.outgoing;
@@ -299,7 +303,7 @@ const StockPage = () => {
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]"></div>
       </div>
 
-<style jsx global>{`
+<style>{`
   @keyframes bounce {
     0%, 100% {
       transform: translateY(0);
@@ -666,6 +670,8 @@ const StockPage = () => {
                   <th className="px-6 py-4 text-sm font-medium border-b border-blue-800">المخزن</th>
                   <th className="px-6 py-4 text-sm font-medium border-b border-blue-800">الدولة</th>
                   <th className="px-6 py-4 text-sm font-medium border-b border-blue-800">اسم الصنف</th>
+                  <th className="px-6 py-4 text-sm font-medium border-b border-blue-800">السماح بالسالب</th>
+                  <th className="px-6 py-4 text-sm font-medium border-b border-blue-800">الحالة</th>
                   <th className="px-6 py-4 text-sm font-medium border-b border-blue-800">الوارد</th>
                   <th className="px-6 py-4 text-sm font-medium border-b border-blue-800">المنصرف</th>
                   <th className="px-6 py-4 text-sm font-medium border-b border-blue-800">الرصيد</th>
@@ -679,7 +685,7 @@ const StockPage = () => {
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                     >
-                      <td colSpan={11} className="px-6 py-8 text-gray-500 text-center">
+                      <td colSpan={13} className="px-6 py-8 text-gray-500 text-center">
                         {searchTriggered ? 'لا توجد نتائج مطابقة لبحثك' : 'استخدم خيارات البحث للعثور على العناصر'}
                       </td>
                     </motion.tr>
@@ -700,9 +706,29 @@ const StockPage = () => {
                         <td className="px-6 py-4 text-sm border-b border-gray-200">{row.store}</td>
                         <td className="px-6 py-4 text-sm border-b border-gray-200">{row.country}</td>
                         <td className="px-6 py-4 text-sm font-medium border-b border-gray-200">{row.name}</td>
+                        <td className="px-6 py-4 text-sm border-b border-gray-200">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            row.allowNegative 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {row.allowNegative ? '✓ مسموح' : '✗ غير مسموح'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm border-b border-gray-200">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            row.tempCodes 
+                              ? 'bg-yellow-100 text-yellow-800' 
+                              : 'bg-green-100 text-green-800'
+                          }`}>
+                            {row.tempCodes ? '⛔ موقوف' : '✓ نشط'}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 text-sm border-b border-gray-200 text-green-600 font-medium">+{row.incoming}</td>
                         <td className="px-6 py-4 text-sm border-b border-gray-200 text-red-600 font-medium">-{row.outgoing}</td>
-                        <td className="px-6 py-4 text-sm border-b border-gray-200 font-bold">{row.balance}</td>
+                        <td className={`px-6 py-4 text-sm border-b border-gray-200 font-bold ${
+                          row.balance < 0 ? 'text-red-600' : row.balance === 0 ? 'text-gray-500' : 'text-green-600'
+                        }`}>{row.balance}</td>
                       </motion.tr>
                     ))
                   )}
@@ -716,8 +742,9 @@ const StockPage = () => {
                     transition={{ delay: searchResults.length * 0.05 + 0.2 }}
                     className="bg-gray-100 font-semibold"
                   >
-                    <td colSpan={7} className="px-6 py-3 text-sm border-t border-gray-300"></td>
+                    <td colSpan={8} className="px-6 py-3 text-sm border-t border-gray-300"></td>
                     <td className="px-6 py-3 text-sm border-t border-gray-300">الإجمالي</td>
+                    <td className="px-6 py-3 text-sm border-t border-gray-300"></td>
                     <td className="px-6 py-3 text-sm border-t border-gray-300 text-green-600 font-bold">
                       +{searchResults.reduce((sum, row) => sum + (row.incoming || 0), 0)}
                     </td>

@@ -3,7 +3,7 @@ import { SearchOutlined } from '@ant-design/icons';
 import { useAuth } from '@/contexts/useAuth';
 import { doc, getDoc, collection, getDocs, addDoc } from 'firebase/firestore';
 import dayjs from 'dayjs';
-import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal } from 'antd';
+import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space } from 'antd';
 import * as XLSX from 'xlsx';
 import Divider from 'antd/es/divider';
 import Breadcrumb from "../../components/Breadcrumb";
@@ -24,6 +24,7 @@ interface InventoryItem {
   isVatIncluded?: boolean;
   type?: string;
   tempCodes?: boolean;
+  allowNegative?: boolean;
 }
 
 interface InvoiceItem {
@@ -370,9 +371,12 @@ const SalesPage: React.FC = () => {
         }
       }
 
-      // تحديث القائمة المحلية
+      // تحديث القوائم المحلية
       if (typeof setItemNames === 'function') {
         setItemNames((prev: InventoryItem[]) => [...prev, newItem]);
+      }
+      if (typeof setAllItems === 'function') {
+        setAllItems((prev: InventoryItem[]) => [...prev, newItem]);
       }
       setShowAddItemModal(false);
       setAddItemForm({
@@ -725,6 +729,7 @@ interface CompanyData {
   const [priceRules, setPriceRules] = useState<string[]>([]);
   const [units, setUnits] = useState<string[]>([]);
   const [itemNames, setItemNames] = useState<InventoryItem[]>([]);
+  const [allItems, setAllItems] = useState<InventoryItem[]>([]); // جميع الأصناف للاستخدام في النماذج
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [fetchingItems, setFetchingItems] = useState<boolean>(false);
@@ -783,6 +788,131 @@ interface SavedInvoice {
   // حالة المودال بعد الحفظ
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [lastSavedInvoice, setLastSavedInvoice] = useState<SavedInvoice | null>(null);
+
+  // دالة للتحقق من حالة الإيقاف المؤقت للصنف
+  const checkItemTempStatus = (itemName: string): boolean => {
+    const item = itemNames.find(i => i.name === itemName);
+    return item ? !!item.tempCodes : false;
+  };
+
+  const [itemStocks, setItemStocks] = useState<{[key: string]: number}>({});
+  const [loadingStocks, setLoadingStocks] = useState(false);
+
+  // دالة لجلب رصيد صنف واحد في مخزن محدد (للاستخدام في حالة المخازن المتعددة)
+  const fetchSingleItemStock = async (itemName: string, warehouseId: string): Promise<number> => {
+    if (!itemName || !warehouseId) return 0;
+    
+    try {
+      const stock = await checkStockAvailability(itemName, warehouseId);
+      // تحديث الرصيد في الحالة
+      setItemStocks(prev => ({
+        ...prev,
+        [`${itemName}-${warehouseId}`]: stock
+      }));
+      return stock;
+    } catch (error) {
+      console.error('خطأ في جلب رصيد الصنف:', error);
+      return 0;
+    }
+  };
+
+  // دالة لجلب أرصدة جميع الأصناف في المخزن المحدد
+  const fetchItemStocks = useCallback(async (warehouseId: string) => {
+    if (!warehouseId || itemNames.length === 0) return;
+    
+    setLoadingStocks(true);
+    const stocks: {[key: string]: number} = {};
+    
+    try {
+      // جلب الأرصدة لجميع الأصناف بشكل متوازي
+      const stockPromises = itemNames.map(async (item) => {
+        const stock = await checkStockAvailability(item.name, warehouseId);
+        stocks[item.name] = stock;
+      });
+      
+      await Promise.all(stockPromises);
+      setItemStocks(stocks);
+    } catch (error) {
+      console.error('خطأ في جلب الأرصدة:', error);
+    } finally {
+      setLoadingStocks(false);
+    }
+  }, [itemNames]);
+
+  // تحديث الأرصدة عند تغيير المخزن أو الأصناف
+  useEffect(() => {
+    if (warehouseMode === 'single' && invoiceData.warehouse) {
+      fetchItemStocks(invoiceData.warehouse);
+    }
+  }, [invoiceData.warehouse, itemNames, warehouseMode, fetchItemStocks]);
+
+  // دالة فحص المخزون المتاح
+  const checkStockAvailability = async (itemName: string, warehouseId: string): Promise<number> => {
+    try {
+      // جلب فواتير المشتريات (وارد)
+      const purchasesSnap = await getDocs(collection(db, "purchases_invoices"));
+      const allPurchases = purchasesSnap.docs.map(doc => doc.data());
+      
+      // جلب فواتير المبيعات (منصرف)
+      const salesSnap = await getDocs(collection(db, "sales_invoices"));
+      const allSales = salesSnap.docs.map(doc => doc.data());
+      
+      // جلب مرتجعات المبيعات (وارد)
+      const salesReturnsSnap = await getDocs(collection(db, "sales_returns"));
+      const allSalesReturns = salesReturnsSnap.docs.map(doc => doc.data());
+      
+      let totalIncoming = 0;
+      let totalOutgoing = 0;
+      
+      // حساب الوارد من المشتريات
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      allPurchases.forEach((purchase: any) => {
+        if (Array.isArray(purchase.items)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          purchase.items.forEach((item: any) => {
+            if ((item.itemName === itemName) && 
+                ((purchase.warehouse === warehouseId) || (item.warehouseId === warehouseId))) {
+              totalIncoming += Number(item.quantity) || 0;
+            }
+          });
+        }
+      });
+      
+      // حساب الوارد من مرتجعات المبيعات
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      allSalesReturns.forEach((returnDoc: any) => {
+        if (Array.isArray(returnDoc.items)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          returnDoc.items.forEach((item: any) => {
+            const returnWarehouse = item.warehouseId || item.warehouse || returnDoc.warehouse;
+            if ((item.itemName === itemName) && (returnWarehouse === warehouseId)) {
+              const returnedQty = typeof item.returnedQty !== 'undefined' ? Number(item.returnedQty) : 0;
+              totalIncoming += returnedQty;
+            }
+          });
+        }
+      });
+      
+      // حساب المنصرف من المبيعات
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      allSales.forEach((sale: any) => {
+        if (Array.isArray(sale.items)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          sale.items.forEach((item: any) => {
+            if ((item.itemName === itemName) && 
+                ((sale.warehouse === warehouseId) || (item.warehouseId === warehouseId))) {
+              totalOutgoing += Number(item.quantity) || 0;
+            }
+          });
+        }
+      });
+      
+      return totalIncoming - totalOutgoing;
+    } catch (error) {
+      console.error('خطأ في فحص المخزون:', error);
+      return 0;
+    }
+  };
 
   // جلب الفواتير من Firebase
   const fetchInvoices = async () => {
@@ -867,7 +997,12 @@ interface SavedInvoice {
         const companiesSnap = await getDocs(collection(db, 'companies'));
         if (!companiesSnap.empty) {
           const companyData = companiesSnap.docs[0].data();
-          if (companyData.taxRate) setTaxRate(String(companyData.taxRate));
+          if (companyData.taxRate) {
+            const newTaxRate = String(companyData.taxRate);
+            setTaxRate(newTaxRate);
+            // تحديث الصنف الحالي بنسبة الضريبة الجديدة
+            setItem(prev => ({ ...prev, taxPercent: newTaxRate }));
+          }
         }
       } catch (err) {
         console.error('Failed to fetch tax rate from company settings:', err);
@@ -875,6 +1010,11 @@ interface SavedInvoice {
     };
     fetchTaxRate();
   }, []);
+
+  // تحديث الصنف عند تحميل الصفحة بنسبة الضريبة
+  useEffect(() => {
+    setItem(prev => ({ ...prev, taxPercent: taxRate }));
+  }, [taxRate]);
 
   const handleInvoiceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInvoiceData({ ...invoiceData, [e.target.name]: e.target.value });
@@ -911,8 +1051,8 @@ interface SavedInvoice {
     const quantity = Math.max(0, Number(item.quantity) || 0);
     const price = Math.max(0, Number(item.price) || 0);
     const discountPercent = Math.min(100, Math.max(0, Number(item.discountPercent) || 0));
-    // تم حذف الخصم الإضافي
-    const taxPercent = Math.max(0, Number(item.taxPercent) || 0);
+    // استخدام نسبة الضريبة من إعدادات الشركة
+    const taxPercent = Math.max(0, Number(taxRate) || 0);
     
     const subtotal = price * quantity;
     const discountValue = subtotal * (discountPercent / 100);
@@ -926,7 +1066,7 @@ interface SavedInvoice {
     };
   };
 
-  const addItem = () => {
+  const addItem = async () => {
     if (!item.itemName || !item.quantity || !item.price) {
       message.info('يجب إدخال اسم الصنف، الكمية والسعر');
       return;
@@ -955,11 +1095,27 @@ interface SavedInvoice {
         itemNumber: item.itemNumber,
         stoppedItem
       });
-      message.warning('هذا الصنف موقوف مؤقتًا ولا يمكن إضافته');
+      message.warning(`الصنف "${stoppedItem.name}" موقوف مؤقتاً ولا يمكن إضافته للفاتورة`, 4);
       return;
     }
 
     const selected = possibleItems[0];
+    
+    // فحص المخزون والسماح بالسالب
+    if (!selected.allowNegative) {
+      // فحص الكمية المتاحة في المخزون
+      const requestedQuantity = Number(item.quantity);
+      const warehouseToCheck = warehouseMode === 'multiple' ? item.warehouseId : invoiceData.warehouse;
+      
+      // فحص المخزون الفعلي
+      const availableStock = await checkStockAvailability(item.itemName, warehouseToCheck || '');
+      
+      if (requestedQuantity > availableStock) {
+        message.warning(`الكمية المطلوبة (${requestedQuantity}) أكبر من المتاح في المخزون (${availableStock}) والصنف لا يسمح بالسالب`, 5);
+        return;
+      }
+    }
+    
     const { discountValue, taxValue, total } = calculateItemValues(item);
     const mainCategory = selected?.type || '';
     // إذا كان يوجد cost في بيانات الصنف
@@ -968,6 +1124,7 @@ interface SavedInvoice {
     const newItem: InvoiceItem & { warehouseId?: string; mainCategory?: string; cost?: number } = {
       ...item,
       itemNumber: item.itemNumber || 'N/A',
+      taxPercent: taxRate, // استخدام نسبة الضريبة من إعدادات الشركة
       discountValue,
       taxValue,
       total,
@@ -1037,7 +1194,7 @@ interface SavedInvoice {
     setLoading(true);
     // حذف الحقول الفارغة من بيانات الفاتورة
     const cleanInvoiceData = Object.fromEntries(
-      Object.entries(invoiceData).filter(([_, v]) => v !== '')
+      Object.entries(invoiceData).filter(([_, v]) => v !== '' && v !== undefined && v !== null)
     );
     // توحيد اسم طريقة الدفع مع قائمة طرق الدفع
     let paymentMethodName = cleanInvoiceData.paymentMethod;
@@ -1046,10 +1203,9 @@ interface SavedInvoice {
       // إذا لم تكن القيمة موجودة، اختر أول طريقة دفع كافتراضي أو اتركها فارغة
       paymentMethodName = paymentNames[0] || '';
     }
-    const invoice = {
+    const invoice: Partial<SavedInvoice> & { createdAt: string; source: string } = {
       ...cleanInvoiceData,
       paymentMethod: paymentMethodName,
-      multiplePayment: multiplePaymentMode ? invoiceData.multiplePayment : undefined,
       items,
       totals: {
         ...totals
@@ -1058,11 +1214,30 @@ interface SavedInvoice {
       createdAt: new Date().toISOString(),
       source: 'sales'
     };
+
+    // Add multiplePayment only if multiplePaymentMode is true
+    if (multiplePaymentMode && invoiceData.multiplePayment) {
+      invoice.multiplePayment = invoiceData.multiplePayment;
+    }
     try {
       // حفظ الفاتورة في Firestore مباشرة
       const { addDoc, collection } = await import('firebase/firestore');
       await addDoc(collection(db, 'sales_invoices'), invoice);
       message.success('تم حفظ الفاتورة بنجاح!');
+      
+      // تحديث الأرصدة بعد الحفظ
+      if (warehouseMode === 'single' && invoiceData.warehouse) {
+        await fetchItemStocks(invoiceData.warehouse);
+      } else if (warehouseMode === 'multiple') {
+        // في حالة المخازن المتعددة، تحديث رصيد كل صنف في مخزنه
+        for (const savedItem of items) {
+          const itemWithWarehouse = savedItem as InvoiceItem & { warehouseId?: string };
+          if (itemWithWarehouse.warehouseId && itemWithWarehouse.itemName) {
+            await fetchSingleItemStock(itemWithWarehouse.itemName, itemWithWarehouse.warehouseId);
+          }
+        }
+      }
+      
       // إعادة تعيين النموذج
       setItems([]);
       setTotals({ afterDiscount: 0, afterTax: 0, total: 0, tax: 0 });
@@ -1254,7 +1429,10 @@ interface SavedInvoice {
 
   // دالة تعبئة بيانات الصنف عند التعديل
   const handleEditItem = (record: InvoiceItem, index: number) => {
-    setItem(record);
+    setItem({
+      ...record,
+      taxPercent: taxRate // استخدام نسبة الضريبة من إعدادات الشركة
+    });
     // حذف الصنف من الجدول عند التعديل
     const newItems = items.filter((_, i) => i !== index);
     setItems(newItems);
@@ -1544,7 +1722,7 @@ interface SavedInvoice {
       setPriceRules(['السعر العادي', 'سعر الجملة', 'سعر التخفيض']);
       // جلب الأصناف
       const itemsSnap = await getDocs(collection(db, 'inventory_items'));
-      const itemsData = itemsSnap.docs.map(doc => {
+      const allItemsData = itemsSnap.docs.map(doc => {
         const data = doc.data();
         return {
           id: doc.id,
@@ -1553,10 +1731,18 @@ interface SavedInvoice {
           salePrice: data.salePrice || 0,
           discount: data.discount || 0,
           isVatIncluded: data.isVatIncluded || false,
-          type: data.type || ''
+          type: data.type || '',
+          tempCodes: data.tempCodes || false,
+          allowNegative: data.allowNegative || false
         };
       }).filter(item => item.name);
-      setItemNames(itemsData);
+      
+      // حفظ جميع الأصناف للاستخدام في النماذج
+      setAllItems(allItemsData);
+      
+      // فلترة أصناف المستوى الثاني للعرض في قائمة المبيعات (مع الموقوفة مؤقتاً للإشارة)
+      const secondLevelItems = allItemsData.filter(item => item.type === 'مستوى ثاني');
+      setItemNames(secondLevelItems);
     } catch (err) {
       console.error('Error fetching lists:', err);
       message.error('تعذر تحميل القوائم من قاعدة البيانات');
@@ -2100,7 +2286,12 @@ const handlePrint = () => {
       return;
     }
     await addItem();
-    setItem(prev => ({ ...prev, quantity: '1' })); // إعادة تعيين الكمية إلى 1 بعد الإضافة (كسلسلة نصية)
+    // إعادة تعيين الصنف مع الضريبة الثابتة من الإعدادات
+    setItem({
+      ...initialItem,
+      taxPercent: taxRate,
+      quantity: '1'
+    });
     setTimeout(() => {
       itemNameSelectRef.current?.focus?.();
     }, 100); // تأخير بسيط لضمان إعادة التهيئة
@@ -2120,6 +2311,8 @@ const handlePrint = () => {
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
+                      { label: "إدارة المبيعات", to: "/management/sales" },
+
           { label: "فاتورة مبيعات" }
         ]}
       />
@@ -2135,6 +2328,7 @@ const handlePrint = () => {
                 onChange={setInvoiceType}
                 size="middle"
                 placeholder="نوع الفاتورة"
+                disabled={!!invoiceData.branch}
                 options={[
                   { label: 'ضريبة مبسطة', value: 'ضريبة مبسطة' },
                   { label: 'ضريبة', value: 'ضريبة' }
@@ -2147,6 +2341,7 @@ const handlePrint = () => {
                 onChange={setWarehouseMode}
                 size="middle"
                 placeholder="نظام المخزن"
+                disabled={!!invoiceData.branch}
                 options={[
                   { label: 'مخزن واحد', value: 'single' },
                   { label: 'مخازن متعددة', value: 'multiple' }
@@ -2494,6 +2689,42 @@ const handlePrint = () => {
                         تم اختيار طريقة الدفع - الفاتورة جاهزة للحفظ
                       </span>
                     )}
+                    {multiplePaymentMode && items.length > 0 && (
+                      <span style={{ 
+                        color: Math.abs(
+                          (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                           parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                           parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
+                        ) > 0.01 ? '#dc2626' : '#059669', 
+                        fontWeight: 500, 
+                        marginLeft: 16, 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 6 
+                      }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                          {Math.abs(
+                            (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                             parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                             parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
+                          ) > 0.01 ? (
+                            <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
+                          ) : (
+                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                          )}
+                        </svg>
+                        المتبقي: {(totals.afterTax - (
+                          parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                          parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                          parseFloat(invoiceData.multiplePayment.card?.amount || '0')
+                        )).toFixed(2)} ر.س
+                        {Math.abs(
+                          (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                           parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                           parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
+                        ) > 0.01 && ' - يجب أن يكون 0.00 للحفظ'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2501,6 +2732,26 @@ const handlePrint = () => {
           </div>
 
           <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif' }}>إضافة أصناف المبيعات</Divider>
+
+          {/* رسالة تحذيرية حول الأصناف الموقوفة */}
+          {itemNames.some(item => item.tempCodes) && (
+            <div style={{ 
+              marginBottom: 16, 
+              padding: 12, 
+              backgroundColor: '#fff7e6', 
+              border: '1px solid #ffd666', 
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontFamily: 'Cairo, sans-serif'
+            }}>
+              <span style={{ color: '#fa8c16', fontSize: 16 }}>⚠️</span>
+              <span style={{ color: '#ad6800', fontWeight: 500 }}>
+                تنبيه: بعض الأصناف موقوفة مؤقتاً وتظهر بـ ⛔ في القائمة ولا يمكن إضافتها للفاتورة
+              </span>
+            </div>
+          )}
 
           {/* Item Entry */}
           <Row gutter={16} className="mb-4">
@@ -2516,7 +2767,7 @@ const handlePrint = () => {
 
               <div style={{ width: '100%' }}>
                 <div style={{ marginBottom: 0, fontWeight: 500 }}>اسم الصنف</div>
-                <Input.Group compact style={{ display: 'flex' }}>
+                <Space.Compact style={{ display: 'flex', width: '100%' }}>
                   <Select
                     ref={itemNameSelectRef}
                     showSearch
@@ -2525,29 +2776,113 @@ const handlePrint = () => {
                     style={{ flex: 1, fontFamily: 'Cairo, sans-serif' }}
                     onChange={async (value) => {
                       const selected = itemNames.find(i => i.name === value);
+                      
+                      // فحص إذا كان الصنف موقوف مؤقتاً
+                      if (selected && selected.tempCodes) {
+                        message.warning(`تم إيقاف الصنف "${value}" مؤقتاً ولا يمكن إضافته للفاتورة`, 4);
+                        // إعادة تعيين اختيار الصنف
+                        setItem({
+                          ...item,
+                          itemName: '',
+                          itemNumber: '',
+                          price: '',
+                          discountPercent: '0',
+                          quantity: '1'
+                        });
+                        return;
+                      }
+                      
                       let price = selected && selected.salePrice ? String(selected.salePrice) : '';
                       if (priceType === 'آخر سعر العميل' && invoiceData.customerName) {
                         const lastPrice = await fetchLastCustomerPrice(invoiceData.customerName, value);
                         if (lastPrice) price = String(lastPrice);
                       }
+                      
                       setItem({
                         ...item,
                         itemName: value,
                         itemNumber: selected ? (selected.itemCode || '') : '',
                         price,
                         discountPercent: selected && selected.discount ? String(selected.discount) : '0',
-                        taxPercent: selected && selected.isVatIncluded ? taxRate : '0',
+                        taxPercent: taxRate, // استخدام نسبة الضريبة من إعدادات الشركة دائماً
                         quantity: '1'
                       });
+                      
+                      // جلب رصيد الصنف في حالة المخازن المتعددة والمخزن محدد
+                      if (warehouseMode === 'multiple' && item.warehouseId && value) {
+                        await fetchSingleItemStock(value, item.warehouseId);
+                      }
+                      
+                      // إظهار رسالة معلوماتية عن الرصيد المتاح
+                      const currentWarehouse = warehouseMode === 'single' ? invoiceData.warehouse : item.warehouseId;
+                      if (currentWarehouse) {
+                        let currentStock;
+                        if (warehouseMode === 'single') {
+                          currentStock = itemStocks[value];
+                        } else {
+                          // جلب الرصيد فورياً في حالة المخازن المتعددة
+                          currentStock = await checkStockAvailability(value, currentWarehouse);
+                          // تحديث الحالة
+                          setItemStocks(prev => ({
+                            ...prev,
+                            [`${value}-${currentWarehouse}`]: currentStock
+                          }));
+                        }
+                        
+                        if (currentStock !== undefined) {
+                          if (currentStock > 0) {
+                            message.info(`الرصيد المتاح: ${currentStock}`, 2);
+                          } else if (currentStock === 0) {
+                            message.warning(`تحذير: الصنف غير متوفر في المخزون`, 3);
+                          } else {
+                            message.warning(`تحذير: الرصيد سالب: ${Math.abs(currentStock)}`, 3);
+                          }
+                        }
+                      }
                     }}
                     filterOption={(input, option) =>
                       String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
                     }
                     allowClear
                   >
-                    {itemNames.map(i => (
-                      <Select.Option key={i.name} value={i.name}>{i.name}</Select.Option>
-                    ))}
+                    {itemNames.map((i, index) => {
+                      const currentWarehouse = warehouseMode === 'single' ? invoiceData.warehouse : item.warehouseId;
+                      const stockKey = warehouseMode === 'single' ? i.name : `${i.name}-${currentWarehouse}`;
+                      const stock = currentWarehouse ? itemStocks[stockKey] : undefined;
+                      
+                      return (
+                        <Select.Option 
+                          key={i.id || `${i.name}-${index}`} 
+                          value={i.name}
+                          disabled={!!i.tempCodes}
+                          style={{
+                            color: i.tempCodes ? '#ff4d4f' : 'inherit',
+                            backgroundColor: i.tempCodes ? '#fff2f0' : 'inherit'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>{i.name} {i.tempCodes ? '⛔ (إيقاف مؤقت)' : ''}</span>
+                            {currentWarehouse && (
+                              <span 
+                                style={{ 
+                                  color: stock !== undefined ? 
+                                    (stock > 0 ? '#52c41a' : stock === 0 ? '#faad14' : '#ff4d4f') : 
+                                    '#1890ff',
+                                  fontSize: '12px',
+                                  fontWeight: 'bold',
+                                  marginRight: '8px'
+                                }}
+                              >
+                                {stock !== undefined ? 
+                                  (stock > 0 ? `متوفر: ${stock}` : stock === 0 ? 'غير متوفر' : `سالب: ${Math.abs(stock)}`) :
+                                  (loadingStocks ? 'جاري التحميل...' : 'اختر المخزن')
+                                }
+                              </span>
+                            )}
+                          </div>
+                        </Select.Option>
+                      );
+                    })}
                   </Select>
                   <Button
                     type="default"
@@ -2571,7 +2906,7 @@ const handlePrint = () => {
                       <path d="M9 12h6m-3-3v6" stroke="#2563eb" strokeWidth="2" strokeLinecap="round"/>
                     </svg>
                   </Button>
-                </Input.Group>
+                </Space.Compact>
                 {/* مودال إضافة صنف جديد */}
 <Modal
   open={showAddItemModal}
@@ -2586,7 +2921,14 @@ const handlePrint = () => {
     </div>
   }
   width={750}
-  bodyStyle={{ background: 'linear-gradient(135deg, #f8fafc 80%, #e0e7ef 100%)', borderRadius: 16, padding: 28, boxShadow: '0 8px 32px #b6c2d655' }}
+  styles={{ 
+    body: { 
+      background: 'linear-gradient(135deg, #f8fafc 80%, #e0e7ef 100%)', 
+      borderRadius: 16, 
+      padding: 28, 
+      boxShadow: '0 8px 32px #b6c2d655' 
+    } 
+  }}
   style={{ top: 60 }}
   destroyOnClose
 >
@@ -2623,7 +2965,7 @@ const handlePrint = () => {
       </Form.Item>
     </Col>
     <Col span={8}>
-      {itemNames && itemNames.filter(i => i.type === 'مستوى أول').length > 0 && (
+      {allItems && allItems.filter(i => i.type === 'مستوى أول').length > 0 && (
         <Form.Item label="المستوى الأول" required>
           <Select
             value={addItemForm.parentId || ''}
@@ -2631,7 +2973,7 @@ const handlePrint = () => {
             placeholder="اختر المستوى الأول"
             style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
           >
-            {itemNames.filter(i => i.type === 'مستوى أول').map(i => (
+            {allItems.filter(i => i.type === 'مستوى أول').map(i => (
               <Select.Option key={i.id || i.name} value={i.id}>{i.name}</Select.Option>
             ))}
           </Select>
@@ -2801,7 +3143,13 @@ const handlePrint = () => {
                   value={item.warehouseId}
                   placeholder="اختر المخزن"
                   style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
-                  onChange={(value) => setItem({ ...item, warehouseId: value })}
+                  onChange={async (value) => {
+                    setItem({ ...item, warehouseId: value });
+                    // في حالة المخازن المتعددة، جلب رصيد الصنف الحالي في المخزن الجديد
+                    if (item.itemName && value) {
+                      await fetchSingleItemStock(item.itemName, value);
+                    }
+                  }}
                   options={warehouses.map(warehouse => ({
                     label: warehouse.name || warehouse.id,
                     value: warehouse.id
@@ -2819,10 +3167,30 @@ const handlePrint = () => {
                 name="quantity"
                 value={item.quantity}
                 onChange={handleItemChange}
-                placeholder="الكمية"
+                placeholder={(() => {
+                  if (!item.itemName) return "الكمية";
+                  const currentWarehouse = warehouseMode === 'single' ? invoiceData.warehouse : item.warehouseId;
+                  if (!currentWarehouse) return "اختر المخزن";
+                  const stockKey = warehouseMode === 'single' ? item.itemName : `${item.itemName}-${currentWarehouse}`;
+                  const stock = itemStocks[stockKey];
+                  return stock !== undefined ? `متاح: ${stock}` : "جاري تحميل الرصيد...";
+                })()}
                 type="number"
                 min={1}
-                style={{  paddingLeft: 6, paddingRight: 6, fontSize: 15 }}
+                style={{  
+                  paddingLeft: 6, 
+                  paddingRight: 6, 
+                  fontSize: 15,
+                  borderColor: (() => {
+                    if (!item.itemName) return undefined;
+                    const currentWarehouse = warehouseMode === 'single' ? invoiceData.warehouse : item.warehouseId;
+                    if (!currentWarehouse) return undefined;
+                    const stockKey = warehouseMode === 'single' ? item.itemName : `${item.itemName}-${currentWarehouse}`;
+                    const stock = itemStocks[stockKey];
+                    if (stock !== undefined && stock <= 0) return '#ff4d4f';
+                    return undefined;
+                  })()
+                }}
               />
             </Col>
             <Col xs={24} sm={12} md={3}>
@@ -2868,12 +3236,13 @@ const handlePrint = () => {
             <div style={{ marginBottom: 4, fontWeight: 500 }}>% الضريبة</div>
             <Input 
               name="taxPercent"
-              value={item.taxPercent} 
-              onChange={handleItemChange} 
+              value={taxRate} 
               placeholder="% الضريبة" 
-              style={{ fontFamily: 'Cairo',  paddingLeft: 4, paddingRight: 4, fontSize: 15 }}
+              style={{ fontFamily: 'Cairo',  paddingLeft: 4, paddingRight: 4, fontSize: 15, backgroundColor: '#f5f5f5' }}
               type="number" 
               min={0}
+              disabled
+              readOnly
             />
           </Col>
           <Col xs={24} sm={12} md={1}>
@@ -2900,7 +3269,7 @@ const handlePrint = () => {
           <div className="mb-4">
             <style>{`
               .custom-items-table .ant-table-thead > tr > th {
-                background: #2563eb !important;
+                background: #2463eb8c !important;
                 color: #fff !important;
                 font-weight: bold;
               }
@@ -3082,6 +3451,7 @@ const handlePrint = () => {
                       type="number"
                       min={0}
                       step={0.01}
+                      disabled={!invoiceData.multiplePayment.cash?.cashBoxId}
                       style={{ flex: 1 }}
                     />
                   </div>
@@ -3158,6 +3528,7 @@ const handlePrint = () => {
                       type="number"
                       min={0}
                       step={0.01}
+                      disabled={!invoiceData.multiplePayment.bank?.bankId}
                       style={{ flex: 1 }}
                     />
                   </div>
@@ -3240,6 +3611,7 @@ const handlePrint = () => {
                     type="number"
                     min={0}
                     step={0.01}
+                    disabled={!invoiceData.multiplePayment.card?.bankId}
                     style={{ flex: 1 }}
                   />
                 </div>
@@ -3332,6 +3704,24 @@ const handlePrint = () => {
                     }
                     return;
                   }
+                  
+                  // التحقق من أن المتبقي يساوي 0.00 في حالة الدفع المتعدد
+                  if (multiplePaymentMode) {
+                    const totalPayments = parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                                         parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                                         parseFloat(invoiceData.multiplePayment.card?.amount || '0');
+                    const remaining = totals.afterTax - totalPayments;
+                    
+                    if (Math.abs(remaining) > 0.01) {
+                      if (typeof message !== 'undefined' && message.error) {
+                        message.error(`لا يمكن حفظ الفاتورة. المتبقي يجب أن يكون 0.00 (المتبقي الحالي: ${remaining.toFixed(2)})`);
+                      } else {
+                        alert(`لا يمكن حفظ الفاتورة. المتبقي يجب أن يكون 0.00 (المتبقي الحالي: ${remaining.toFixed(2)})`);
+                      }
+                      return;
+                    }
+                  }
+                  
                   await handleSave();
                   // تحديث الأصناف بعد الحفظ مباشرة
                   if (typeof fetchLists === 'function') {

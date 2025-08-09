@@ -241,34 +241,65 @@ export const getSidebarMenus = (section: SectionType): MenuItem[] => {
       return [
         ...commonItems,
         { 
-          label: "إدارة المبيعات", 
-          icon: React.createElement(FaShoppingCart, { className: "text-blue-500" }), 
+          label: "الإعدادات", 
+          icon: React.createElement(FaCog, { className: "text-blue-500" }), 
           hasSubmenu: true,
           submenu: [
-            { label: "فواتير المبيعات", icon: React.createElement(FaFileInvoiceDollar), path: "/sales/invoices" },
-            { label: "عروض الأسعار", icon: React.createElement(FaFileAlt), path: "/sales/quotations" },
-            { label: "أوامر البيع", icon: React.createElement(FaClipboardList), path: "/sales/orders" },
-            { label: "مرتجع المبيعات", icon: React.createElement(FaUndo), path: "/sales/returns" }
+            { label: "إدارة العملاء", icon: React.createElement(FaUsers), path: "/customers" },
+            { label: "فئات العملاء", icon: React.createElement(FaUserCheck), path: "/sales/customer-categories" },
+            { label: "إدارة المنتجات", icon: React.createElement(FaBoxes), path: "/sales/products" },
+            { label: "فئات المنتجات", icon: React.createElement(FaClipboardList), path: "/sales/product-categories" },
+            { label: "قوائم الأسعار", icon: React.createElement(FaMoneyBillWave), path: "/sales/price-lists" },
+            { label: "الخصومات والعروض", icon: React.createElement(FaFileAlt), path: "/sales/discounts" },
+            { label: "نقاط الولاء", icon: React.createElement(FaUserFriends), path: "/sales/loyalty-points" },
+            { label: "طرق الدفع", icon: React.createElement(FaMoneyCheckAlt), path: "/business/payment-methods" },
+            { label: "طرق الشحن", icon: React.createElement(FaShoppingCart), path: "/sales/shipping-methods" },
+            { label: "إعدادات عامة", icon: React.createElement(FaCog), path: "/sales/general-settings" }
+          ]
+        },
+        { 
+          label: "العمليات", 
+          icon: React.createElement(FaShoppingCart, { className: "text-green-500" }), 
+          hasSubmenu: true,
+          submenu: [
+            { label: "فاتورة مبيعات", icon: React.createElement(FaFileInvoiceDollar), path: "/stores/sales" },
+            { label: "مرتجع مبيعات", icon: React.createElement(FaUndo), path: "/stores/sales-return" },
+            { label: "سند قبض", icon: React.createElement(FaMoneyCheckAlt), path: "/sales/receipts" }
+          ]
+        },
+        { 
+          label: "التقارير", 
+          icon: React.createElement(FaChartBar, { className: "text-purple-500" }), 
+          hasSubmenu: true,
+          submenu: [
+            { label: "تقارير فواتير المبيعات", icon: React.createElement(FaFileInvoice), path: "/reports/invoice" },
+            { label: "تقارير المبيعات اليومية", icon: React.createElement(FaChartBar), path: "/reports/daily-sales" },
+            { label: "تقارير أرباح الفواتير", icon: React.createElement(FaMoneyBillWave), path: "/reports/invoice-profits" },
+            { label: "تقرير فواتير المبيعات التفصيلي", icon: React.createElement(FaFileAlt), path: "/reports/invoice-preferred" }
           ]
         },
         { 
           label: "إدارة العملاء", 
-          icon: React.createElement(FaUserFriends, { className: "text-green-500" }), 
+          icon: React.createElement(FaUserFriends, { className: "text-indigo-500" }), 
           hasSubmenu: true,
           submenu: [
-            { label: "بيانات العملاء", icon: React.createElement(FaUsers), path: "/sales/customers" },
-            { label: "كشف حساب عميل", icon: React.createElement(FaFileInvoice), path: "/sales/customer-statement" },
-            { label: "حدود الائتمان", icon: React.createElement(FaMoneyCheckAlt), path: "/sales/credit-limits" }
+            { label: "إضافة عميل جديد", icon: React.createElement(FaUsers), path: "/customers/add" },
+            { label: "تعديل بيانات العميل", icon: React.createElement(FaFileAlt), path: "/customers/directory" },
+            { label: "دليل العملاء", icon: React.createElement(FaUserFriends), path: "/customers/directory" },
+            { label: "تفعيل/إلغاء العميل", icon: React.createElement(FaUserCheck), path: "/customers/status" },
+            { label: "تصنيف العملاء", icon: React.createElement(FaUserCheck), path: "/customers/classification" },
+            { label: "متابعة العملاء", icon: React.createElement(FaClipboardList), path: "/customers/follow-up" }
           ]
         },
         { 
-          label: "تقارير المبيعات", 
-          icon: React.createElement(FaChartBar, { className: "text-purple-500" }), 
+          label: "فريق المبيعات", 
+          icon: React.createElement(FaUserTie, { className: "text-orange-500" }), 
           hasSubmenu: true,
           submenu: [
-            { label: "تقرير المبيعات اليومية", icon: React.createElement(FaChartBar), path: "/sales/daily-report" },
-            { label: "تقرير أرباح الفواتير", icon: React.createElement(FaMoneyBillWave), path: "/sales/profit-report" },
-            { label: "تقرير مبيعات العملاء", icon: React.createElement(FaUsers), path: "/sales/customer-sales" }
+            { label: "إدارة المندوبين", icon: React.createElement(FaUserTie), path: "/sales/representatives" },
+            { label: "أهداف المبيعات", icon: React.createElement(FaChartBar), path: "/sales/targets" },
+            { label: "عمولات المبيعات", icon: React.createElement(FaMoneyBillWave), path: "/sales/commissions" },
+            { label: "تقييم الأداء", icon: React.createElement(FaChartPie), path: "/sales/performance" }
           ]
         }
       ];
