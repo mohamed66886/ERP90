@@ -55,6 +55,8 @@ const EditSalesInvoicePage: React.FC = () => {
   const [branches, setBranches] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
+  const [invoiceNumberSimple, setInvoiceNumberSimple] = useState<string>('');
 
   // جلب البيانات من Firebase
   useEffect(() => {
@@ -150,6 +152,22 @@ const EditSalesInvoicePage: React.FC = () => {
       );
     }
 
+    // البحث بالفرع
+    if (selectedBranch) {
+      filtered = filtered.filter(invoice => invoice.branch === selectedBranch);
+    }
+
+    // البحث برقم الفاتورة المبسط
+    if (invoiceNumberSimple) {
+      filtered = filtered.filter(invoice => {
+        // استخراج الرقم الأخير من رقم الفاتورة
+        // مثال: INV-12-20250809-3 -> 3
+        const parts = invoice.invoiceNumber.split('-');
+        const lastPart = parts[parts.length - 1];
+        return lastPart === invoiceNumberSimple;
+      });
+    }
+
     // فلتر التاريخ
     if (dateRange) {
       filtered = filtered.filter(invoice => {
@@ -165,7 +183,7 @@ const EditSalesInvoicePage: React.FC = () => {
     }
 
     setFilteredInvoices(filtered);
-  }, [searchText, dateRange, selectedPaymentMethod, invoices]);
+  }, [searchText, dateRange, selectedPaymentMethod, invoices, selectedBranch, invoiceNumberSimple]);
 
   const getBranchName = (branchId: string) => {
     const branch = branches.find(b => b.id === branchId);
@@ -190,6 +208,8 @@ const EditSalesInvoicePage: React.FC = () => {
     setSearchText('');
     setDateRange(null);
     setSelectedPaymentMethod('');
+    setSelectedBranch('');
+    setInvoiceNumberSimple('');
   };
 
   const columns: ColumnsType<InvoiceRecord> = [
@@ -343,15 +363,44 @@ const EditSalesInvoicePage: React.FC = () => {
           <Col xs={24} sm={12} md={8} lg={6}>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#333' }}>
-                البحث:
+                البحث العام:
               </label>
               <Input
-                placeholder="البحث برقم الفاتورة أو اسم العميل..."
+                placeholder="البحث باسم العميل أو رقم الهاتف..."
                 prefix={<SearchOutlined />}
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
                 allowClear
               />
+            </div>
+          </Col>
+          <Col xs={24} sm={12} md={8} lg={6}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#333' }}>
+                الفرع:
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <Select
+                  style={{ flex: 1 }}
+                  placeholder="اختر الفرع"
+                  value={selectedBranch}
+                  onChange={setSelectedBranch}
+                  allowClear
+                >
+                  {branches.map(branch => (
+                    <Select.Option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </Select.Option>
+                  ))}
+                </Select>
+                <Input
+                  placeholder="رقم"
+                  value={invoiceNumberSimple}
+                  onChange={(e) => setInvoiceNumberSimple(e.target.value)}
+                  allowClear
+                  style={{ width: '70px', textAlign: 'center' }}
+                />
+              </div>
             </div>
           </Col>
           <Col xs={24} sm={12} md={8} lg={6}>
@@ -368,6 +417,8 @@ const EditSalesInvoicePage: React.FC = () => {
               />
             </div>
           </Col>
+        </Row>
+        <Row gutter={[16, 16]} align="middle" style={{ marginTop: '16px' }}>
           <Col xs={24} sm={12} md={8} lg={6}>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#333' }}>
