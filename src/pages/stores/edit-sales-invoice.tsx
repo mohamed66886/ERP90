@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useFinancialYear } from '@/hooks/useFinancialYear';
 import { useNavigate } from 'react-router-dom';
 import { 
   Table, 
@@ -85,6 +86,17 @@ const EditSalesInvoicePage: React.FC = () => {
   const [entryNumberSearch, setEntryNumberSearch] = useState<string>('');
   const [customerNameSearch, setCustomerNameSearch] = useState<string>('');
   const [customerPhoneSearch, setCustomerPhoneSearch] = useState<string>('');
+
+  // السنة المالية من hook السياق
+  const { currentFinancialYear } = useFinancialYear();
+  useEffect(() => {
+    if (currentFinancialYear) {
+      setDateRange([
+        dayjs(currentFinancialYear.startDate),
+        dayjs(currentFinancialYear.endDate)
+      ]);
+    }
+  }, [currentFinancialYear]);
 
   // جلب البيانات من Firebase
   useEffect(() => {
@@ -451,6 +463,10 @@ const EditSalesInvoicePage: React.FC = () => {
                   onChange={setSelectedBranch}
                   allowClear
                   suffixIcon={<ShopOutlined />}
+                  showSearch
+                  filterOption={(input, option) =>
+                    (option?.children ?? '').toString().toLowerCase().includes(input.toLowerCase())
+                  }
                 >
                   {branches.map(branch => (
                     <Select.Option key={branch.id} value={branch.id} style={{ minHeight: '40px' }}>
@@ -528,6 +544,10 @@ const EditSalesInvoicePage: React.FC = () => {
                 onChange={setSelectedWarehouse}
                 allowClear
                 suffixIcon={<HomeOutlined />}
+                showSearch
+                filterOption={(input, option) =>
+                  (option?.children ?? '').toString().toLowerCase().includes(input.toLowerCase())
+                }
               >
                 {warehouses.map(warehouse => (
                   <Select.Option key={warehouse.id} value={warehouse.id} style={{ minHeight: '40px' }}>
@@ -549,6 +569,7 @@ const EditSalesInvoicePage: React.FC = () => {
                 onChange={setDateRange}
                 format="YYYY/MM/DD"
                 suffixIcon={<CalendarOutlined />}
+                allowClear
               />
             </div>
           </Col>
@@ -564,6 +585,10 @@ const EditSalesInvoicePage: React.FC = () => {
                 onChange={setSelectedPaymentMethod}
                 allowClear
                 suffixIcon={<CreditCardOutlined />}
+                showSearch
+                filterOption={(input, option) =>
+                  (option?.children ?? '').toString().toLowerCase().includes(input.toLowerCase())
+                }
               >
                 {paymentMethods.map(method => (
                   <Select.Option key={method} value={method} style={{ minHeight: '40px' }}>
