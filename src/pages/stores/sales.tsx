@@ -13,6 +13,8 @@ import { db } from '@/lib/firebase';
 import { FileText } from 'lucide-react';
 import { fetchCashBoxes } from '../../services/cashBoxesService';
 import { fetchBankAccounts } from '../../services/bankAccountsService';
+import { useFinancialYear } from '@/hooks/useFinancialYear';
+import { FinancialYear } from '@/services/financialYearsService';
 
 // تعريف نوع العنصر
 interface InventoryItem {
@@ -244,6 +246,31 @@ async function generateInvoiceNumberAsync(branchId: string, branches: Branch[] =
 
 function getTodayString(): string {
   return dayjs().format('YYYY-MM-DD');
+}
+
+// دالة للحصول على تاريخ صالح ضمن السنة المالية
+function getValidDateForFinancialYear(financialYear: FinancialYear | null): string {
+  const today = dayjs();
+  
+  if (!financialYear) {
+    return today.format('YYYY-MM-DD');
+  }
+  
+  const startDate = dayjs(financialYear.startDate);
+  const endDate = dayjs(financialYear.endDate);
+  
+  // إذا كان اليوم ضمن السنة المالية، استخدمه
+  if (today.isSameOrAfter(startDate, 'day') && today.isSameOrBefore(endDate, 'day')) {
+    return today.format('YYYY-MM-DD');
+  }
+  
+  // إذا كان اليوم قبل بداية السنة المالية، استخدم تاريخ البداية
+  if (today.isBefore(startDate, 'day')) {
+    return startDate.format('YYYY-MM-DD');
+  }
+  
+  // إذا كان اليوم بعد نهاية السنة المالية، استخدم تاريخ النهاية
+  return endDate.format('YYYY-MM-DD');
 }
 
 // دالة حساب تاريخ الاستحقاق (بعد 12 يوم من تاريخ الفاتورة)
@@ -590,7 +617,7 @@ interface CompanyData {
         'المخزن': warehouseName,
         'العميل': inv.customer,
         'تليفون العميل': inv.customerPhone,
-        'البائع': inv.seller,
+        'البائع': getDelegateName(inv.seller),
         'طريقة الدفع': inv.paymentMethod,
         'نوع الفاتورة': inv.invoiceType
       };
@@ -757,11 +784,11 @@ interface CompanyData {
     warehouse: '',
     customerNumber: '',
     customerName: '',
-    delegate: user?.displayName || user?.name || user?.email || '',
+    delegate: '', // سيتم تعيين المندوب المناسب في useEffect
     priceRule: '',
     commercialRecord: '',
     taxFile: '',
-    dueDate: calculateDueDate(getTodayString()) // إضافة تاريخ الاستحقاق
+    dueDate: '' // سيتم حسابه لاحقاً
   });
 
   // توليد رقم فاتورة جديد عند كل إعادة تعيين أو تغيير الفرع
@@ -783,6 +810,17 @@ interface CompanyData {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchCode]);
+  
+  // استخدام hook السنة المالية
+  const { 
+    currentFinancialYear, 
+    validateDate, 
+    getDateValidationMessage, 
+    getMinDate, 
+    getMaxDate,
+    isWithinFinancialYear 
+  } = useFinancialYear();
+  
   const [delegates, setDelegates] = useState<Delegate[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -852,6 +890,9 @@ interface SavedInvoice {
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [lastSavedInvoice, setLastSavedInvoice] = useState<SavedInvoice | null>(null);
 
+  // حالة تتبع الصنف المحدد للتعديل
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
+
   // دالة للتحقق من حالة الإيقاف المؤقت للصنف
   const checkItemTempStatus = (itemName: string): boolean => {
     const item = itemNames.find(i => i.name === itemName);
@@ -860,6 +901,62 @@ interface SavedInvoice {
 
   const [itemStocks, setItemStocks] = useState<{[key: string]: number}>({});
   const [loadingStocks, setLoadingStocks] = useState(false);
+
+  // دالة للتحقق من صحة التاريخ وإظهار التحذير
+  const handleDateValidation = useCallback((date: string | dayjs.Dayjs, fieldName: string) => {
+    if (!date) return true;
+    
+    const isValid = validateDate(date);
+    if (!isValid && currentFinancialYear) {
+      const errorMessage = getDateValidationMessage(date);
+      customMessage.warning(
+        `${fieldName}: ${errorMessage}. السنة المالية المحددة من ${currentFinancialYear.startDate} إلى ${currentFinancialYear.endDate}`
+      );
+      return false;
+    }
+    return true;
+  }, [validateDate, getDateValidationMessage, currentFinancialYear, customMessage]);
+
+  // دالة لحساب تاريخ الاستحقاق مع التحقق من السنة المالية
+  const calculateDueDate = useCallback((invoiceDate: string): string => {
+    if (!invoiceDate) return '';
+    
+    // حساب تاريخ الاستحقاق بعد 30 يوم من تاريخ الفاتورة
+    const dueDate = dayjs(invoiceDate).add(30, 'day');
+    
+    // التحقق من أن تاريخ الاستحقاق ضمن السنة المالية
+    if (currentFinancialYear) {
+      const maxDate = dayjs(currentFinancialYear.endDate);
+      if (dueDate.isAfter(maxDate)) {
+        // إذا كان تاريخ الاستحقاق المحسوب خارج السنة المالية، استخدم آخر يوم في السنة المالية
+        return maxDate.format('YYYY-MM-DD');
+      }
+    }
+    
+    return dueDate.format('YYYY-MM-DD');
+  }, [currentFinancialYear]);
+
+  // دالة لفلترة التواريخ المسموحة في DatePicker
+  const disabledDate = useCallback((current: dayjs.Dayjs) => {
+    if (!currentFinancialYear) return false;
+    
+    const startDate = dayjs(currentFinancialYear.startDate);
+    const endDate = dayjs(currentFinancialYear.endDate);
+    
+    return current.isBefore(startDate, 'day') || current.isAfter(endDate, 'day');
+  }, [currentFinancialYear]);
+
+  // تحديث التاريخ الافتراضي عند تغيير السنة المالية
+  useEffect(() => {
+    if (currentFinancialYear) {
+      const validDate = getValidDateForFinancialYear(currentFinancialYear);
+      setInvoiceData(prev => ({
+        ...prev,
+        date: validDate,
+        dueDate: calculateDueDate(validDate)
+      }));
+    }
+  }, [currentFinancialYear, calculateDueDate]);
 
   // دالة لجلب رصيد صنف واحد في مخزن محدد (للاستخدام في حالة المخازن المتعددة)
   const fetchSingleItemStock = async (itemName: string, warehouseId: string): Promise<number> => {
@@ -1196,7 +1293,21 @@ interface SavedInvoice {
       cost
     };
 
-    const newItems = [...items, newItem];
+    let newItems: InvoiceItem[];
+    
+    // التحقق من أننا في وضع التعديل أم الإضافة
+    if (editingItemIndex !== null) {
+      // في وضع التعديل - نحديث الصنف الموجود
+      newItems = [...items];
+      newItems[editingItemIndex] = newItem;
+      setEditingItemIndex(null); // إعادة تعيين حالة التعديل
+      customMessage.success('تم تحديث الصنف بنجاح');
+    } else {
+      // في وضع الإضافة - نضيف صنف جديد
+      newItems = [...items, newItem];
+      customMessage.success('تم إضافة الصنف بنجاح');
+    }
+    
     setItems(newItems);
     setItem(initialItem);
     updateTotals(newItems);
@@ -1227,6 +1338,17 @@ interface SavedInvoice {
   const handleSave = async () => {
     if (items.length === 0) {
       customMessage.error('لا يمكن حفظ فاتورة بدون أصناف');
+      return;
+    }
+    
+    // التحقق من صحة التواريخ
+    if (invoiceData.date && !validateDate(invoiceData.date)) {
+      customMessage.error(`تاريخ الفاتورة خارج نطاق السنة المالية. ${getDateValidationMessage(invoiceData.date)}`);
+      return;
+    }
+    
+    if (invoiceData.dueDate && !validateDate(invoiceData.dueDate)) {
+      customMessage.error(`تاريخ الاستحقاق خارج نطاق السنة المالية. ${getDateValidationMessage(invoiceData.dueDate)}`);
       return;
     }
     
@@ -1499,10 +1621,8 @@ interface SavedInvoice {
       ...record,
       taxPercent: taxRate // استخدام نسبة الضريبة من إعدادات الشركة
     });
-    // حذف الصنف من الجدول عند التعديل
-    const newItems = items.filter((_, i) => i !== index);
-    setItems(newItems);
-    updateTotals(newItems);
+    // تحديد الصنف المحدد للتعديل بدلاً من حذفه
+    setEditingItemIndex(index);
   };
 
   const handleEditInvoice = (record: InvoiceRecord & { firstLevelCategory?: string }) => {
@@ -1731,7 +1851,8 @@ interface SavedInvoice {
       title: 'البائع',
       dataIndex: 'seller',
       key: 'seller',
-      width: 150
+      width: 150,
+      render: (seller: string) => getDelegateName(seller)
     },
     {
       title: 'طريقة الدفع',
@@ -1794,12 +1915,19 @@ interface SavedInvoice {
       const warehousesSnap = await getDocs(collection(db, 'warehouses'));
       setWarehouses(warehousesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       // جلب البائعين النشطين فقط
+      console.log('جاري تحميل المندوبين من قاعدة البيانات...');
       const delegatesQuery = query(
-        collection(db, 'sales_representatives'),
+        collection(db, 'salesRepresentatives'),
         where('status', '==', 'active')
       );
       const delegatesSnap = await getDocs(delegatesQuery);
-      setDelegates(delegatesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const delegatesData = delegatesSnap.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data() 
+      }));
+      console.log('تم تحميل المندوبين بنجاح:', delegatesData.length, 'مندوب');
+      console.log('قائمة المندوبين:', delegatesData.map(d => ({ id: d.id, name: d.name, email: d.email, uid: d.uid })));
+      setDelegates(delegatesData);
       // قوائم ثابتة
       setUnits(['قطعة', 'كرتونة', 'كيلو', 'جرام', 'لتر', 'متر', 'علبة']);
       setPriceRules(['السعر العادي', 'سعر الجملة', 'سعر التخفيض']);
@@ -1839,16 +1967,40 @@ interface SavedInvoice {
 
   // تحديد المندوب الافتراضي بناءً على المستخدم الحالي
   useEffect(() => {
+    console.log('useEffect للمندوب الافتراضي - المندوبين:', delegates.length, 'المستخدم UID:', user?.uid, 'المندوب الحالي:', invoiceData.delegate);
     if (delegates.length > 0 && user?.uid && !invoiceData.delegate) {
+      // البحث عن المندوب المطابق للمستخدم الحالي
       const currentUserDelegate = delegates.find(delegate => delegate.uid === user.uid);
       if (currentUserDelegate) {
+        console.log('تم العثور على المندوب المطابق للمستخدم:', currentUserDelegate.name);
         setInvoiceData(prev => ({
           ...prev,
           delegate: currentUserDelegate.id
         }));
+      } else {
+        // في حالة عدم العثور على مندوب مطابق، اختر أول مندوب نشط
+        const firstActiveDelegate = delegates.find(delegate => delegate.status === 'active');
+        if (firstActiveDelegate) {
+          console.log('تم اختيار أول مندوب نشط:', firstActiveDelegate.name);
+          setInvoiceData(prev => ({
+            ...prev,
+            delegate: firstActiveDelegate.id
+          }));
+        } else {
+          console.log('لم يتم العثور على أي مندوب نشط');
+        }
       }
     }
   }, [delegates, user?.uid, invoiceData.delegate]);
+
+  // دالة للحصول على اسم المندوب من ID
+  const getDelegateName = (delegateId: string) => {
+    if (!delegateId) return '';
+    const delegate = delegates.find(d => d.id === delegateId);
+    const name = delegate?.name || delegate?.email || delegateId;
+    console.log('البحث عن مندوب بـ ID:', delegateId, 'النتيجة:', name);
+    return name;
+  };
 
   // حساب الإجماليات باستخدام useMemo لتحسين الأداء
   const totalsDisplay = useMemo(() => ({
@@ -2128,6 +2280,9 @@ const handlePrint = () => {
             </div>
             <div class="header-section center">
               <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
+              <div style="text-align: center;  font-size: 12px; margin-top: 8px; padding: 4px 8px; border-radius: 4px;">
+                ${invoiceType || 'فاتورة مبيعات'}
+              </div>
             </div>
             <div class="header-section company-info-en">
               <div>${companyData.englishName || ''}</div>
@@ -2305,6 +2460,84 @@ const handlePrint = () => {
                   </tr>
                 </tbody>
               </table>
+              <!-- Payment Method Table -->
+              <table style="border:1.5px solid #000; border-radius:6px; font-size:13px; min-width:220px; max-width:320px; margin-left:0; margin-right:0; margin-top:10px; border-collapse:collapse; box-shadow:none; width:100%;">
+                <thead>
+                  <tr>
+                    <td colspan="2" style="font-weight:bold; color:#fff; text-align:center; padding:7px 12px; border:1px solid #000; background:#305496;">تفاصيل طريقة الدفع</td>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(() => {
+                    if (invoice.paymentMethod === 'متعدد' && invoice.multiplePayment) {
+                      let paymentRows = '';
+                      const multiplePayment = invoice.multiplePayment;
+                      
+                      // النقدي
+                      if (multiplePayment.cash && parseFloat(multiplePayment.cash.amount || '0') > 0) {
+                        const cashBoxId = multiplePayment.cash.cashBoxId || '';
+                        // البحث عن اسم الصندوق من قائمة الصناديق
+                        const cashBoxObj = Array.isArray(cashBoxes) ? cashBoxes.find(cb => cb.id === cashBoxId) : null;
+                        const cashBoxName = cashBoxObj ? cashBoxObj.nameAr : cashBoxId;
+                        paymentRows += `
+                          <tr>
+                            <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">نقدي${cashBoxName ? ' - ' + cashBoxName : ''}</td>
+                            <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${parseFloat(multiplePayment.cash.amount || '0').toFixed(2)}</td>
+                          </tr>`;
+                      }
+                      
+                      // البنك
+                      if (multiplePayment.bank && parseFloat(multiplePayment.bank.amount || '0') > 0) {
+                        const bankId = multiplePayment.bank.bankId || '';
+                        // البحث عن اسم البنك من قائمة البنوك
+                        const bankObj = Array.isArray(banks) ? banks.find(b => b.id === bankId) : null;
+                        const bankName = bankObj ? bankObj.arabicName : bankId;
+                        paymentRows += `
+                          <tr>
+                            <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">تحويل بنكي${bankName ? ' - ' + bankName : ''}</td>
+                            <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${parseFloat(multiplePayment.bank.amount || '0').toFixed(2)}</td>
+                          </tr>`;
+                      }
+                      
+                      // الشبكة
+                      if (multiplePayment.card && parseFloat(multiplePayment.card.amount || '0') > 0) {
+                        const cardBankId = multiplePayment.card.bankId || '';
+                        // البحث عن اسم البنك من قائمة البنوك
+                        const cardBankObj = Array.isArray(banks) ? banks.find(b => b.id === cardBankId) : null;
+                        const cardBankName = cardBankObj ? cardBankObj.arabicName : cardBankId;
+                        paymentRows += `
+                          <tr>
+                            <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">شبكة${cardBankName ? ' - ' + cardBankName : ''}</td>
+                            <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${parseFloat(multiplePayment.card.amount || '0').toFixed(2)}</td>
+                          </tr>`;
+                      }
+                      
+                      return paymentRows || `
+                        <tr>
+                          <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">لا توجد بيانات</td>
+                          <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">0.00</td>
+                        </tr>`;
+                    } else {
+                      // طريقة دفع واحدة
+                      let paymentLabel = invoice.paymentMethod || 'غير محدد';
+                      
+                      // إضافة اسم الصندوق النقدي إذا كانت طريقة الدفع نقدي
+                      if (invoice.paymentMethod === 'نقدي' && invoice.cashBox) {
+                        // البحث عن اسم الصندوق من قائمة الصناديق
+                        const cashBoxObj = Array.isArray(cashBoxes) ? cashBoxes.find(cb => cb.id === invoice.cashBox || cb.nameAr === invoice.cashBox) : null;
+                        const cashBoxName = cashBoxObj ? cashBoxObj.nameAr : invoice.cashBox;
+                        paymentLabel = `نقدي - ${cashBoxName}`;
+                      }
+                      
+                      return `
+                        <tr>
+                          <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">${paymentLabel}</td>
+                          <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.afterTax?.toFixed(2) || '0.00'}</td>
+                        </tr>`;
+                    }
+                  })()}
+                </tbody>
+              </table>
             </div>
            
           </div>
@@ -2315,7 +2548,7 @@ const handlePrint = () => {
               <div>التوقيع: ___________________</div>
             </div>
             <div class="signature-box" style="position:relative;">
-              <div>البائع: ${invoice.delegate || ''}</div>
+              <div>البائع: ${getDelegateName(invoice.delegate || '')}</div>
               <div>التاريخ: ${invoice.date || ''}</div>
               <!-- Decorative Stamp -->
               <div style="
@@ -2437,6 +2670,8 @@ const handlePrint = () => {
       taxPercent: taxRate,
       quantity: '1'
     });
+    // إعادة تعيين حالة التعديل
+    setEditingItemIndex(null);
     setTimeout(() => {
       itemNameSelectRef.current?.focus?.();
     }, 100); // تأخير بسيط لضمان إعادة التهيئة
@@ -2709,6 +2944,60 @@ const handlePrint = () => {
           <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 16 }}>
             المعلومات الأساسية
           </Divider>
+          
+          {/* رسالة معلوماتية عن السنة المالية */}
+          {currentFinancialYear && (
+            <div style={{ marginBottom: 16 }}>
+              <Card 
+                size="small" 
+                style={{ 
+                  // background: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
+                  // border: '1px solid #2196f3',
+                  // borderRadius: 8
+                }}
+              >
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 12,
+                  padding: '4px 0'
+                }}>
+                  <div style={{
+                    backgroundColor: '#2196f3',
+                    borderRadius: '50%',
+                    padding: 6,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+                      <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/>
+                    </svg>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ 
+                      fontWeight: 600, 
+                      color: '#1565c0',
+                      fontSize: '13px',
+                      fontFamily: 'Cairo, sans-serif'
+                    }}>
+                      السنة المالية النشطة: {currentFinancialYear.year}
+                    </div>
+                    <div style={{ 
+                      fontSize: '12px', 
+                      color: '#1976d2',
+                      fontFamily: 'Cairo, sans-serif',
+                      lineHeight: 1.3,
+                      marginTop: 2
+                    }}>
+                      يمكن إدخال التواريخ فقط من {currentFinancialYear.startDate} إلى {currentFinancialYear.endDate}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+          
           <Row gutter={16} className="mb-4">
             <Col xs={24} sm={12} md={6}>
               <Form.Item label="رقم الفاتورة">
@@ -2734,8 +3023,14 @@ const handlePrint = () => {
                 <DatePicker
                   style={{ width: '100%' }}
                   value={invoiceData.date ? dayjs(invoiceData.date) : null}
-                  onChange={(_, dateString) => {
+                  onChange={(date, dateString) => {
                     const newDate = Array.isArray(dateString) ? dateString[0] : dateString as string;
+                    
+                    // التحقق من صحة التاريخ
+                    if (newDate && !handleDateValidation(newDate, 'تاريخ الفاتورة')) {
+                      return; // لا تحديث التاريخ إذا كان خارج النطاق
+                    }
+                    
                     setInvoiceData({
                       ...invoiceData, 
                       date: newDate,
@@ -2744,22 +3039,72 @@ const handlePrint = () => {
                   }}
                   format="YYYY-MM-DD"
                   placeholder="التاريخ"
+                  disabledDate={disabledDate}
+                  status={invoiceData.date && !validateDate(invoiceData.date) ? 'error' : undefined}
                 />
+                {invoiceData.date && !validateDate(invoiceData.date) && (
+                  <div style={{ color: '#ff4d4f', fontSize: '12px', marginTop: '4px' }}>
+                    {getDateValidationMessage(invoiceData.date)}
+                  </div>
+                )}
               </Form.Item>
             </Col>
 
+            <Col xs={24} sm={12} md={6}>
+              <Form.Item label="تاريخ الاستحقاق">
+                <DatePicker
+                  style={{ width: '100%' }}
+                  value={invoiceData.dueDate ? dayjs(invoiceData.dueDate) : null}
+                  onChange={(date, dateString) => {
+                    const newDueDate = Array.isArray(dateString) ? dateString[0] : dateString as string;
+                    
+                    // التحقق من صحة التاريخ
+                    if (newDueDate && !handleDateValidation(newDueDate, 'تاريخ الاستحقاق')) {
+                      return; // لا تحديث التاريخ إذا كان خارج النطاق
+                    }
+                    
+                    setInvoiceData({
+                      ...invoiceData, 
+                      dueDate: newDueDate
+                    });
+                  }}
+                  format="YYYY-MM-DD"
+                  placeholder="تاريخ الاستحقاق"
+                  disabledDate={disabledDate}
+                  status={invoiceData.dueDate && !validateDate(invoiceData.dueDate) ? 'error' : undefined}
+                />
+                {invoiceData.dueDate && !validateDate(invoiceData.dueDate) && (
+                  <div style={{ color: '#ff4d4f', fontSize: '12px', marginTop: '4px' }}>
+                    {getDateValidationMessage(invoiceData.dueDate)}
+                  </div>
+                )}
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16} className="mb-4">
             <Col xs={24} sm={12} md={6}>
               <Form.Item label="البائع">
                 <Select
                   showSearch
                   value={invoiceData.delegate}
-                  onChange={value => setInvoiceData({ ...invoiceData, delegate: value })}
+                  onChange={value => {
+                    console.log('تم اختيار مندوب جديد:', value);
+                    setInvoiceData({ ...invoiceData, delegate: value });
+                  }}
                   placeholder="اختر البائع"
                   style={{ fontFamily: 'Cairo, sans-serif' }}
                   filterOption={(input, option) =>
                     String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                   }
-                  options={delegates?.map(d => ({ label: d.name || d.id, value: d.name || d.id })) || []}
+                  options={(() => {
+                    const options = delegates?.map(d => ({ 
+                      label: d.name || d.email || d.id, 
+                      value: d.id 
+                    })) || [];
+                    console.log('خيارات dropdown البائع:', options);
+                    return options;
+                  })()}
                   allowClear
                 />
               </Form.Item>
@@ -3058,7 +3403,30 @@ const handlePrint = () => {
             </Card>
           </div>
 
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif' }}>إضافة أصناف المبيعات</Divider>
+          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>إضافة أصناف المبيعات</span>
+              {editingItemIndex !== null && (
+                <span style={{
+                  background: 'linear-gradient(135deg, #ffc107 0%, #ffca2c 100%)',
+                  color: '#000',
+                  padding: '4px 8px',
+                  borderRadius: '12px',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  boxShadow: '0 2px 4px rgba(255, 193, 7, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                  </svg>
+                  جاري تعديل الصنف رقم {editingItemIndex + 1}
+                </span>
+              )}
+            </div>
+          </Divider>
 
 
 
@@ -3073,7 +3441,7 @@ const handlePrint = () => {
                 disabled
               />
             </Col>
-            <Col xs={24} sm={12} md={8}>
+            <Col xs={24} sm={12} md={6}>
 
               <div style={{ width: '100%' }}>
                 <div style={{ marginBottom: 0, fontWeight: 500 }}>اسم الصنف</div>
@@ -3580,22 +3948,65 @@ const handlePrint = () => {
             />
           </Col>
           <Col xs={24} sm={12} md={1}>
-            <div style={{ marginBottom: 4, fontWeight: 500, visibility: 'hidden' }}>إضافة</div>
-            <Button 
-              type="primary"
-              onClick={handleAddItem}
-              disabled={
-                !invoiceData.branch ||
-                (warehouseMode !== 'multiple' && !invoiceData.warehouse) ||
-                !invoiceData.customerName
-              }
-              icon={
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8m4-4H8" />
-                </svg>
-              }
-            />
+            <div style={{ marginBottom: 4, fontWeight: 500, visibility: 'hidden' }}>
+              {editingItemIndex !== null ? 'تحديث' : 'إضافة'}
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <Button 
+                type="primary"
+                onClick={handleAddItem}
+                disabled={
+                  !invoiceData.branch ||
+                  (warehouseMode !== 'multiple' && !invoiceData.warehouse) ||
+                  !invoiceData.customerName
+                }
+                style={{
+                  backgroundColor: editingItemIndex !== null ? '#52c41a' : '#1890ff',
+                  borderColor: editingItemIndex !== null ? '#52c41a' : '#1890ff',
+                  minWidth: editingItemIndex !== null ? 'auto' : '40px'
+                }}
+                title={editingItemIndex !== null ? 'تحديث الصنف المحدد' : 'إضافة صنف جديد'}
+                icon={
+                  editingItemIndex !== null ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8m4-4H8" />
+                    </svg>
+                  )
+                }
+              >
+                {editingItemIndex !== null ? 'تحديث' : ''}
+              </Button>
+              {editingItemIndex !== null && (
+                <Button 
+                  type="default"
+                  onClick={() => {
+                    setEditingItemIndex(null);
+                    setItem({
+                      ...initialItem,
+                      taxPercent: taxRate,
+                      quantity: '1'
+                    });
+                    customMessage.info('تم إلغاء التعديل');
+                  }}
+                  style={{
+                    backgroundColor: '#ff4d4f',
+                    borderColor: '#ff4d4f',
+                    color: '#fff'
+                  }}
+                  title="إلغاء التعديل"
+                  icon={
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  }
+                />
+              )}
+            </div>
           </Col>
           </Row>
 
@@ -3607,6 +4018,31 @@ const handlePrint = () => {
                 color: #fff !important;
                 font-weight: bold;
               }
+              
+              .editing-item-row {
+                background: linear-gradient(135deg, #fef3cd 0%, #fff4cc 100%) !important;
+                border: 2px solid #ffc107 !important;
+                box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3) !important;
+              }
+              
+              .editing-item-row:hover {
+                background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%) !important;
+              }
+              
+              .editing-item-row td {
+                border-color: #ffc107 !important;
+                position: relative;
+              }
+              
+              .editing-item-row td:first-child::before {
+                content: '';
+                position: absolute;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 4px;
+                background: #ffc107;
+              }
             `}</style>
             <Table 
               className="custom-items-table"
@@ -3617,6 +4053,9 @@ const handlePrint = () => {
               bordered
               scroll={{ x: true }}
               size="middle"
+              rowClassName={(record, index) => 
+                editingItemIndex === index ? 'editing-item-row' : ''
+              }
             />
           </div>
 

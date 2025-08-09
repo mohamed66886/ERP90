@@ -205,6 +205,16 @@ const SalesManagement: React.FC = () => {
       }
     },
     {
+      title: "تعديل فاتورة مبيعات",
+      description: "تعديل وإدارة فواتير المبيعات الموجودة",
+      icon: <Edit className="h-6 w-6" />,
+      color: "bg-green-600",
+      onClick: () => {
+        navigate('/stores/edit-sales-invoice');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
       title: "سند قبض",
       description: "تسجيل سندات القبض من العملاء",
       icon: <Receipt className="h-6 w-6" />,

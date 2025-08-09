@@ -3,7 +3,7 @@
 .sales-rep-avatar-uploader .ant-upload {
   width: 128px !important;
   height: 128px !important;
-  border-radius: 50% !important;
+  border-radius: 8px !important;
   border: 2px dashed #d9d9d9 !important;
   transition: all 0.3s ease !important;
 }
@@ -14,12 +14,12 @@
 }
 
 .sales-rep-avatar-uploader .ant-upload-select {
-  border-radius: 50% !important;
+  border-radius: 8px !important;
   overflow: hidden !important;
 }
 
 .sales-rep-avatar-uploader .ant-upload-select img {
-  border-radius: 50% !important;
+  border-radius: 8px !important;
   object-fit: cover !important;
 }
 
@@ -45,16 +45,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-}
-
-.sales-rep-uploading::before {
-  content: '';
-  width: 12px;
-  height: 12px;
-  border: 2px solid #1890ff;
-  border-top: 2px solid transparent;
-  border-radius: 50%;
-  animation: salesRepSpin 1s linear infinite;
+  text-align: center;
 }
 
 @keyframes salesRepSpin {
@@ -62,23 +53,35 @@
   100% { transform: rotate(360deg); }
 }
 
+/* Password strength indicators */
+.password-strength-weak {
+  color: #ff4d4f !important;
+}
+
+.password-strength-medium {
+  color: #faad14 !important;
+}
+
+.password-strength-strong {
+  color: #52c41a !important;
+}
+
 /* Form section styling */
 .sales-rep-form-section {
-  background: #f8f9fa;
-  padding: 16px;
-  border-radius: 8px;
-  margin: 16px 0;
+  background: #f6f8fa;
+  padding: 12px 16px;
+  border-radius: 6px;
   border-left: 4px solid #1890ff;
+  margin-bottom: 16px;
+}
+
+.sales-rep-form-section .anticon {
+  color: #1890ff;
 }
 
 .sales-rep-form-section .ant-typography {
   margin-bottom: 0 !important;
 }
-
-/* Password strength indicator */
-.password-strength-weak { color: #ff4d4f; }
-.password-strength-medium { color: #faad14; }
-.password-strength-strong { color: #52c41a; }
 
 /* Account status badge */
 .account-status-badge {
@@ -97,4 +100,29 @@
   background: #fff2e8;
   border: 1px solid #ffbb96;
   color: #fa8c16;
+}
+
+/* Custom label styling for upload */
+.block {
+  display: block;
+}
+
+.text-sm {
+  font-size: 14px;
+}
+
+.font-medium {
+  font-weight: 500;
+}
+
+.text-gray-700 {
+  color: #374151;
+}
+
+.mb-2 {
+  margin-bottom: 8px;
+}
+
+.mb-4 {
+  margin-bottom: 16px;
 }

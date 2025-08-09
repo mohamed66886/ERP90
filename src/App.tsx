@@ -1,6 +1,7 @@
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/contexts/AuthProvider";
 import { SidebarProvider } from "@/contexts/SidebarContext";
+import { FinancialYearProvider } from "@/contexts/FinancialYearProvider";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -19,24 +20,26 @@ const App = () => (
   <AuthProvider>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <SidebarProvider>
-            <Routes>
-              <Route path="/*" element={<Index />} />
-              <Route path="/customers" element={<CustomersPage />} />
-              <Route path="/firebase-test" element={<FirebaseTestPage />} />
-              <Route path="/firebase-direct" element={<FirebaseDirectTest />} />
-              
-   
-              
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-          </SidebarProvider>
-        </BrowserRouter>
-       {/* <FloatingAvatarButton /> */}
+        <FinancialYearProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <SidebarProvider>
+              <Routes>
+                <Route path="/*" element={<Index />} />
+                <Route path="/customers" element={<CustomersPage />} />
+                <Route path="/firebase-test" element={<FirebaseTestPage />} />
+                <Route path="/firebase-direct" element={<FirebaseDirectTest />} />
+                
+     
+                
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+            </SidebarProvider>
+          </BrowserRouter>
+         {/* <FloatingAvatarButton /> */}
+        </FinancialYearProvider>
       </TooltipProvider>
     </QueryClientProvider>
   </AuthProvider>

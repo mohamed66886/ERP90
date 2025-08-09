@@ -70,6 +70,8 @@ import CustomerStatusPage from "./customers/CustomerStatusPage";
 import CustomerClassificationPage from "./customers/CustomerClassificationPage";
 import CustomerFollowUpPage from "./customers/CustomerFollowUpPage";
 import SalesRepresentativesPage from "./management/SalesRepresentativesPageFixed";
+import EditSalesInvoicePage from "./stores/edit-sales-invoice";
+import EditSalesInvoiceDetailPage from "./stores/edit-sales-invoice-detail";
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -169,6 +171,8 @@ const Index = () => {
             <Route path="/stores/sales" element={<SalesPage />} />
             <Route path="/stores/manage" element={<WarehouseManagementOld />} />
             <Route path="/stores/sales-return" element={<SalesReturnPage />} />
+            <Route path="/stores/edit-sales-invoice" element={<EditSalesInvoicePage />} />
+            <Route path="/stores/edit-sales-invoice/:id" element={<EditSalesInvoiceDetailPage />} />
             <Route path="/business/branches" element={<Branches />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/stores/stock" element={<Stockpage />} />

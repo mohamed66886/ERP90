@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { searchService, SearchResult } from "@/services/searchService";
+import { useFinancialYear } from "@/hooks/useFinancialYear";
 
 interface HeaderProps {
   onLogout: () => void;
@@ -47,18 +48,33 @@ const Header = ({
   const navigate = useNavigate();
   const isDesktop = !useIsMobile();
   const [scrolled, setScrolled] = useState(false);
+  
+  // استخدام السياق للسنة المالية
+  const { 
+    currentFinancialYear, 
+    activeYears, 
+    setCurrentFinancialYear 
+  } = useFinancialYear();
+  
   const [fiscalYear, setFiscalYear] = useState<string>("");
-  const [activeYears, setActiveYears] = useState<FinancialYear[]>([]);
-  // جلب السنوات المالية النشطة
+  
+  // مزامنة السنة المالية مع السياق
   useEffect(() => {
-    getActiveFinancialYears().then((years) => {
-      setActiveYears(years.sort((a, b) => b.year - a.year));
-      // إذا لم تكن السنة المالية المختارة موجودة، اختر الأحدث
-      if (years.length > 0 && !years.find(y => y.year.toString() === fiscalYear)) {
-        setFiscalYear(years[0].year.toString());
-      }
-    });
-  }, [fiscalYear]);
+    if (currentFinancialYear) {
+      setFiscalYear(currentFinancialYear.year.toString());
+    }
+    console.log('السنة المالية الحالية:', currentFinancialYear);
+    console.log('جميع السنوات المالية النشطة:', activeYears);
+  }, [currentFinancialYear, activeYears]);
+
+  // تحديث السنة المالية في السياق عند التغيير
+  const handleFiscalYearChange = (value: string) => {
+    setFiscalYear(value);
+    const selectedYear = activeYears.find(y => y.year.toString() === value);
+    if (selectedYear) {
+      setCurrentFinancialYear(selectedYear);
+    }
+  };
   const [taxRate, setTaxRate] = useState<string>("");
   const [todayInvoices, setTodayInvoices] = useState<number>(0);
   const [todayRevenue, setTodayRevenue] = useState<number>(0);
@@ -128,13 +144,13 @@ const Header = ({
       try {
         setIsLoading(true);
         
-        // Fetch company settings
+        // Fetch company settings (معدل لتجنب التداخل مع السياق)
         const companyQuery = query(collection(db, "companies"));
         const companySnapshot = await getDocs(companyQuery);
         
         if (!companySnapshot.empty) {
           const docData = companySnapshot.docs[0].data();
-          setFiscalYear(docData.fiscalYear || "");
+          // إزالة setFiscalYear لأنه يدار بواسطة السياق الآن
           setTaxRate(docData.taxRate || "");
         }
 
@@ -468,7 +484,7 @@ const Header = ({
                         ) : (
                           <AntdSelect
                             value={fiscalYear}
-                            onChange={setFiscalYear}
+                            onChange={handleFiscalYearChange}
                             style={{ width: 100, background: 'transparent' }}
                             popupClassName="text-right"
                             size="small"

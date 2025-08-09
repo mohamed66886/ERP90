@@ -64,9 +64,11 @@ import {
   query,
   where
 } from "firebase/firestore";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, signOut } from "firebase/auth";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { auth, storage } from "@/lib/firebase";
+import { initializeApp, deleteApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -124,14 +126,20 @@ const SalesRepresentativesPage: React.FC = () => {
   // Load branches
   const loadBranches = async () => {
     try {
+      console.log('Loading branches...');
       const branchesSnapshot = await getDocs(collection(db, "branches"));
+      console.log('Found', branchesSnapshot.docs.length, 'branches');
+      
       const branchesData = branchesSnapshot.docs.map(doc => ({
         id: doc.id,
         name: doc.data().name || doc.data().nameAr || 'فرع غير محدد'
       }));
+      
+      console.log('Branches loaded:', branchesData);
       setBranches(branchesData);
     } catch (error) {
       console.error('Error loading branches:', error);
+      message.error('حدث خطأ في تحميل الفروع: ' + (error as Error).message);
     }
   };
 
@@ -179,128 +187,147 @@ const SalesRepresentativesPage: React.FC = () => {
   const loadRepresentatives = useCallback(async () => {
     setLoading(true);
     try {
+      console.log('Loading representatives...');
       const querySnapshot = await getDocs(collection(db, "salesRepresentatives"));
+      console.log('Found', querySnapshot.docs.length, 'representatives');
+      
       const repsData = querySnapshot.docs.map(doc => {
         const data = doc.data();
         const branch = branches.find(b => b.id === data.branch);
+        console.log('Processing representative:', doc.id, data.name);
+        
         return {
           id: doc.id,
-          ...data,
+          name: data.name || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          branch: data.branch || '',
           branchName: branch?.name || 'فرع غير محدد',
-          currentSales: salesData[doc.id]?.totalSales || 0
+          department: data.department || '',
+          position: data.position || '',
+          hireDate: data.hireDate || '',
+          status: data.status || 'active',
+          avatar: data.avatar || '',
+          address: data.address || '',
+          notes: data.notes || '',
+          commissionRate: data.commissionRate || 0,
+          salary: data.salary || 0,
+          uid: data.uid || '',
+          currentSales: salesData[doc.id]?.totalSales || 0,
+          createdAt: data.createdAt || new Date(),
+          updatedAt: data.updatedAt || new Date()
         } as SalesRepresentative;
       });
+      
+      console.log('Processed representatives:', repsData);
       setRepresentatives(repsData);
     } catch (error) {
-      message.error('حدث خطأ في تحميل بيانات المندوبين');
+      console.error('Error loading representatives:', error);
+      message.error('حدث خطأ في تحميل بيانات المندوبين: ' + (error as Error).message);
     } finally {
       setLoading(false);
     }
   }, [branches, salesData]);
 
-  // Convert image to Base64 (fallback method)
+  // Convert image to Base64 with compression
   const convertToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = error => reject(error);
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        // Set maximum dimensions
+        const maxWidth = 300;
+        const maxHeight = 300;
+        
+        let { width, height } = img;
+        
+        // Calculate new dimensions maintaining aspect ratio
+        if (width > height) {
+          if (width > maxWidth) {
+            height = (height * maxWidth) / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = (width * maxHeight) / height;
+            height = maxHeight;
+          }
+        }
+        
+        // Set canvas dimensions
+        canvas.width = width;
+        canvas.height = height;
+        
+        // Draw and compress image
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        // Convert to base64 with compression
+        const base64 = canvas.toDataURL('image/jpeg', 0.7); // 70% quality
+        resolve(base64);
+      };
+      
+      img.onerror = () => {
+        // Fallback to FileReader if canvas method fails
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = error => reject(error);
+      };
+      
+      img.src = URL.createObjectURL(file);
     });
   };
 
   // Upload image to Firebase Storage
   const uploadImage = async (file: File): Promise<string> => {
     try {
-      // استخدام timestamp أبسط وتنظيف اسم الملف
-      const timestamp = Date.now();
-      const fileExtension = file.name.split('.').pop() || 'jpg';
-      const cleanFileName = `sales-rep-${timestamp}.${fileExtension}`;
-      const imageRef = ref(storage, `sales-reps/${cleanFileName}`);
-      
-      // رفع الملف مع metadata
-      const metadata = {
-        contentType: file.type || 'image/jpeg',
-        customMetadata: {
-          uploadedBy: 'sales-rep-management',
-          originalName: file.name
-        }
-      };
-      
-      console.log('Uploading file:', cleanFileName, 'Size:', file.size);
-      
-      const uploadResult = await uploadBytes(imageRef, file, metadata);
-      console.log('Upload successful:', uploadResult);
-      
-      const downloadURL = await getDownloadURL(uploadResult.ref);
-      console.log('Download URL obtained:', downloadURL);
-      
-      return downloadURL;
+      // استخدام Base64 مباشرة لتجنب مشاكل CORS
+      console.log('Converting image to Base64...');
+      const base64 = await convertToBase64(file);
+      console.log('Image converted to Base64 successfully');
+      return base64;
     } catch (error) {
-      console.error('Error uploading image to Firebase Storage:', error);
-      
-      // تحسين رسائل الخطأ
-      if (error && typeof error === 'object' && 'code' in error) {
-        const firebaseError = error as { code: string; message: string };
-        console.error('Firebase error code:', firebaseError.code);
-        console.error('Firebase error message:', firebaseError.message);
-        
-        // إذا كانت المشكلة CORS أو unauthorized، استخدم Base64 كحل بديل
-        if (firebaseError.code === 'storage/unauthorized' || 
-            firebaseError.message.includes('CORS') ||
-            firebaseError.message.includes('Access to XMLHttpRequest')) {
-          console.log('Falling back to Base64 storage due to CORS/Auth issues');
-          try {
-            const base64 = await convertToBase64(file);
-            message.warning('تم حفظ الصورة محلياً بسبب مشكلة في الخادم');
-            return base64;
-          } catch (base64Error) {
-            console.error('Base64 conversion failed:', base64Error);
-            throw new Error('فشل في معالجة الصورة.');
-          }
-        }
-        
-        switch (firebaseError.code) {
-          case 'storage/unauthorized':
-            throw new Error('غير مخول لرفع الصور. يرجى التحقق من صلاحياتك.');
-          case 'storage/canceled':
-            throw new Error('تم إلغاء رفع الصورة.');
-          case 'storage/quota-exceeded':
-            throw new Error('تم تجاوز حد التخزين المسموح.');
-          case 'storage/invalid-format':
-            throw new Error('تنسيق الصورة غير مدعوم.');
-          case 'storage/invalid-argument':
-            throw new Error('خطأ في معاملات رفع الصورة.');
-          default:
-            // إذا فشل Firebase Storage، جرب Base64 كحل بديل
-            try {
-              const base64 = await convertToBase64(file);
-              message.warning('تم حفظ الصورة محلياً بسبب خطأ في الخادم');
-              return base64;
-            } catch (base64Error) {
-              throw new Error(`خطأ في رفع الصورة: ${firebaseError.message}`);
-            }
-        }
-      }
-      
-      // كحل أخير، جرب Base64
-      try {
-        const base64 = await convertToBase64(file);
-        message.warning('تم حفظ الصورة محلياً');
-        return base64;
-      } catch (base64Error) {
-        throw new Error('فشل في رفع الصورة. يرجى المحاولة مرة أخرى.');
-      }
+      console.error('Error converting image to Base64:', error);
+      throw new Error('فشل في معالجة الصورة. يرجى المحاولة مرة أخرى.');
     }
   };
 
-  // Create user account in Firebase Auth
+  // Create user account in Firebase Auth using secondary app
   const createUserAccount = async (email: string, password: string, displayName: string, photoURL?: string) => {
+    let secondaryApp;
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      await updateProfile(userCredential.user, {
-        displayName,
-        photoURL
-      });
+      // إنشاء تطبيق ثانوي لـ Firebase لتجنب تغيير حالة المصادقة الحالية
+      secondaryApp = initializeApp({
+        apiKey: "AIzaSyD90dtZlGUTXEyUD_72ZxjXrBX7oJ1oG3g",
+        authDomain: "erp90-8a628.firebaseapp.com",
+        projectId: "erp90-8a628",
+        storageBucket: "erp90-8a628.firebasestorage.app",
+        messagingSenderId: "67289042547",
+        appId: "1:67289042547:web:55300d06c6dab5429ba406"
+      }, 'secondary');
+      
+      const secondaryAuth = getAuth(secondaryApp);
+      
+      // إنشاء المستخدم الجديد باستخدام التطبيق الثانوي
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+      
+      // تحديث ملف المستخدم
+      const profileUpdate: { displayName: string; photoURL?: string } = {
+        displayName
+      };
+      
+      // Firebase Auth photoURL has a length limit, so we skip it for Base64 images
+      if (photoURL && !photoURL.startsWith('data:')) {
+        profileUpdate.photoURL = photoURL;
+      }
+      
+      await updateProfile(userCredential.user, profileUpdate);
+      
+      // تسجيل خروج من التطبيق الثانوي
+      await signOut(secondaryAuth);
+      
       return userCredential.user.uid;
     } catch (error: unknown) {
       console.error('Error creating user account:', error);
@@ -318,25 +345,82 @@ const SalesRepresentativesPage: React.FC = () => {
           case 'auth/invalid-email':
             errorMessage = 'البريد الإلكتروني غير صالح';
             break;
+          case 'auth/invalid-profile-attribute':
+            errorMessage = 'خطأ في بيانات الملف الشخصي';
+            break;
         }
       }
       
       throw new Error(errorMessage);
+    } finally {
+      // تنظيف التطبيق الثانوي
+      if (secondaryApp) {
+        try {
+          await deleteApp(secondaryApp);
+        } catch (cleanupError) {
+          console.warn('Error cleaning up secondary app:', cleanupError);
+        }
+      }
+    }
+  };
+
+  // Test Firebase connection
+  const testFirebaseConnection = async () => {
+    try {
+      console.log('Testing Firebase connection...');
+      
+      // Test Firestore read
+      const testCollection = collection(db, "salesRepresentatives");
+      const snapshot = await getDocs(testCollection);
+      console.log('Firestore read test:', snapshot.size, 'documents found');
+      
+      // Test Firestore write (add a test document)
+      const testDoc = {
+        name: 'Test Representative',
+        email: 'test@example.com',
+        phone: '123456789',
+        branch: 'test-branch',
+        department: 'test',
+        position: 'test',
+        status: 'active',
+        hireDate: dayjs().format('YYYY-MM-DD'),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        isTest: true
+      };
+      
+      const docRef = await addDoc(testCollection, testDoc);
+      console.log('Firestore write test: Document added with ID:', docRef.id);
+      
+      // Delete the test document
+      await deleteDoc(doc(db, "salesRepresentatives", docRef.id));
+      console.log('Test document deleted');
+      
+      message.success('Firebase connection test passed!');
+      
+    } catch (error) {
+      console.error('Firebase connection test failed:', error);
+      message.error('Firebase connection failed: ' + (error as Error).message);
     }
   };
 
   useEffect(() => {
+    console.log('Component mounted, loading branches...');
     loadBranches();
   }, []);
 
   useEffect(() => {
+    console.log('Branches updated:', branches.length);
     if (branches.length > 0) {
+      console.log('Loading sales data...');
       loadSalesData();
     }
   }, [branches]);
 
   useEffect(() => {
+    console.log('Sales data or branches updated');
     if (branches.length > 0) {
+      console.log('Loading representatives...');
       loadRepresentatives();
     }
   }, [branches, salesData, loadRepresentatives]);
@@ -345,19 +429,21 @@ const SalesRepresentativesPage: React.FC = () => {
   const handleSubmit = async (values: Partial<SalesRepresentative>) => {
     try {
       setLoading(true);
+      console.log('Form submitted with values:', values);
       
       let avatarURL = values.avatar;
       let userUID = values.uid;
       
-      // Upload image if new file is selected
+      // Use the image that was already processed in handleImageUpload
       if (imageFile) {
         try {
           setUploadingImage(true);
           avatarURL = await uploadImage(imageFile);
           setUploadingImage(false);
-          message.success('تم رفع الصورة بنجاح');
+          console.log('Image processed:', avatarURL ? 'Success' : 'Failed');
         } catch (error) {
           setUploadingImage(false);
+          console.error('Image upload error:', error);
           message.error((error as Error).message);
           return;
         }
@@ -366,39 +452,55 @@ const SalesRepresentativesPage: React.FC = () => {
       // Create user account for new representative
       if (!editId && values.email && values.password) {
         try {
+          console.log('Creating user account...');
+          // Don't pass Base64 image to Firebase Auth as it's too long
+          const photoForAuth = avatarURL && !avatarURL.startsWith('data:') ? avatarURL : undefined;
           userUID = await createUserAccount(
             values.email,
             values.password,
             values.name || '',
-            avatarURL
+            photoForAuth
           );
+          console.log('User account created with UID:', userUID);
           message.success('تم إنشاء حساب المستخدم بنجاح');
         } catch (error) {
+          console.error('User creation error:', error);
           message.error((error as Error).message);
           return;
         }
       }
       
+      // Prepare data for saving
       const repData = {
-        ...values,
-        avatar: avatarURL,
-        uid: userUID,
+        name: values.name || '',
+        email: values.email || '',
+        phone: values.phone || '',
+        branch: values.branch || '',
+        department: values.department || 'المبيعات',
+        position: values.position || '',
+        status: values.status || 'active',
+        avatar: avatarURL || '',
+        address: values.address || '',
+        notes: values.notes || '',
+        commissionRate: values.commissionRate ? Number(values.commissionRate) : 0,
+        salary: values.salary ? Number(values.salary) : 0,
+        uid: userUID || '',
         hireDate: values.hireDate ? dayjs(values.hireDate).format('YYYY-MM-DD') : '',
-        createdAt: editId ? representatives.find(r => r.id === editId)?.createdAt : new Date(),
+        createdAt: editId ? representatives.find(r => r.id === editId)?.createdAt || new Date() : new Date(),
         updatedAt: new Date(),
       };
       
-      // Remove password from saved data (it's only used for account creation)
-      delete repData.password;
-      if ('confirmPassword' in repData) {
-        delete (repData as Record<string, unknown>).confirmPassword;
-      }
+      console.log('Saving representative data:', repData);
 
       if (editId) {
+        console.log('Updating representative with ID:', editId);
         await updateDoc(doc(db, "salesRepresentatives", editId), repData);
         message.success('تم تحديث بيانات المندوب بنجاح');
+        console.log('Representative updated successfully');
       } else {
-        await addDoc(collection(db, "salesRepresentatives"), repData);
+        console.log('Adding new representative...');
+        const docRef = await addDoc(collection(db, "salesRepresentatives"), repData);
+        console.log('Representative added with ID:', docRef.id);
         message.success('تم إضافة المندوب بنجاح');
       }
 
@@ -407,10 +509,14 @@ const SalesRepresentativesPage: React.FC = () => {
       setImageFile(null);
       setPasswordValue('');
       form.resetFields();
-      loadRepresentatives();
+      
+      // Reload data
+      console.log('Reloading representatives...');
+      await loadRepresentatives();
+      
     } catch (error) {
       console.error('Error in handleSubmit:', error);
-      message.error('حدث خطأ في حفظ البيانات');
+      message.error('حدث خطأ في حفظ البيانات: ' + (error as Error).message);
     } finally {
       setLoading(false);
       setUploadingImage(false);
@@ -430,20 +536,33 @@ const SalesRepresentativesPage: React.FC = () => {
   };
 
   // Handle image upload
-  const handleImageUpload = (file: File) => {
-    const isJpgOrPng = file.type === 'image/jpeg' || file.type === 'image/png';
+  const handleImageUpload = async (file: File) => {
+    const isJpgOrPng = file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/gif' || file.type === 'image/webp';
     if (!isJpgOrPng) {
-      message.error('يمكن رفع ملفات JPG/PNG فقط!');
+      message.error('يمكن رفع ملفات الصور فقط (JPG, PNG, GIF, WebP)!');
       return false;
     }
     
-    const isLt2M = file.size / 1024 / 1024 < 2;
-    if (!isLt2M) {
-      message.error('يجب أن يكون حجم الصورة أقل من 2MB!');
+    const isLt5M = file.size / 1024 / 1024 < 5;
+    if (!isLt5M) {
+      message.error('يجب أن يكون حجم الصورة أقل من 5MB!');
       return false;
     }
     
-    setImageFile(file);
+    try {
+      setUploadingImage(true);
+      // تحويل الصورة إلى Base64 مباشرة
+      const base64 = await convertToBase64(file);
+      form.setFieldValue('avatar', base64);
+      setImageFile(file);
+      message.success('تم تحديد الصورة بنجاح');
+    } catch (error) {
+      console.error('Error processing image:', error);
+      message.error('فشل في معالجة الصورة');
+    } finally {
+      setUploadingImage(false);
+    }
+    
     return false; // Prevent automatic upload
   };
 
@@ -706,6 +825,12 @@ const SalesRepresentativesPage: React.FC = () => {
           </div>
           <Space>
             <Button 
+              onClick={testFirebaseConnection}
+              style={{ backgroundColor: '#f0f0f0' }}
+            >
+              اختبار الاتصال
+            </Button>
+            <Button 
               icon={<BarChartOutlined />}
               onClick={() => navigate('/management/performance-evaluation')}
             >
@@ -782,6 +907,7 @@ const SalesRepresentativesPage: React.FC = () => {
               placeholder="فلترة حسب الحالة"
               value={statusFilter}
               onChange={setStatusFilter}
+              popupMatchSelectWidth={false}
             >
               <Option value="all">جميع الحالات</Option>
               <Option value="active">نشط</Option>
@@ -794,6 +920,7 @@ const SalesRepresentativesPage: React.FC = () => {
               placeholder="فلترة حسب الفرع"
               value={branchFilter}
               onChange={setBranchFilter}
+              popupMatchSelectWidth={false}
             >
               <Option value="all">جميع الفروع</Option>
               {branches.map(branch => (
@@ -806,21 +933,44 @@ const SalesRepresentativesPage: React.FC = () => {
 
       {/* Representatives Table */}
       <Card>
-        <Table
-          columns={columns}
-          dataSource={filteredRepresentatives}
-          rowKey="id"
-          loading={loading}
-          scroll={{ x: 1200 }}
-          pagination={{
-            total: filteredRepresentatives.length,
-            pageSize: 10,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) => 
-              `${range[0]}-${range[1]} من ${total} مندوب`,
-          }}
-        />
+        {representatives.length === 0 && !loading ? (
+          <div style={{ textAlign: 'center', padding: '50px 0' }}>
+            <Empty 
+              description="لا توجد بيانات مندوبين"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            >
+              <Button 
+                type="primary" 
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  setEditId(null);
+                  setImageFile(null);
+                  setPasswordValue('');
+                  form.resetFields();
+                  setShowModal(true);
+                }}
+              >
+                إضافة أول مندوب
+              </Button>
+            </Empty>
+          </div>
+        ) : (
+          <Table
+            columns={columns}
+            dataSource={filteredRepresentatives}
+            rowKey="id"
+            loading={loading}
+            scroll={{ x: 1200 }}
+            pagination={{
+              total: filteredRepresentatives.length,
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total, range) => 
+                `${range[0]}-${range[1]} من ${total} مندوب`,
+            }}
+          />
+        )}
       </Card>
 
       {/* Add/Edit Modal */}
@@ -952,11 +1102,10 @@ const SalesRepresentativesPage: React.FC = () => {
           {/* Profile Picture Upload */}
           <Row gutter={16}>
             <Col xs={24} sm={12}>
-              <Form.Item 
-                name="avatar"
-                label="صورة شخصية"
-                valuePropName="file"
-              >
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  صورة شخصية
+                </label>
                 <Upload
                   name="avatar"
                   listType="picture-card"
@@ -967,9 +1116,18 @@ const SalesRepresentativesPage: React.FC = () => {
                 >
                   {form.getFieldValue('avatar') || imageFile ? (
                     <img 
-                      src={imageFile ? URL.createObjectURL(imageFile) : form.getFieldValue('avatar')} 
+                      src={
+                        imageFile 
+                          ? URL.createObjectURL(imageFile) 
+                          : form.getFieldValue('avatar')
+                      } 
                       alt="avatar" 
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                      style={{ 
+                        width: '100%', 
+                        height: '100%', 
+                        objectFit: 'cover',
+                        borderRadius: '6px'
+                      }} 
                     />
                   ) : (
                     <div>
@@ -980,10 +1138,10 @@ const SalesRepresentativesPage: React.FC = () => {
                 </Upload>
                 {uploadingImage && (
                   <div className="sales-rep-uploading">
-                    جاري رفع الصورة...
+                    <Spin size="small" /> جاري معالجة الصورة...
                   </div>
                 )}
-              </Form.Item>
+              </div>
             </Col>
             <Col xs={24} sm={12}>
               <Form.Item
@@ -1003,7 +1161,7 @@ const SalesRepresentativesPage: React.FC = () => {
                 label="الفرع"
                 rules={[{ required: true, message: 'يرجى اختيار الفرع' }]}
               >
-                <Select placeholder="اختر الفرع">
+                <Select placeholder="اختر الفرع" popupMatchSelectWidth={false}>
                   {branches.map(branch => (
                     <Option key={branch.id} value={branch.id}>{branch.name}</Option>
                   ))}
@@ -1019,7 +1177,7 @@ const SalesRepresentativesPage: React.FC = () => {
                 label="القسم"
                 rules={[{ required: true, message: 'يرجى إدخال القسم' }]}
               >
-                <Select placeholder="اختر القسم">
+                <Select placeholder="اختر القسم" popupMatchSelectWidth={false}>
                   <Option value="المبيعات">المبيعات</Option>
                   <Option value="التسويق">التسويق</Option>
                   <Option value="خدمة العملاء">خدمة العملاء</Option>
@@ -1057,7 +1215,7 @@ const SalesRepresentativesPage: React.FC = () => {
                 label="الحالة"
                 rules={[{ required: true, message: 'يرجى اختيار الحالة' }]}
               >
-                <Select placeholder="اختر الحالة">
+                <Select placeholder="اختر الحالة" popupMatchSelectWidth={false}>
                   <Option value="active">نشط</Option>
                   <Option value="inactive">غير نشط</Option>
                 </Select>
