@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Sun, Moon, Mail, Briefcase, Key, User, Save, Edit, Camera, Lock } from "lucide-react";
+import { Sun, Moon, Mail, Briefcase, Key, User, Save, Edit, Camera, Lock, Phone, MapPin } from "lucide-react";
 import { BiSolidBadgeCheck } from "react-icons/bi";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
@@ -188,10 +188,32 @@ const ProfilePage = () => {
                   <div>
                     <p className="text-sm text-gray-500">الدور</p>
                     <Badge variant="secondary" className="mt-1">
-                      {user.role}
+                      {user.role === 'sales_representative' ? 'مندوب مبيعات' : user.role}
                     </Badge>
                   </div>
                 </div>
+
+                {/* Phone Number - show for sales representatives */}
+                {user.role === 'sales_representative' && user.phone && (
+                  <div className="flex items-start gap-3">
+                    <Phone className="h-5 w-5 text-gray-500 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-gray-500">رقم الهاتف</p>
+                      <p className="font-medium">{user.phone}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Branch - show for sales representatives */}
+                {user.role === 'sales_representative' && user.branch && (
+                  <div className="flex items-start gap-3">
+                    <MapPin className="h-5 w-5 text-gray-500 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-gray-500">الفرع</p>
+                      <p className="font-medium">{user.branch}</p>
+                    </div>
+                  </div>
+                )}
                 {/* Cover Image URL */}
                 <div className="flex items-start gap-3">
                   <Camera className="h-5 w-5 text-gray-500 mt-0.5" />

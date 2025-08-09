@@ -4,7 +4,7 @@ import { useDropzone } from 'react-dropzone';
 import { collection, addDoc, getDocs, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Trash2, Edit2, Save, X, ChevronDown, ChevronRight, Search, Plus, Upload, Download, Expand, Minus } from 'lucide-react';
-import { Loader2, RefreshCcw } from 'lucide-react';
+import { Loader2, RefreshCcw, Smartphone, Laptop, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // تعريف الأنواع
@@ -564,6 +564,10 @@ const ItemManagementPage: React.FC = () => {
               </div>
               
               <div className="flex items-center gap-2">
+                <ElectronicsItemsGenerator 
+                  onImportSuccess={fetchItems}
+                  maxId={items.length > 0 ? Math.max(...items.map(i => i.id)) : 0}
+                />
                 <ExcelImportExport 
                   items={items} 
                   onImportSuccess={fetchItems}
@@ -883,19 +887,31 @@ const ExcelImportExport: React.FC<{
       <div className="relative inline-block">
         <button
           className="flex items-center gap-2 text-sm px-4 py-2 rounded-lg bg-white hover:bg-gray-50 border border-gray-200 shadow-sm ml-2"
-          onClick={() => document.getElementById('importModal')?.classList.remove('hidden')}
+          onClick={() => {
+            const modal = document.getElementById('importModal');
+            if (modal) {
+              modal.classList.remove('hidden');
+              modal.classList.add('flex');
+            }
+          }}
         >
           <Upload className="w-4 h-4" />
           <span>استيراد Excel</span>
         </button>
 
         {/* نافذة الاستيراد */}
-        <div id="importModal" className="hidden fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+        <div id="importModal" className="hidden fixed inset-0 bg-gray-600 bg-opacity-50 items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-800">استيراد الأصناف من ملف Excel</h3>
               <button
-                onClick={() => document.getElementById('importModal')?.classList.add('hidden')}
+                onClick={() => {
+                  const modal = document.getElementById('importModal');
+                  if (modal) {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                  }
+                }}
                 className="text-gray-400 hover:text-gray-500"
               >
                 <X className="w-6 h-6" />
@@ -978,6 +994,251 @@ const ExcelImportExport: React.FC<{
               </div>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// مكون إضافة الأصناف الإلكترونية
+const ElectronicsItemsGenerator: React.FC<{
+  onImportSuccess: () => void;
+  maxId: number;
+}> = ({ onImportSuccess, maxId }) => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // بيانات الأصناف الإلكترونية النموذجية
+  const electronicsCategories = {
+    موبايلات: {
+      'موبايل iOS': [
+        'موبايل ايفون 16',
+        'موبايل ايفون 15 Pro',
+        'موبايل ايفون 14',
+        'موبايل ايفون 13 Mini'
+      ],
+      'موبايل أندرويد': [
+        'موبايل سامسونج S24',
+        'موبايل هواوي P60',
+        'موبايل شاومي 14',
+        'موبايل أوبو Find X7'
+      ],
+      'موبايل أساسي': [
+        'موبايل نوكيا 3310',
+        'موبايل سامسونج A15',
+        'موبايل تكنو Spark 10'
+      ]
+    },
+    لابتوب: {
+      'لابتوب ألعاب': [
+        'لابتوب ASUS ROG',
+        'لابتوب MSI Gaming',
+        'لابتوب HP Omen',
+        'لابتوب Alienware'
+      ],
+      'لابتوب مكتبي': [
+        'لابتوب Dell Inspiron',
+        'لابتوب HP Pavilion',
+        'لابتوب Lenovo ThinkPad',
+        'لابتوب Acer Aspire'
+      ],
+      'لابتوب ماك': [
+        'MacBook Air M3',
+        'MacBook Pro 16',
+        'MacBook Pro 14',
+        'MacBook Air M2'
+      ]
+    },
+    إكسسوارات: {
+      'شواحن وكابلات': [
+        'شاحن لاسلكي سريع',
+        'كابل Type-C',
+        'شاحن سيارة',
+        'باور بنك 20000'
+      ],
+      'سماعات': [
+        'سماعة AirPods Pro',
+        'سماعة Sony WH-1000XM5',
+        'سماعة JBL Tune 770NC',
+        'سماعة Beats Studio'
+      ],
+      'حافظات وواقيات': [
+        'حافظة شفافة مقاومة',
+        'واقي شاشة زجاجي',
+        'حامل موبايل سيارة',
+        'حقيبة لابتوب مقاومة'
+      ]
+    }
+  };
+
+  // دالة توليد كود الصنف
+  const generateItemCode = (mainCategory: string, subCategory: string, itemName: string) => {
+    const mainCode = mainCategory === 'موبايلات' ? 'MOB' : 
+                    mainCategory === 'لابتوب' ? 'LAP' : 'ACC';
+    
+    const subCode = subCategory.includes('iOS') ? 'IOS' :
+                   subCategory.includes('أندرويد') ? 'AND' :
+                   subCategory.includes('أساسي') ? 'BAS' :
+                   subCategory.includes('ألعاب') ? 'GAM' :
+                   subCategory.includes('مكتبي') ? 'OFF' :
+                   subCategory.includes('ماك') ? 'MAC' :
+                   subCategory.includes('شواحن') ? 'CHR' :
+                   subCategory.includes('سماعات') ? 'HDP' :
+                   subCategory.includes('حافظات') ? 'CSE' : 'GEN';
+    
+    const randomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+    return `${mainCode}_${subCode}_${randomCode}`;
+  };
+
+  // دالة توليد سعر عشوائي
+  const generateRandomPrice = (min: number, max: number) => {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  };
+
+  // دالة إضافة الأصناف الإلكترونية
+  const handleAddElectronicsItems = async () => {
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      let currentId = maxId + 1;
+      const itemsToAdd: Omit<ItemExtended, 'docId'>[] = [];
+
+      // إنشاء الهيكل الهرمي للأصناف
+      for (const [mainCategory, subCategories] of Object.entries(electronicsCategories)) {
+        // إضافة المستوى الرئيسي
+        const mainId = currentId++;
+        itemsToAdd.push({
+          id: mainId,
+          name: mainCategory,
+          type: 'رئيسي'
+        });
+
+        // إضافة المستويات الفرعية
+        for (const [subCategory, items] of Object.entries(subCategories)) {
+          const subId = currentId++;
+          itemsToAdd.push({
+            id: subId,
+            name: subCategory,
+            type: 'مستوى أول',
+            parentId: mainId
+          });
+
+          // إضافة الأصناف النهائية
+          for (const itemName of items) {
+            const itemId = currentId++;
+            const itemCode = generateItemCode(mainCategory, subCategory, itemName);
+            
+            // تحديد نطاق الأسعار حسب الفئة
+            let priceRange = { min: 100, max: 500 };
+            if (mainCategory === 'موبايلات') {
+              priceRange = subCategory.includes('iOS') ? { min: 3000, max: 8000 } :
+                          subCategory.includes('أندرويد') ? { min: 800, max: 4000 } :
+                          { min: 200, max: 1000 };
+            } else if (mainCategory === 'لابتوب') {
+              priceRange = subCategory.includes('ألعاب') ? { min: 4000, max: 12000 } :
+                          subCategory.includes('ماك') ? { min: 5000, max: 15000 } :
+                          { min: 2000, max: 6000 };
+            } else {
+              priceRange = { min: 50, max: 2000 };
+            }
+
+            const purchasePrice = generateRandomPrice(priceRange.min, priceRange.max);
+            const salePrice = Math.round(purchasePrice * (1.2 + Math.random() * 0.3)); // هامش ربح 20-50%
+
+            itemsToAdd.push({
+              id: itemId,
+              name: itemName,
+              type: 'مستوى ثاني',
+              parentId: subId,
+              itemCode: itemCode,
+              purchasePrice: purchasePrice,
+              salePrice: salePrice,
+              minOrder: generateRandomPrice(1, 10),
+              discount: generateRandomPrice(0, 15),
+              allowNegative: Math.random() > 0.7,
+              isVatIncluded: Math.random() > 0.5,
+              tempCodes: false,
+              supplier: 'مورد إلكترونيات'
+            });
+          }
+        }
+      }
+
+      // إضافة جميع الأصناف إلى قاعدة البيانات
+      const batch = itemsToAdd.map(item => addDoc(collection(db, 'inventory_items'), item));
+      await Promise.all(batch);
+
+      setSuccess(`تم إضافة ${itemsToAdd.length} صنف إلكتروني بنجاح!`);
+      onImportSuccess();
+    } catch (e) {
+      console.error('Error adding electronics items:', e);
+      setError('حدث خطأ أثناء إضافة الأصناف الإلكترونية');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={handleAddElectronicsItems}
+        disabled={loading}
+        className="flex items-center gap-2 text-sm px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {loading ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Zap className="w-4 h-4" />
+        )}
+        <span>إضافة أصناف إلكترونية</span>
+      </button>
+
+      {/* رسائل النجاح والخطأ */}
+      {(success || error) && (
+        <div className="absolute top-full left-0 mt-2 z-50 min-w-80">
+          {success && (
+            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg shadow-lg">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                {success}
+              </div>
+              <button 
+                onClick={() => setSuccess(null)}
+                className="absolute top-2 right-2 text-green-600 hover:text-green-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg shadow-lg">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                {error}
+              </div>
+              <button 
+                onClick={() => setError(null)}
+                className="absolute top-2 right-2 text-red-600 hover:text-red-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* معلومات إضافية عند التحويم */}
+      <div className="absolute bottom-full left-0 mb-2 opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
+        <div className="bg-gray-800 text-white text-xs px-3 py-2 rounded-lg shadow-lg max-w-xs">
+          <p className="font-semibold mb-1">سيتم إضافة:</p>
+          <ul className="space-y-1">
+            <li>• 3 فئات رئيسية (موبايلات، لابتوب، إكسسوارات)</li>
+            <li>• 9 فئات فرعية</li>
+            <li>• 31 صنف نهائي</li>
+            <li>• أكواد وأسعار تلقائية</li>
+          </ul>
         </div>
       </div>
     </div>

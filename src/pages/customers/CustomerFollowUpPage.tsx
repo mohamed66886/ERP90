@@ -1,37 +1,50 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
 import { 
-  Eye, 
-  Search, 
-  Edit, 
-  ChevronLeft, 
-  ChevronRight,
-  MessageSquare,
-  Phone,
-  Mail,
-  Calendar,
-  Star,
-  TrendingUp,
-  AlertCircle,
-  CheckCircle,
-  Plus,
-  Clock,
-  User
-} from 'lucide-react';
+  Card, 
+  Button, 
+  Input, 
+  Table, 
+  Tag, 
+  Select, 
+  message, 
+  Space,
+  Statistic,
+  Row,
+  Col,
+  Modal,
+  Pagination,
+  DatePicker,
+  Form,
+  Divider,
+  List,
+  Avatar
+} from 'antd';
+import { Input as AntdTextArea } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { 
+  EyeOutlined, 
+  SearchOutlined, 
+  EditOutlined,
+  PhoneOutlined,
+  MailOutlined,
+  UserOutlined,
+  MessageOutlined,
+  CalendarOutlined,
+  ClockCircleOutlined,
+  ExclamationCircleOutlined,
+  CheckCircleOutlined,
+  PlusOutlined,
+  AlertOutlined
+} from '@ant-design/icons';
 import Breadcrumb from "@/components/Breadcrumb";
-import { collection, getDocs, addDoc, updateDoc, doc, query, orderBy, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { format } from 'date-fns';
 import { arSA } from 'date-fns/locale';
+import dayjs from 'dayjs';
+
+const { TextArea } = AntdTextArea;
 
 interface Customer {
   id: string;
@@ -65,24 +78,16 @@ interface FollowUpRecord {
 
 const CustomerFollowUpPage: React.FC = () => {
   const navigate = useNavigate();
-  const { toast } = useToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [followUpRecords, setFollowUpRecords] = useState<FollowUpRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "due" | "overdue" | "completed">("all");
   const [currentPage, setCurrentPage] = useState(1);
-  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [form] = Form.useForm();
   const itemsPerPage = 10;
-
-  const [newFollowUp, setNewFollowUp] = useState<Partial<FollowUpRecord>>({
-    contactType: "مكالمة",
-    contactDate: format(new Date(), "yyyy-MM-dd"),
-    status: "مكتمل",
-    notes: "",
-    createdBy: "المستخدم الحالي" // TODO: replace with actual user
-  });
 
   const contactTypes = ["مكالمة", "بريد إلكتروني", "زيارة", "رسالة"];
   const followUpStatuses = ["مكتمل", "مجدول", "متأخر"];
@@ -99,15 +104,11 @@ const CustomerFollowUpPage: React.FC = () => {
       }));
       setCustomers(data);
     } catch (err) {
-      toast({
-        title: "خطأ",
-        description: "حدث خطأ أثناء جلب بيانات العملاء",
-        variant: "destructive",
-      });
+      message.error("حدث خطأ أثناء جلب بيانات العملاء");
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   // جلب سجلات المتابعة
   const fetchFollowUpRecords = useCallback(async () => {
@@ -130,13 +131,15 @@ const CustomerFollowUpPage: React.FC = () => {
   }, [fetchCustomers, fetchFollowUpRecords]);
 
   // إضافة متابعة جديدة
-  const handleAddFollowUp = async () => {
-    if (!selectedCustomer || !newFollowUp.notes) {
-      toast({
-        title: "خطأ",
-        description: "يرجى ملء جميع البيانات المطلوبة",
-        variant: "destructive",
-      });
+  const handleAddFollowUp = async (values: {
+    contactType: "مكالمة" | "بريد إلكتروني" | "زيارة" | "رسالة";
+    contactDate: dayjs.Dayjs;
+    nextFollowUpDate?: dayjs.Dayjs;
+    status: "مكتمل" | "مجدول" | "متأخر";
+    notes: string;
+  }) => {
+    if (!selectedCustomer) {
+      message.error("يرجى اختيار العميل");
       return;
     }
 
@@ -144,12 +147,12 @@ const CustomerFollowUpPage: React.FC = () => {
       const followUpData: FollowUpRecord = {
         customerId: selectedCustomer.docId!,
         customerName: selectedCustomer.nameAr,
-        contactType: newFollowUp.contactType!,
-        contactDate: newFollowUp.contactDate!,
-        nextFollowUpDate: newFollowUp.nextFollowUpDate,
-        notes: newFollowUp.notes!,
-        status: newFollowUp.status!,
-        createdBy: newFollowUp.createdBy!,
+        contactType: values.contactType,
+        contactDate: values.contactDate.format('YYYY-MM-DD'),
+        nextFollowUpDate: values.nextFollowUpDate?.format('YYYY-MM-DD'),
+        notes: values.notes,
+        status: values.status,
+        createdBy: "المستخدم الحالي", // TODO: replace with actual user
         createdAt: new Date().toISOString()
       };
 
@@ -158,36 +161,22 @@ const CustomerFollowUpPage: React.FC = () => {
       // تحديث تاريخ آخر اتصال للعميل
       if (selectedCustomer.docId) {
         await updateDoc(doc(db, "customers", selectedCustomer.docId), {
-          lastContactDate: newFollowUp.contactDate,
-          nextFollowUpDate: newFollowUp.nextFollowUpDate,
+          lastContactDate: followUpData.contactDate,
+          nextFollowUpDate: followUpData.nextFollowUpDate,
           lastFollowUpUpdate: new Date().toISOString()
         });
       }
 
-      toast({
-        title: "تم الحفظ",
-        description: "تم إضافة متابعة العميل بنجاح",
-        variant: "default",
-      });
+      message.success("تم إضافة متابعة العميل بنجاح");
 
-      setShowAddDialog(false);
+      setShowAddModal(false);
       setSelectedCustomer(null);
-      setNewFollowUp({
-        contactType: "مكالمة",
-        contactDate: format(new Date(), "yyyy-MM-dd"),
-        status: "مكتمل",
-        notes: "",
-        createdBy: "المستخدم الحالي"
-      });
+      form.resetFields();
 
       fetchCustomers();
       fetchFollowUpRecords();
     } catch (error) {
-      toast({
-        title: "خطأ",
-        description: "حدث خطأ أثناء حفظ المتابعة",
-        variant: "destructive",
-      });
+      message.error("حدث خطأ أثناء حفظ المتابعة");
     }
   };
 
@@ -244,22 +233,21 @@ const CustomerFollowUpPage: React.FC = () => {
     }
   };
 
-  const getStatusBadge = (customer: Customer) => {
+  const getStatusTag = (customer: Customer) => {
     const status = getFollowUpStatus(customer);
     switch (status) {
       case "overdue":
-        return <Badge variant="destructive" className="gap-1"><AlertCircle className="h-3 w-3" />متأخر</Badge>;
+        return <Tag color="red" icon={<ExclamationCircleOutlined />}>متأخر</Tag>;
       case "due":
-        return <Badge variant="secondary" className="gap-1"><Clock className="h-3 w-3" />مستحق اليوم</Badge>;
+        return <Tag color="orange" icon={<ClockCircleOutlined />}>مستحق اليوم</Tag>;
       case "scheduled":
-        return <Badge variant="default" className="gap-1"><CheckCircle className="h-3 w-3" />مجدول</Badge>;
+        return <Tag color="green" icon={<CheckCircleOutlined />}>مجدول</Tag>;
       default:
-        return <Badge variant="outline" className="gap-1">غير محدد</Badge>;
+        return <Tag color="default">غير محدد</Tag>;
     }
   };
 
   const getFollowUpStats = () => {
-    const today = new Date();
     let due = 0, overdue = 0, scheduled = 0;
     
     customers.forEach(customer => {
@@ -276,13 +264,107 @@ const CustomerFollowUpPage: React.FC = () => {
 
   const stats = getFollowUpStats();
 
+  const openAddFollowUpModal = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setShowAddModal(true);
+    form.setFieldsValue({
+      contactType: "مكالمة",
+      contactDate: dayjs(),
+      status: "مكتمل"
+    });
+  };
+
+  const getContactIcon = (type: string) => {
+    switch (type) {
+      case "مكالمة": return <PhoneOutlined />;
+      case "بريد إلكتروني": return <MailOutlined />;
+      case "زيارة": return <UserOutlined />;
+      case "رسالة": return <MessageOutlined />;
+      default: return <MessageOutlined />;
+    }
+  };
+
+  const columns: ColumnsType<Customer> = [
+    {
+      title: "رقم العميل",
+      dataIndex: "id",
+      key: "id",
+      width: 120,
+      render: (text: string) => <span className="font-medium">{text}</span>
+    },
+    {
+      title: "اسم العميل",
+      dataIndex: "nameAr",
+      key: "nameAr",
+      width: 200,
+      render: (text: string) => <span className="font-medium">{text}</span>
+    },
+    {
+      title: "الفرع",
+      dataIndex: "branch",
+      key: "branch",
+      width: 130
+    },
+    {
+      title: "نوع العمل",
+      dataIndex: "businessType",
+      key: "businessType",
+      width: 130
+    },
+    {
+      title: "الجوال",
+      dataIndex: "mobile",
+      key: "mobile",
+      width: 130
+    },
+    {
+      title: "آخر اتصال",
+      dataIndex: "lastContactDate",
+      key: "lastContactDate",
+      width: 130,
+      render: (date: string) => formatDate(date)
+    },
+    {
+      title: "المتابعة القادمة",
+      dataIndex: "nextFollowUpDate",
+      key: "nextFollowUpDate",
+      width: 130,
+      render: (date: string) => formatDate(date)
+    },
+    {
+      title: "الحالة",
+      key: "status",
+      width: 120,
+      render: (_, record) => getStatusTag(record)
+    },
+    {
+      title: "الإجراءات",
+      key: "actions",
+      width: 120,
+      render: (_, record) => (
+        <Space>
+          <Button
+            type="text"
+            icon={<EyeOutlined />}
+            onClick={() => navigate(`/customers/view/${record.docId}`)}
+          />
+          <Button
+            type="text"
+            icon={<PlusOutlined />}
+            onClick={() => openAddFollowUpModal(record)}
+          />
+        </Space>
+      )
+    }
+  ];
+
   return (
-    <div className="min-h-screen bg-background rtl" dir="rtl">
+    <div className="min-h-screen bg-gray-50 rtl" dir="rtl">
       <div className="p-6 lg:p-8">
         {/* Header */}
-        <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+        <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-sm relative overflow-hidden">
           <div className="flex items-center">
-            <Eye className="h-8 w-8 text-indigo-600 ml-3" />
+            <EyeOutlined className="text-2xl text-indigo-600 ml-3" />
             <h1 className="text-2xl font-bold text-gray-800">متابعة العملاء</h1>
           </div>
           <p className="text-gray-600 mt-2">متابعة وتقييم العملاء وجدولة الاتصالات</p>
@@ -298,299 +380,242 @@ const CustomerFollowUpPage: React.FC = () => {
         />
 
         {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6 mb-6">
-          <Card className="p-4">
-            <CardContent className="p-0">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">إجمالي العملاء</p>
-                  <p className="text-2xl font-bold">{stats.total}</p>
-                </div>
-                <User className="h-8 w-8 text-blue-500" />
-              </div>
-            </CardContent>
-          </Card>
+        <Row gutter={[16, 16]} className="mt-6 mb-6">
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="إجمالي العملاء"
+                value={stats.total}
+                prefix={<UserOutlined style={{ color: '#1890ff' }} />}
+                valueStyle={{ color: '#1890ff' }}
+              />
+            </Card>
+          </Col>
           
-          <Card className="p-4">
-            <CardContent className="p-0">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">متابعة اليوم</p>
-                  <p className="text-2xl font-bold text-orange-600">{stats.due}</p>
-                </div>
-                <Clock className="h-8 w-8 text-orange-500" />
-              </div>
-            </CardContent>
-          </Card>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="متابعة اليوم"
+                value={stats.due}
+                prefix={<ClockCircleOutlined style={{ color: '#fa8c16' }} />}
+                valueStyle={{ color: '#fa8c16' }}
+              />
+            </Card>
+          </Col>
           
-          <Card className="p-4">
-            <CardContent className="p-0">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">متابعة متأخرة</p>
-                  <p className="text-2xl font-bold text-red-600">{stats.overdue}</p>
-                </div>
-                <AlertCircle className="h-8 w-8 text-red-500" />
-              </div>
-            </CardContent>
-          </Card>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="متابعة متأخرة"
+                value={stats.overdue}
+                prefix={<ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />}
+                valueStyle={{ color: '#ff4d4f' }}
+              />
+            </Card>
+          </Col>
           
-          <Card className="p-4">
-            <CardContent className="p-0">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">متابعة مجدولة</p>
-                  <p className="text-2xl font-bold text-green-600">{stats.scheduled}</p>
-                </div>
-                <CheckCircle className="h-8 w-8 text-green-500" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="متابعة مجدولة"
+                value={stats.scheduled}
+                prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+                valueStyle={{ color: '#52c41a' }}
+              />
+            </Card>
+          </Col>
+        </Row>
 
         {/* Controls */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm text-gray-500">
               عرض {filteredCustomers.length} من {customers.length} عميل
             </span>
           </div>
           
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="ابحث عن عميل..."
-                className="pl-10"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <select
+          <Space className="w-full md:w-auto">
+            <Input
+              placeholder="ابحث عن عميل..."
+              prefix={<SearchOutlined />}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ width: 250 }}
+            />
+            <Select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as "all" | "due" | "overdue" | "completed")}
-              className="px-3 py-2 border rounded-md text-sm"
+              onChange={(value) => setStatusFilter(value)}
+              style={{ width: 150 }}
             >
-              <option value="all">جميع الحالات</option>
-              <option value="due">مستحق اليوم</option>
-              <option value="overdue">متأخر</option>
-              <option value="completed">مجدول</option>
-            </select>
-          </div>
+              <Select.Option value="all">جميع الحالات</Select.Option>
+              <Select.Option value="due">مستحق اليوم</Select.Option>
+              <Select.Option value="overdue">متأخر</Select.Option>
+              <Select.Option value="completed">مجدول</Select.Option>
+            </Select>
+          </Space>
         </div>
 
         {/* Customers Table */}
-        <Card className="p-0 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-24">رقم العميل</TableHead>
-                <TableHead className="w-48">اسم العميل</TableHead>
-                <TableHead className="w-32">الفرع</TableHead>
-                <TableHead className="w-32">نوع العمل</TableHead>
-                <TableHead className="w-32">الجوال</TableHead>
-                <TableHead className="w-32">آخر اتصال</TableHead>
-                <TableHead className="w-32">المتابعة القادمة</TableHead>
-                <TableHead className="w-24">الحالة</TableHead>
-                <TableHead className="w-32">الإجراءات</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center py-6">
-                    <div className="flex justify-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : paginatedCustomers.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center py-6">
-                    {searchTerm || statusFilter !== "all" ? "لا توجد نتائج للبحث" : "لا يوجد عملاء"}
-                  </TableCell>
-                </TableRow>
-              ) : paginatedCustomers.map((customer) => (
-                <TableRow key={customer.id} className="hover:bg-gray-50/50">
-                  <TableCell className="font-medium">{customer.id}</TableCell>
-                  <TableCell className="font-medium">{customer.nameAr}</TableCell>
-                  <TableCell>{customer.branch}</TableCell>
-                  <TableCell>{customer.businessType}</TableCell>
-                  <TableCell>{customer.mobile}</TableCell>
-                  <TableCell>{formatDate(customer.lastContactDate)}</TableCell>
-                  <TableCell>{formatDate(customer.nextFollowUpDate)}</TableCell>
-                  <TableCell>{getStatusBadge(customer)}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => navigate(`/customers/view/${customer.docId}`)}
-                        className="h-8 w-8 p-0"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedCustomer(customer)}
-                            className="h-8 w-8 p-0"
-                          >
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="sm:max-w-md rtl" dir="rtl">
-                          <DialogHeader>
-                            <DialogTitle>إضافة متابعة للعميل</DialogTitle>
-                            <DialogDescription>
-                              إضافة سجل متابعة جديد للعميل: {customer.nameAr}
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="space-y-4">
-                            <div>
-                              <label className="block text-sm font-medium mb-1">نوع الاتصال</label>
-                              <Select
-                                value={newFollowUp.contactType || ""}
-                                onValueChange={(value) => setNewFollowUp(prev => ({ ...prev, contactType: value as "مكالمة" | "بريد إلكتروني" | "زيارة" | "رسالة" }))}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="اختر نوع الاتصال" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {contactTypes.map(type => (
-                                    <SelectItem key={type} value={type}>{type}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium mb-1">تاريخ الاتصال</label>
-                              <Input
-                                type="date"
-                                value={newFollowUp.contactDate || ""}
-                                onChange={(e) => setNewFollowUp(prev => ({ ...prev, contactDate: e.target.value }))}
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium mb-1">تاريخ المتابعة القادمة</label>
-                              <Input
-                                type="date"
-                                value={newFollowUp.nextFollowUpDate || ""}
-                                onChange={(e) => setNewFollowUp(prev => ({ ...prev, nextFollowUpDate: e.target.value }))}
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium mb-1">حالة المتابعة</label>
-                              <Select
-                                value={newFollowUp.status || ""}
-                                onValueChange={(value) => setNewFollowUp(prev => ({ ...prev, status: value as "مكتمل" | "مجدول" | "متأخر" }))}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="اختر الحالة" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {followUpStatuses.map(status => (
-                                    <SelectItem key={status} value={status}>{status}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium mb-1">ملاحظات المتابعة</label>
-                              <Textarea
-                                value={newFollowUp.notes || ""}
-                                onChange={(e) => setNewFollowUp(prev => ({ ...prev, notes: e.target.value }))}
-                                placeholder="أدخل ملاحظات المتابعة..."
-                                rows={3}
-                              />
-                            </div>
-                          </div>
-                          <DialogFooter>
-                            <Button type="button" variant="outline" onClick={() => setSelectedCustomer(null)}>
-                              إلغاء
-                            </Button>
-                            <Button type="button" onClick={handleAddFollowUp}>
-                              حفظ المتابعة
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <Card className="overflow-hidden">
+          <Table
+            columns={columns}
+            dataSource={paginatedCustomers}
+            loading={loading}
+            pagination={false}
+            rowKey="id"
+            locale={{
+              emptyText: searchTerm || statusFilter !== "all" ? "لا توجد نتائج للبحث" : "لا يوجد عملاء"
+            }}
+            scroll={{ x: 1200 }}
+          />
 
           {/* Pagination */}
           {filteredCustomers.length > itemsPerPage && (
             <div className="flex items-center justify-between p-4 border-t">
-              <div className="text-sm text-muted-foreground">
+              <div className="text-sm text-gray-500">
                 عرض {Math.min((currentPage - 1) * itemsPerPage + 1, filteredCustomers.length)}-
                 {Math.min(currentPage * itemsPerPage, filteredCustomers.length)} من {filteredCustomers.length} عميل
               </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span className="flex items-center px-3 text-sm">
-                  صفحة {currentPage} من {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
+              <Pagination
+                current={currentPage}
+                total={filteredCustomers.length}
+                pageSize={itemsPerPage}
+                onChange={setCurrentPage}
+                showSizeChanger={false}
+                showQuickJumper
+              />
             </div>
           )}
         </Card>
 
         {/* Recent Follow-ups */}
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-lg">آخر المتابعات</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {followUpRecords.slice(0, 5).map((record) => (
-                <div key={record.id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      {record.contactType === "مكالمة" && <Phone className="h-4 w-4 text-blue-600" />}
-                      {record.contactType === "بريد إلكتروني" && <Mail className="h-4 w-4 text-blue-600" />}
-                      {record.contactType === "زيارة" && <User className="h-4 w-4 text-blue-600" />}
-                      {record.contactType === "رسالة" && <MessageSquare className="h-4 w-4 text-blue-600" />}
+        <Card className="mt-6" title="آخر المتابعات">
+          <List
+            dataSource={followUpRecords.slice(0, 5)}
+            locale={{ emptyText: "لا توجد متابعات مسجلة" }}
+            renderItem={(record) => (
+              <List.Item>
+                <List.Item.Meta
+                  avatar={
+                    <Avatar icon={getContactIcon(record.contactType)} style={{ backgroundColor: '#1890ff' }} />
+                  }
+                  title={
+                    <div className="flex items-center justify-between">
+                      <span>{record.customerName}</span>
+                      <Tag color={record.status === "مكتمل" ? "green" : "orange"}>
+                        {record.status}
+                      </Tag>
                     </div>
+                  }
+                  description={
                     <div>
-                      <p className="font-medium">{record.customerName}</p>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-gray-500 mb-1">
                         {record.contactType} - {formatDate(record.contactDate)}
                       </p>
                       <p className="text-sm">{record.notes}</p>
                     </div>
-                  </div>
-                  <Badge variant={record.status === "مكتمل" ? "default" : "secondary"}>
-                    {record.status}
-                  </Badge>
-                </div>
-              ))}
-              {followUpRecords.length === 0 && (
-                <p className="text-center text-muted-foreground py-6">لا توجد متابعات مسجلة</p>
-              )}
-            </div>
-          </CardContent>
+                  }
+                />
+              </List.Item>
+            )}
+          />
         </Card>
+
+        {/* Add Follow-up Modal */}
+        <Modal
+          title="إضافة متابعة للعميل"
+          open={showAddModal}
+          onCancel={() => {
+            setShowAddModal(false);
+            setSelectedCustomer(null);
+            form.resetFields();
+          }}
+          footer={null}
+          width={600}
+        >
+          {selectedCustomer && (
+            <>
+              <p className="mb-4 text-gray-600">
+                إضافة سجل متابعة جديد للعميل: <strong>{selectedCustomer.nameAr}</strong>
+              </p>
+              <Form
+                form={form}
+                layout="vertical"
+                onFinish={handleAddFollowUp}
+              >
+                <Form.Item
+                  name="contactType"
+                  label="نوع الاتصال"
+                  rules={[{ required: true, message: 'يرجى اختيار نوع الاتصال' }]}
+                >
+                  <Select placeholder="اختر نوع الاتصال">
+                    {contactTypes.map(type => (
+                      <Select.Option key={type} value={type}>{type}</Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item
+                      name="contactDate"
+                      label="تاريخ الاتصال"
+                      rules={[{ required: true, message: 'يرجى اختيار تاريخ الاتصال' }]}
+                    >
+                      <DatePicker style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item
+                      name="nextFollowUpDate"
+                      label="تاريخ المتابعة القادمة"
+                    >
+                      <DatePicker style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Form.Item
+                  name="status"
+                  label="حالة المتابعة"
+                  rules={[{ required: true, message: 'يرجى اختيار حالة المتابعة' }]}
+                >
+                  <Select placeholder="اختر الحالة">
+                    {followUpStatuses.map(status => (
+                      <Select.Option key={status} value={status}>{status}</Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+
+                <Form.Item
+                  name="notes"
+                  label="ملاحظات المتابعة"
+                  rules={[{ required: true, message: 'يرجى إدخال ملاحظات المتابعة' }]}
+                >
+                  <TextArea
+                    rows={3}
+                    placeholder="أدخل ملاحظات المتابعة..."
+                  />
+                </Form.Item>
+
+                <Form.Item className="mb-0">
+                  <Space className="w-full justify-end">
+                    <Button onClick={() => {
+                      setShowAddModal(false);
+                      setSelectedCustomer(null);
+                      form.resetFields();
+                    }}>
+                      إلغاء
+                    </Button>
+                    <Button type="primary" htmlType="submit">
+                      حفظ المتابعة
+                    </Button>
+                  </Space>
+                </Form.Item>
+              </Form>
+            </>
+          )}
+        </Modal>
       </div>
     </div>
   );

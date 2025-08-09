@@ -1,30 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
-import { 
-  BookOpen, 
-  Search, 
-  Edit, 
-  Trash2, 
-  Eye, 
-  UserPlus, 
-  ChevronLeft, 
-  ChevronRight,
-  Download,
-  Upload,
-  Filter
-} from 'lucide-react';
-import Breadcrumb from "@/components/Breadcrumb";
-import { collection, getDocs, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { format } from 'date-fns';
-import { arSA } from 'date-fns/locale';
-
+import React, { useState, useEffect, useCallback } from 'react';import { useNavigate } from 'react-router-dom';import {  Card,  Button,  Input,  Table,  Badge,  message,  Row,  Col,  Typography,  Space,  Tooltip,  Modal,  Statistic,  Empty} from 'antd';import {  BookOutlined,  SearchOutlined,  EditOutlined,  DeleteOutlined,  EyeOutlined,  UserAddOutlined,  DownloadOutlined,  FilterOutlined,  ExclamationCircleOutlined} from '@ant-design/icons';import Breadcrumb from "@/components/Breadcrumb";import { collection, getDocs, deleteDoc, doc, query, orderBy } from 'firebase/firestore';import { db } from '@/lib/firebase';import { format } from 'date-fns';import { arSA } from 'date-fns/locale';import type { ColumnsType } from 'antd/es/table';const { Title } = Typography;const { confirm } = Modal;
 interface Customer {
   id: string;
   nameAr: string;
@@ -55,23 +29,9 @@ interface Customer {
 
 const CustomersDirectoryPage: React.FC = () => {
   const navigate = useNavigate();
-  const { toast } = useToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-
-  const columns = [
-    { key: "id", label: "رقم العميل", width: "w-24" },
-    { key: "nameAr", label: "الاسم بالعربي", width: "w-48" },
-    { key: "nameEn", label: "الاسم بالإنجليزي", width: "w-48" },
-    { key: "branch", label: "الفرع", width: "w-32" },
-    { key: "commercialReg", label: "السجل التجاري", width: "w-32" },
-    { key: "regDate", label: "تاريخ السجل", width: "w-32" },
-    { key: "businessType", label: "نوع العمل", width: "w-32" },
-    { key: "status", label: "الحالة", width: "w-24" },
-  ];
 
   // جلب العملاء من Firestore
   const fetchCustomers = useCallback(async () => {
@@ -85,15 +45,11 @@ const CustomersDirectoryPage: React.FC = () => {
       }));
       setCustomers(data);
     } catch (err) {
-      toast({
-        title: "خطأ",
-        description: "حدث خطأ أثناء جلب بيانات العملاء",
-        variant: "destructive",
-      });
+      message.error("حدث خطأ أثناء جلب بيانات العملاء");
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
     fetchCustomers();
@@ -101,23 +57,23 @@ const CustomersDirectoryPage: React.FC = () => {
 
   // حذف العميل
   const handleDelete = async (docId: string) => {
-    if (!confirm("هل أنت متأكد من حذف هذا العميل؟")) return;
-    
-    try {
-      await deleteDoc(doc(db, "customers", docId));
-      toast({
-        title: "تم الحذف",
-        description: "تم حذف العميل بنجاح",
-        variant: "default",
-      });
-      fetchCustomers();
-    } catch (error) {
-      toast({
-        title: "خطأ",
-        description: "حدث خطأ أثناء حذف العميل",
-        variant: "destructive",
-      });
-    }
+    confirm({
+      title: 'هل أنت متأكد من حذف هذا العميل؟',
+      icon: <ExclamationCircleOutlined />,
+      content: 'لا يمكن التراجع عن هذا الإجراء',
+      okText: 'نعم، احذف',
+      cancelText: 'إلغاء',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          await deleteDoc(doc(db, "customers", docId));
+          message.success("تم حذف العميل بنجاح");
+          fetchCustomers();
+        } catch (error) {
+          message.error("حدث خطأ أثناء حذف العميل");
+        }
+      }
+    });
   };
 
   // تصفية العملاء حسب البحث
@@ -126,13 +82,6 @@ const CustomersDirectoryPage: React.FC = () => {
       value => value && 
       value.toString().toLowerCase().includes(searchTerm.toLowerCase())
     )
-  );
-
-  // ترقيم الصفحات
-  const totalPages = Math.ceil(filteredCustomers.length / itemsPerPage);
-  const paginatedCustomers = filteredCustomers.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
   );
 
   const formatDate = (dateStr: string) => {
@@ -144,236 +93,285 @@ const CustomersDirectoryPage: React.FC = () => {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-background rtl" dir="rtl">
-      <div className="p-6 lg:p-8">
-        {/* Header */}
-        <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
-          <div className="flex items-center">
-            <BookOpen className="h-8 w-8 text-purple-600 ml-3" />
-            <h1 className="text-2xl font-bold text-gray-800">دليل العملاء</h1>
-          </div>
-          <p className="text-gray-600 mt-2">قائمة شاملة بجميع العملاء المسجلين في النظام</p>
-          <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-purple-400 to-blue-500"></div>
-        </div>
-
-        <Breadcrumb
-          items={[
-            { label: "الرئيسية", to: "/" },
-            { label: "إدارة المبيعات", to: "/management/sales" },
-            { label: "دليل العملاء" },
-          ]}
+  const columns: ColumnsType<Customer> = [
+    {
+      title: 'رقم العميل',
+      dataIndex: 'id',
+      key: 'id',
+      width: 120,
+      fixed: 'left',
+      render: (text: string) => <span style={{ fontWeight: 500 }}>{text}</span>
+    },
+    {
+      title: 'الاسم بالعربي',
+      dataIndex: 'nameAr',
+      key: 'nameAr',
+      width: 200,
+      render: (text: string) => <span style={{ fontWeight: 500 }}>{text}</span>
+    },
+    {
+      title: 'الاسم بالإنجليزي',
+      dataIndex: 'nameEn',
+      key: 'nameEn',
+      width: 200,
+    },
+    {
+      title: 'الفرع',
+      dataIndex: 'branch',
+      key: 'branch',
+      width: 120,
+    },
+    {
+      title: 'السجل التجاري',
+      dataIndex: 'commercialReg',
+      key: 'commercialReg',
+      width: 150,
+    },
+    {
+      title: 'تاريخ السجل',
+      dataIndex: 'regDate',
+      key: 'regDate',
+      width: 120,
+      render: (text: string) => formatDate(text)
+    },
+    {
+      title: 'نوع العمل',
+      dataIndex: 'businessType',
+      key: 'businessType',
+      width: 120,
+    },
+    {
+      title: 'المدينة',
+      dataIndex: 'city',
+      key: 'city',
+      width: 100,
+    },
+    {
+      title: 'الجوال',
+      dataIndex: 'mobile',
+      key: 'mobile',
+      width: 120,
+    },
+    {
+      title: 'الحالة',
+      dataIndex: 'status',
+      key: 'status',
+      width: 100,
+      render: (status: string) => (
+        <Badge 
+          color={status === "نشط" ? "green" : "red"}
+          text={status}
         />
+      )
+    },
+    {
+      title: 'الإجراءات',
+      key: 'actions',
+      width: 150,
+      fixed: 'right',
+      render: (_: unknown, record: Customer) => (
+        <Space>
+          <Tooltip title="عرض">
+            <Button
+              type="text"
+              icon={<EyeOutlined />}
+              onClick={() => navigate(`/customers/view/${record.docId}`)}
+              style={{ color: '#1890ff' }}
+            />
+          </Tooltip>
+          <Tooltip title="تعديل">
+            <Button
+              type="text"
+              icon={<EditOutlined />}
+              onClick={() => navigate(`/customers/edit/${record.docId}`)}
+              style={{ color: '#52c41a' }}
+            />
+          </Tooltip>
+          <Tooltip title="حذف">
+            <Button
+              type="text"
+              icon={<DeleteOutlined />}
+              onClick={() => record.docId && handleDelete(record.docId)}
+              style={{ color: '#ff4d4f' }}
+            />
+          </Tooltip>
+        </Space>
+      ),
+    },
+  ];
 
-        {/* Controls */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 mt-6">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">
-              إجمالي العملاء: {filteredCustomers.length}
-            </span>
+  return (
+    <div style={{ padding: 24, minHeight: '100vh', direction: 'rtl' }}>
+      {/* Header */}
+      <Card style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <BookOutlined style={{ fontSize: 32, color: '#9333ea', marginLeft: 16 }} />
+          <div>
+            <Title level={2} style={{ margin: 0, color: '#1f2937' }}>دليل العملاء</Title>
+            <p style={{ margin: '8px 0 0 0', color: '#6b7280' }}>قائمة شاملة بجميع العملاء المسجلين في النظام</p>
           </div>
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="ابحث عن عميل..."
-                className="pl-10"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+        </div>
+      </Card>
+
+      <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "إدارة المبيعات", to: "/management/sales" },
+          { label: "دليل العملاء" },
+        ]}
+      />
+
+      {/* Statistics Cards */}
+      <Row gutter={16} style={{ margin: '24px 0' }}>
+        <Col xs={24} sm={12} md={6}>
+          <Card>
+            <Statistic
+              title="إجمالي العملاء"
+              value={customers.length}
+              prefix={<BookOutlined style={{ color: '#1890ff' }} />}
+              valueStyle={{ color: '#1890ff' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Card>
+            <Statistic
+              title="العملاء النشطون"
+              value={customers.filter(c => c.status === "نشط").length}
+              prefix={<span style={{ color: '#52c41a', fontSize: 16 }}>●</span>}
+              valueStyle={{ color: '#52c41a' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Card>
+            <Statistic
+              title="العملاء المتوقفون"
+              value={customers.filter(c => c.status === "متوقف").length}
+              prefix={<span style={{ color: '#ff4d4f', fontSize: 16 }}>●</span>}
+              valueStyle={{ color: '#ff4d4f' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Card>
+            <Statistic
+              title="المدينة الأكثر"
+              value={customers.length > 0 ? 
+                Object.entries(
+                  customers.reduce((acc, c) => {
+                    acc[c.city] = (acc[c.city] || 0) + 1;
+                    return acc;
+                  }, {} as Record<string, number>)
+                ).sort(([,a], [,b]) => b - a)[0]?.[0] || "غير محدد"
+                : "غير محدد"
+              }
+              prefix={<span style={{ color: '#9333ea', fontSize: 16 }}>●</span>}
+              valueStyle={{ color: '#9333ea', fontSize: 18 }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Controls */}
+      <Card style={{ marginBottom: 24 }}>
+        <Row justify="space-between" align="middle" gutter={16}>
+          <Col xs={24} md={8}>
+            <Space>
+              <span style={{ color: '#666' }}>
+                إجمالي العملاء: {filteredCustomers.length}
+              </span>
+            </Space>
+          </Col>
+          <Col xs={24} md={16}>
+            <Row gutter={8} justify="end">
+              <Col xs={24} sm={12} md={8}>
+                <Input
+                  placeholder="ابحث عن عميل..."
+                  prefix={<SearchOutlined />}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  allowClear
+                />
+              </Col>
+              <Col>
+                <Button 
+                  type="primary"
+                  icon={<UserAddOutlined />}
+                  onClick={() => navigate('/customers/add')}
+                  style={{ backgroundColor: '#1890ff', borderColor: '#1890ff' }}
+                >
+                  عميل جديد
+                </Button>
+              </Col>
+              <Col>
+                <Button 
+                  icon={<DownloadOutlined />}
+                  onClick={() => message.info('سيتم تطوير ميزة التصدير قريباً')}
+                >
+                  تصدير
+                </Button>
+              </Col>
+              <Col>
+                <Button 
+                  icon={<FilterOutlined />}
+                  onClick={() => message.info('سيتم تطوير ميزة التصفية قريباً')}
+                >
+                  تصفية
+                </Button>
+              </Col>
+            </Row>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* Customers Table */}
+      <Card>
+        <Title level={4}>
+          <BookOutlined style={{ marginLeft: 8 }} />
+          قائمة العملاء ({filteredCustomers.length})
+        </Title>
+        
+        <Table
+          columns={columns}
+          dataSource={filteredCustomers}
+          rowKey="id"
+          loading={loading}
+          pagination={{
+            pageSize: 10,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total, range) => 
+              `عرض ${range[0]}-${range[1]} من ${total} عميل`,
+            pageSizeOptions: ['10', '20', '50', '100'],
+          }}
+          scroll={{ x: 1500, y: 600 }}
+          locale={{
+            emptyText: searchTerm ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="لا توجد نتائج للبحث"
               />
-            </div>
-            <Button 
-              onClick={() => navigate('/customers/add')} 
-              className="gap-2"
-            >
-              <UserPlus className="h-4 w-4" />
-              <span>عميل جديد</span>
-            </Button>
-            <Button variant="outline" className="gap-2">
-              <Download className="h-4 w-4" />
-              تصدير
-            </Button>
-          </div>
-        </div>
-
-        {/* Customers Table */}
-        <Card className="p-0 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {columns.map(col => (
-                  <TableHead key={col.key} className={col.width}>
-                    {col.label}
-                  </TableHead>
-                ))}
-                <TableHead className="w-32">الإجراءات</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={columns.length + 1} className="text-center py-6">
-                    <div className="flex justify-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : paginatedCustomers.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={columns.length + 1} className="text-center py-6">
-                    {searchTerm ? "لا توجد نتائج للبحث" : "لا يوجد عملاء"}
-                  </TableCell>
-                </TableRow>
-              ) : paginatedCustomers.map((customer) => (
-                <TableRow key={customer.id} className="hover:bg-gray-50/50">
-                  <TableCell className="font-medium">{customer.id}</TableCell>
-                  <TableCell className="font-medium">{customer.nameAr}</TableCell>
-                  <TableCell>{customer.nameEn}</TableCell>
-                  <TableCell>{customer.branch}</TableCell>
-                  <TableCell>{customer.commercialReg}</TableCell>
-                  <TableCell>{formatDate(customer.regDate)}</TableCell>
-                  <TableCell>{customer.businessType}</TableCell>
-                  <TableCell>
-                    <Badge variant={customer.status === "نشط" ? "default" : "secondary"}>
-                      {customer.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => navigate(`/customers/view/${customer.docId}`)}
-                        className="h-8 w-8 p-0"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => navigate(`/customers/edit/${customer.docId}`)}
-                        className="h-8 w-8 p-0"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => customer.docId && handleDelete(customer.docId)}
-                        className="h-8 w-8 p-0 text-red-600 hover:text-red-800"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          {/* Pagination */}
-          {filteredCustomers.length > itemsPerPage && (
-            <div className="flex items-center justify-between p-4 border-t">
-              <div className="text-sm text-muted-foreground">
-                عرض {Math.min((currentPage - 1) * itemsPerPage + 1, filteredCustomers.length)}-
-                {Math.min(currentPage * itemsPerPage, filteredCustomers.length)} من {filteredCustomers.length} عميل
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-                  disabled={currentPage === 1}
+            ) : (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="لا يوجد عملاء"
+              >
+                <Button 
+                  type="primary"
+                  icon={<UserAddOutlined />}
+                  onClick={() => navigate('/customers/add')}
+                  style={{ backgroundColor: '#1890ff', borderColor: '#1890ff' }}
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  إضافة أول عميل
                 </Button>
-                <span className="flex items-center px-3 text-sm">
-                  صفحة {currentPage} من {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </Card>
-
-        {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
-          <Card className="p-4">
-            <CardContent className="p-0">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">إجمالي العملاء</p>
-                  <p className="text-2xl font-bold">{customers.length}</p>
-                </div>
-                <BookOpen className="h-8 w-8 text-blue-500" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="p-4">
-            <CardContent className="p-0">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">العملاء النشطون</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    {customers.filter(c => c.status === "نشط").length}
-                  </p>
-                </div>
-                <div className="h-8 w-8 bg-green-100 rounded-full flex items-center justify-center">
-                  <div className="h-4 w-4 bg-green-500 rounded-full"></div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="p-4">
-            <CardContent className="p-0">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">العملاء المتوقفون</p>
-                  <p className="text-2xl font-bold text-red-600">
-                    {customers.filter(c => c.status === "متوقف").length}
-                  </p>
-                </div>
-                <div className="h-8 w-8 bg-red-100 rounded-full flex items-center justify-center">
-                  <div className="h-4 w-4 bg-red-500 rounded-full"></div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="p-4">
-            <CardContent className="p-0">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">المدينة الأكثر</p>
-                  <p className="text-lg font-bold">
-                    {customers.length > 0 ? 
-                      Object.entries(
-                        customers.reduce((acc, c) => {
-                          acc[c.city] = (acc[c.city] || 0) + 1;
-                          return acc;
-                        }, {} as Record<string, number>)
-                      ).sort(([,a], [,b]) => b - a)[0]?.[0] || "غير محدد"
-                      : "غير محدد"
-                    }
-                  </p>
-                </div>
-                <div className="h-8 w-8 bg-purple-100 rounded-full flex items-center justify-center">
-                  <div className="h-4 w-4 bg-purple-500 rounded-full"></div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+              </Empty>
+            )
+          }}
+          size="middle"
+          bordered
+        />
+      </Card>
     </div>
   );
 };

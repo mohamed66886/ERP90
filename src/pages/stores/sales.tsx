@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { SearchOutlined } from '@ant-design/icons';
 import { useAuth } from '@/contexts/useAuth';
-import { doc, getDoc, collection, getDocs, addDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, addDoc, query, where } from 'firebase/firestore';
 import dayjs from 'dayjs';
 import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space } from 'antd';
 import * as XLSX from 'xlsx';
@@ -57,6 +57,7 @@ interface InvoiceData {
   priceRule: string;
   commercialRecord: string;
   taxFile: string;
+  dueDate?: string; // إضافة تاريخ الاستحقاق
 }
 
 interface Totals {
@@ -101,6 +102,10 @@ interface Customer {
 interface Delegate {
   id: string;
   name?: string;
+  email?: string;
+  phone?: string;
+  status?: 'active' | 'inactive';
+  uid?: string;
 }
 
 interface CashBox {
@@ -162,6 +167,7 @@ interface InvoiceRecord {
   invoiceNumber: string;
   entryNumber?: string;
   date: string;
+  dueDate?: string; // إضافة تاريخ الاستحقاق
   branch: string; // إضافة الفرع
   itemNumber: string;
   itemName: string;
@@ -240,11 +246,67 @@ function getTodayString(): string {
   return dayjs().format('YYYY-MM-DD');
 }
 
+// دالة حساب تاريخ الاستحقاق (بعد 12 يوم من تاريخ الفاتورة)
+function calculateDueDate(invoiceDate: string): string {
+  if (!invoiceDate) return '';
+  return dayjs(invoiceDate).add(12, 'day').format('YYYY-MM-DD');
+}
+
 const SalesPage: React.FC = () => {
+  // حالة الرسائل
+  const [notifications, setNotifications] = useState<Array<{
+    id: string;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+    timestamp: Date;
+  }>>([]);
+
+  // دالة إضافة رسالة جديدة
+  const addNotification = useCallback((type: 'success' | 'error' | 'warning' | 'info', title: string, msg: string) => {
+    const newNotification = {
+      id: Date.now().toString(),
+      type,
+      title,
+      message: msg,
+      timestamp: new Date()
+    };
+    setNotifications(prev => {
+      // إضافة الرسالة الجديدة في المقدمة والاحتفاظ بآخر 4 رسائل فقط
+      const updated = [newNotification, ...prev.slice(0, 3)];
+      return updated;
+    });
+    
+    // إزالة الرسالة تلقائياً بعد 5 ثواني
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== newNotification.id));
+    }, 5000);
+  }, []);
+
+  // إنشاء كائن message مخصص
+  const customMessage = useMemo(() => ({
+    success: (msg: string) => {
+      addNotification('success', 'نجح العملية', msg);
+      message.success(msg);
+    },
+    error: (msg: string) => {
+      addNotification('error', 'خطأ في العملية', msg);
+      message.error(msg);
+    },
+    warning: (msg: string) => {
+      addNotification('warning', 'تحذير', msg);
+      message.warning(msg);
+    },
+    info: (msg: string) => {
+      addNotification('info', 'معلومات', msg);
+      message.info(msg);
+    }
+  }), [addNotification]);
+
   // زر توليد 3000 فاتورة عشوائية
   const generateRandomInvoices = async () => {
     if (!branches.length || !warehouses.length || !paymentMethods.length || !customers.length || !itemNames.length) {
-      message.error('يجب توفر بيانات الفروع والمخازن والعملاء والأصناف وطرق الدفع أولاً');
+      customMessage.error('يجب توفر بيانات الفروع والمخازن والعملاء والأصناف وطرق الدفع أولاً');
       return;
     }
     const { addDoc, collection } = await import('firebase/firestore');
@@ -308,12 +370,12 @@ const SalesPage: React.FC = () => {
         };
         await addDoc(collection(db, 'sales_invoices'), invoiceData);
       }
-      message.success('تم توليد 3000 فاتورة عشوائية بنجاح');
+      customMessage.success('تم توليد 3000 فاتورة عشوائية بنجاح');
       if (fetchInvoices) {
         fetchInvoices();
       }
     } catch (err) {
-      message.error('حدث خطأ أثناء توليد الفواتير');
+      customMessage.error('حدث خطأ أثناء توليد الفواتير');
     } finally {
       setLoading(false);
     }
@@ -394,8 +456,8 @@ const SalesPage: React.FC = () => {
         type: '',
         parentId: ''
       });
-      if (typeof message !== 'undefined' && message.success) {
-        message.success('تمت إضافة الصنف بنجاح');
+      if (typeof customMessage !== 'undefined' && customMessage.success) {
+        customMessage.success('تمت إضافة الصنف بنجاح');
       }
     } catch (e) {
       if (typeof message !== 'undefined' && message.error) {
@@ -450,7 +512,7 @@ const SalesPage: React.FC = () => {
         createdAt: new Date().toISOString(),
       };
       await addDoc(collection(db, 'customers'), docData);
-      message.success('تم إضافة العميل بنجاح! يمكنك تعديل باقي البيانات من صفحة العملاء.');
+      customMessage.success('تم إضافة العميل بنجاح! يمكنك تعديل باقي البيانات من صفحة العملاء.');
       setShowAddCustomerModal(false);
       setAddCustomerForm(initialAddCustomer);
       // Optionally, you can refresh the customers list here if you have a fetchCustomers function available
@@ -698,7 +760,8 @@ interface CompanyData {
     delegate: user?.displayName || user?.name || user?.email || '',
     priceRule: '',
     commercialRecord: '',
-    taxFile: ''
+    taxFile: '',
+    dueDate: calculateDueDate(getTodayString()) // إضافة تاريخ الاستحقاق
   });
 
   // توليد رقم فاتورة جديد عند كل إعادة تعيين أو تغيير الفرع
@@ -950,6 +1013,7 @@ interface SavedInvoice {
               key: doc.id + '-' + item.itemNumber,
               invoiceNumber: data.invoiceNumber || 'N/A',
               date: data.date || '',
+              dueDate: data.dueDate || calculateDueDate(data.date || ''), // إضافة تاريخ الاستحقاق
               branch: data.branch || '',
               itemNumber: item.itemNumber || 'N/A',
               itemName: item.itemName || '',
@@ -1095,7 +1159,7 @@ interface SavedInvoice {
         itemNumber: item.itemNumber,
         stoppedItem
       });
-      message.warning(`الصنف "${stoppedItem.name}" موقوف مؤقتاً ولا يمكن إضافته للفاتورة`, 4);
+      customMessage.warning(`الصنف "${stoppedItem.name}" موقوف مؤقتاً ولا يمكن إضافته للفاتورة`);
       return;
     }
 
@@ -1111,7 +1175,7 @@ interface SavedInvoice {
       const availableStock = await checkStockAvailability(item.itemName, warehouseToCheck || '');
       
       if (requestedQuantity > availableStock) {
-        message.warning(`الكمية المطلوبة (${requestedQuantity}) أكبر من المتاح في المخزون (${availableStock}) والصنف لا يسمح بالسالب`, 5);
+        customMessage.warning(`الكمية المطلوبة (${requestedQuantity}) أكبر من المتاح في المخزون (${availableStock}) والصنف لا يسمح بالسالب`);
         return;
       }
     }
@@ -1162,7 +1226,7 @@ interface SavedInvoice {
 
   const handleSave = async () => {
     if (items.length === 0) {
-      message.error('لا يمكن حفظ فاتورة بدون أصناف');
+      customMessage.error('لا يمكن حفظ فاتورة بدون أصناف');
       return;
     }
     
@@ -1223,7 +1287,7 @@ interface SavedInvoice {
       // حفظ الفاتورة في Firestore مباشرة
       const { addDoc, collection } = await import('firebase/firestore');
       await addDoc(collection(db, 'sales_invoices'), invoice);
-      message.success('تم حفظ الفاتورة بنجاح!');
+      customMessage.success('تم حفظ الفاتورة بنجاح!');
       
       // تحديث الأرصدة بعد الحفظ
       if (warehouseMode === 'single' && invoiceData.warehouse) {
@@ -1246,11 +1310,12 @@ interface SavedInvoice {
       if (branchCode) {
         generateAndSetInvoiceNumber(branchCode);
       } else {
+        const newDate = getTodayString();
         setInvoiceData(prev => ({
           ...prev,
           invoiceNumber: '',
           entryNumber: generateEntryNumber(),
-          date: getTodayString(),
+          date: newDate,
           paymentMethod: '',
           cashBox: '',
           multiplePayment: {},
@@ -1261,7 +1326,8 @@ interface SavedInvoice {
           delegate: '',
           priceRule: '',
           commercialRecord: '',
-          taxFile: ''
+          taxFile: '',
+          dueDate: calculateDueDate(newDate) // إضافة تاريخ الاستحقاق عند الإعادة تعيين
         }));
       }
       // تحديث سجل الفواتير
@@ -1452,6 +1518,7 @@ interface SavedInvoice {
       priceRule: record.priceRule || '',
       commercialRecord: record.commercialRecord || '',
       taxFile: record.taxFile || '',
+      dueDate: record.dueDate || calculateDueDate(record.date || '') // إضافة تاريخ الاستحقاق أو حسابه من التاريخ
     });
     setItems(record.items || []);
     setTotals(record.totals || totals);
@@ -1497,6 +1564,18 @@ interface SavedInvoice {
       width: 120,
       sorter: (a: InvoiceRecord, b: InvoiceRecord) => new Date(a.date).getTime() - new Date(b.date).getTime(),
       render: (date: string) => dayjs(date).format('YYYY-MM-DD')
+    },
+    {
+      title: 'تاريخ الاستحقاق',
+      dataIndex: 'dueDate',
+      key: 'dueDate',
+      width: 120,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => {
+        const dateA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+        const dateB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+        return dateA - dateB;
+      },
+      render: (dueDate: string) => dueDate ? dayjs(dueDate).format('YYYY-MM-DD') : ''
     },
     {
       title: 'الفرع',
@@ -1690,7 +1769,7 @@ interface SavedInvoice {
   ];
 
   // تعريف الدالة خارج useEffect
-  const fetchLists = async () => {
+  const fetchLists = useCallback(async () => {
     try {
       setFetchingItems(true);
       // جلب الفروع
@@ -1714,8 +1793,12 @@ interface SavedInvoice {
       // جلب المخازن
       const warehousesSnap = await getDocs(collection(db, 'warehouses'));
       setWarehouses(warehousesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      // جلب البائعين
-      const delegatesSnap = await getDocs(collection(db, 'delegates'));
+      // جلب البائعين النشطين فقط
+      const delegatesQuery = query(
+        collection(db, 'sales_representatives'),
+        where('status', '==', 'active')
+      );
+      const delegatesSnap = await getDocs(delegatesQuery);
       setDelegates(delegatesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       // قوائم ثابتة
       setUnits(['قطعة', 'كرتونة', 'كيلو', 'جرام', 'لتر', 'متر', 'علبة']);
@@ -1745,14 +1828,27 @@ interface SavedInvoice {
       setItemNames(secondLevelItems);
     } catch (err) {
       console.error('Error fetching lists:', err);
-      message.error('تعذر تحميل القوائم من قاعدة البيانات');
+      customMessage.error('تعذر تحميل القوائم من قاعدة البيانات');
     } finally {
       setFetchingItems(false);
     }
-  };
+  }, [customMessage]);
   useEffect(() => {
     fetchLists();
-  }, []);
+  }, [fetchLists]);
+
+  // تحديد المندوب الافتراضي بناءً على المستخدم الحالي
+  useEffect(() => {
+    if (delegates.length > 0 && user?.uid && !invoiceData.delegate) {
+      const currentUserDelegate = delegates.find(delegate => delegate.uid === user.uid);
+      if (currentUserDelegate) {
+        setInvoiceData(prev => ({
+          ...prev,
+          delegate: currentUserDelegate.id
+        }));
+      }
+    }
+  }, [delegates, user?.uid, invoiceData.delegate]);
 
   // حساب الإجماليات باستخدام useMemo لتحسين الأداء
   const totalsDisplay = useMemo(() => ({
@@ -1824,7 +1920,10 @@ const handlePrint = () => {
       }
 
       const invoice = lastSavedInvoice;
-      if (!invoice) return;
+      if (!invoice) {
+        message.error('لا توجد فاتورة للطباعة');
+        return;
+      }
 
       // Generate QR code data URL (using qrcode library)
       let qrDataUrl = '';
@@ -1843,14 +1942,27 @@ const handlePrint = () => {
         qrDataUrl = '';
       }
 
-      const printWindow = window.open('', '', 'height=900,width=800');
-      printWindow?.document.write(`
+      // إنشاء عنصر div مخفي للطباعة
+      const printContainer = document.createElement('div');
+      printContainer.id = 'print-container';
+      printContainer.style.position = 'absolute';
+      printContainer.style.left = '-9999px';
+      printContainer.style.top = '-9999px';
+      printContainer.style.width = '210mm';
+      printContainer.style.height = 'auto';
+      
+      // إضافة محتوى الفاتورة
+      printContainer.innerHTML = `
         <html>
         <head>
           <title>فاتورة ضريبية | Tax Invoice</title>
           <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
           <style>
             @page { size: A4; margin: 10mm; }
+            @media print {
+              body { margin: 0; padding: 5mm; }
+              * { -webkit-print-color-adjust: exact; color-adjust: exact; }
+            }
             body {
               font-family: 'Tajawal', sans-serif;
               direction: rtl;
@@ -1973,12 +2085,11 @@ const handlePrint = () => {
               letter-spacing: 0.5px;
             }
             .totals { margin-top: 5mm; border-top: 1px solid #000; padding-top: 3mm; font-weight: bold; }
-            .policy { font-size: 10px; border: 1px solid #ddd; padding: 3mm; /*margin-top: 5mm;*/ }
+            .policy { font-size: 10px; border: 1px solid #ddd; padding: 3mm; }
             .policy-title { font-weight: bold; margin-bottom: 2mm; }
             .signature { margin-top: 5mm; display: flex; justify-content: space-between; }
             .signature-box { width: 45%; border-top: 1px solid #000; padding-top: 3mm; }
             .footer { margin-top: 5mm; text-align: center; font-size: 10px; }
-            /* Ensure totals and policy are always side by side on print */
             .totals-policy-row {
               display: flex;
               flex-direction: row;
@@ -2244,14 +2355,48 @@ const handlePrint = () => {
           </div>
         </body>
         </html>
-      `);
-    
-      printWindow?.document.close();
-      printWindow?.focus();
+      `;
+
+      // إضافة العنصر إلى الصفحة
+      document.body.appendChild(printContainer);
+
+      // إنشاء stylesheet مخصص للطباعة
+      const printStyleElement = document.createElement('style');
+      printStyleElement.innerHTML = `
+        @media print {
+          body * { visibility: hidden; }
+          #print-container, #print-container * { visibility: visible; }
+          #print-container {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+          }
+        }
+      `;
+      document.head.appendChild(printStyleElement);
+
+      // تأخير قليل للتأكد من تحميل المحتوى
       setTimeout(() => {
-        printWindow?.print();
-        printWindow?.close();
-      }, 500);
+        try {
+          // بدء عملية الطباعة
+          window.print();
+        } catch (error) {
+          message.error('حدث خطأ أثناء الطباعة');
+          console.error('Print error:', error);
+        } finally {
+          // تنظيف العناصر المؤقتة
+          setTimeout(() => {
+            if (printContainer.parentNode) {
+              printContainer.parentNode.removeChild(printContainer);
+            }
+            if (printStyleElement.parentNode) {
+              printStyleElement.parentNode.removeChild(printStyleElement);
+            }
+          }, 1000);
+        }
+      }, 100);
     })();
 };
 
@@ -2299,6 +2444,183 @@ const handlePrint = () => {
 
   return (
     <div className="p-2 sm:p-6 w-full max-w-none">
+      {/* إضافة الأنماط للرسائل الاحترافية */}
+      <style>{`
+        @keyframes slideInRight {
+          0% {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          100% {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        
+        @keyframes progressBar {
+          0% {
+            width: 100%;
+          }
+          100% {
+            width: 0%;
+          }
+        }
+        
+        .notification-container {
+          animation: slideInRight 0.3s ease-out;
+        }
+        
+        .notification-container:hover .progress-bar {
+          animation-play-state: paused;
+        }
+      `}</style>
+
+      {/* منطقة عرض الرسائل الاحترافية */}
+      {notifications.length > 0 && (
+        <div style={{ 
+          position: 'fixed',
+          top: 20,
+          right: 20,
+          zIndex: 9999,
+          maxWidth: 400,
+          direction: 'rtl'
+        }}>
+          {notifications.map((notification) => (
+            <div
+              key={notification.id}
+              className="notification-container"
+              style={{
+                marginBottom: 12,
+                padding: '16px 20px',
+                borderRadius: 12,
+                background: notification.type === 'success' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' :
+                          notification.type === 'error' ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' :
+                          notification.type === 'warning' ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' :
+                          'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                color: 'white',
+                boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                backdropFilter: 'blur(10px)',
+                position: 'relative',
+                overflow: 'hidden',
+                cursor: 'pointer'
+              }}
+            >
+              {/* خط التقدم */}
+              <div
+                className="progress-bar"
+                style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  height: 3,
+                  background: 'rgba(255,255,255,0.5)',
+                  animation: 'progressBar 5s linear forwards',
+                  borderRadius: '0 0 12px 12px'
+                }}
+              />
+              
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                {/* أيقونة */}
+                <div style={{
+                  backgroundColor: 'rgba(255,255,255,0.2)',
+                  borderRadius: '50%',
+                  padding: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: 32,
+                  height: 32
+                }}>
+                  {notification.type === 'success' && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                    </svg>
+                  )}
+                  {notification.type === 'error' && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                      <path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/>
+                    </svg>
+                  )}
+                  {notification.type === 'warning' && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                      <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                    </svg>
+                  )}
+                  {notification.type === 'info' && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                    </svg>
+                  )}
+                </div>
+                
+                {/* المحتوى */}
+                <div style={{ flex: 1 }}>
+                  <div style={{
+                    fontWeight: 700,
+                    fontSize: 14,
+                    marginBottom: 4,
+                    fontFamily: 'Cairo, sans-serif'
+                  }}>
+                    {notification.title}
+                  </div>
+                  <div style={{
+                    fontSize: 13,
+                    lineHeight: 1.4,
+                    fontFamily: 'Cairo, sans-serif',
+                    opacity: 0.95
+                  }}>
+                    {notification.message}
+                  </div>
+                  <div style={{
+                    fontSize: 11,
+                    marginTop: 6,
+                    opacity: 0.8,
+                    fontFamily: 'Cairo, sans-serif'
+                  }}>
+                    {notification.timestamp.toLocaleTimeString('ar-SA', { 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })}
+                  </div>
+                </div>
+
+                {/* زر الإغلاق */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setNotifications(prev => prev.filter(n => n.id !== notification.id));
+                  }}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: 24,
+                    height: 24,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: 'white',
+                    fontSize: 14,
+                    fontWeight: 'bold',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
         <div className="flex items-center">
           <FileText className="h-8 w-8 text-blue-600 ml-3" />
@@ -2358,7 +2680,7 @@ const handlePrint = () => {
                       const lastPrice = await fetchLastCustomerPrice(invoiceData.customerName, item.itemName);
                       if (lastPrice) {
                         setItem(prev => ({ ...prev, price: String(lastPrice) }));
-                        message.success('تم تطبيق آخر سعر للعميل بنجاح');
+                        customMessage.success('تم تطبيق آخر سعر للعميل بنجاح');
                       }
                     } catch (error) {
                       console.error('فشل في جلب آخر سعر:', error);
@@ -2412,15 +2734,20 @@ const handlePrint = () => {
                 <DatePicker
                   style={{ width: '100%' }}
                   value={invoiceData.date ? dayjs(invoiceData.date) : null}
-                  onChange={(_, dateString) => setInvoiceData({
-                    ...invoiceData, 
-                    date: Array.isArray(dateString) ? dateString[0] : dateString as string
-                  })}
+                  onChange={(_, dateString) => {
+                    const newDate = Array.isArray(dateString) ? dateString[0] : dateString as string;
+                    setInvoiceData({
+                      ...invoiceData, 
+                      date: newDate,
+                      dueDate: calculateDueDate(newDate) // حساب تاريخ الاستحقاق تلقائياً
+                    });
+                  }}
                   format="YYYY-MM-DD"
                   placeholder="التاريخ"
                 />
               </Form.Item>
             </Col>
+
             <Col xs={24} sm={12} md={6}>
               <Form.Item label="البائع">
                 <Select
@@ -2733,25 +3060,8 @@ const handlePrint = () => {
 
           <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif' }}>إضافة أصناف المبيعات</Divider>
 
-          {/* رسالة تحذيرية حول الأصناف الموقوفة */}
-          {itemNames.some(item => item.tempCodes) && (
-            <div style={{ 
-              marginBottom: 16, 
-              padding: 12, 
-              backgroundColor: '#fff7e6', 
-              border: '1px solid #ffd666', 
-              borderRadius: 8,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontFamily: 'Cairo, sans-serif'
-            }}>
-              <span style={{ color: '#fa8c16', fontSize: 16 }}>⚠️</span>
-              <span style={{ color: '#ad6800', fontWeight: 500 }}>
-                تنبيه: بعض الأصناف موقوفة مؤقتاً وتظهر بـ ⛔ في القائمة ولا يمكن إضافتها للفاتورة
-              </span>
-            </div>
-          )}
+
+
 
           {/* Item Entry */}
           <Row gutter={16} className="mb-4">
@@ -2774,12 +3084,13 @@ const handlePrint = () => {
                     value={item.itemName}
                     placeholder="اسم الصنف"
                     style={{ flex: 1, fontFamily: 'Cairo, sans-serif' }}
+                    optionLabelProp="label"
                     onChange={async (value) => {
                       const selected = itemNames.find(i => i.name === value);
                       
                       // فحص إذا كان الصنف موقوف مؤقتاً
                       if (selected && selected.tempCodes) {
-                        message.warning(`تم إيقاف الصنف "${value}" مؤقتاً ولا يمكن إضافته للفاتورة`, 4);
+                        customMessage.warning(`تم إيقاف الصنف "${value}" مؤقتاً ولا يمكن إضافته للفاتورة`);
                         // إعادة تعيين اختيار الصنف
                         setItem({
                           ...item,
@@ -2840,9 +3151,13 @@ const handlePrint = () => {
                         }
                       }
                     }}
-                    filterOption={(input, option) =>
-                      String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
-                    }
+                    filterOption={(input, option) => {
+                      const itemName = String(option?.value ?? '').toLowerCase();
+                      const selectedItem = itemNames.find(i => i.name === option?.value);
+                      const itemCode = String(selectedItem?.itemCode ?? '').toLowerCase();
+                      const searchTerm = input.toLowerCase();
+                      return itemName.includes(searchTerm) || itemCode.includes(searchTerm);
+                    }}
                     allowClear
                   >
                     {itemNames.map((i, index) => {
@@ -2854,6 +3169,7 @@ const handlePrint = () => {
                         <Select.Option 
                           key={i.id || `${i.name}-${index}`} 
                           value={i.name}
+                          label={i.name}
                           disabled={!!i.tempCodes}
                           style={{
                             color: i.tempCodes ? '#ff4d4f' : 'inherit',
@@ -2861,7 +3177,25 @@ const handlePrint = () => {
                           }}
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span>{i.name} {i.tempCodes ? '⛔ (إيقاف مؤقت)' : ''}</span>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+<span style={{ fontWeight: 600 }}>
+  {i.name}
+  {i.tempCodes ? (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ verticalAlign: 'middle', marginLeft: 2 }}>
+        <circle cx="12" cy="12" r="10" stroke="#ff4d4f" strokeWidth="2" fill="#fff2f0" />
+        <path d="M8 12h8" stroke="#ff4d4f" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+      (إيقاف مؤقت)
+    </span>
+  ) : ''}
+</span>
+                              {i.itemCode && (
+                                <span style={{ fontSize: '12px', color: '#666', fontFamily: 'monospace' }}>
+                                  كود: {i.itemCode}
+                                </span>
+                              )}
+                            </div>
                             {currentWarehouse && (
                               <span 
                                 style={{ 

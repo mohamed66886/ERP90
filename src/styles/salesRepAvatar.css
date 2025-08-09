@@ -1,0 +1,100 @@
+/* Avatar Upload Styles for Sales Representatives */
+
+.sales-rep-avatar-uploader .ant-upload {
+  width: 128px !important;
+  height: 128px !important;
+  border-radius: 50% !important;
+  border: 2px dashed #d9d9d9 !important;
+  transition: all 0.3s ease !important;
+}
+
+.sales-rep-avatar-uploader .ant-upload:hover {
+  border-color: #1890ff !important;
+  background-color: #f0f2ff !important;
+}
+
+.sales-rep-avatar-uploader .ant-upload-select {
+  border-radius: 50% !important;
+  overflow: hidden !important;
+}
+
+.sales-rep-avatar-uploader .ant-upload-select img {
+  border-radius: 50% !important;
+  object-fit: cover !important;
+}
+
+.sales-rep-avatar-uploader .ant-upload.ant-upload-select {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-direction: column !important;
+}
+
+.sales-rep-avatar-uploader .ant-upload-text {
+  margin-top: 8px !important;
+  color: #666 !important;
+  font-size: 12px !important;
+}
+
+/* Loading animation for image upload */
+.sales-rep-uploading {
+  color: #1890ff;
+  font-size: 12px;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.sales-rep-uploading::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border: 2px solid #1890ff;
+  border-top: 2px solid transparent;
+  border-radius: 50%;
+  animation: salesRepSpin 1s linear infinite;
+}
+
+@keyframes salesRepSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Form section styling */
+.sales-rep-form-section {
+  background: #f8f9fa;
+  padding: 16px;
+  border-radius: 8px;
+  margin: 16px 0;
+  border-left: 4px solid #1890ff;
+}
+
+.sales-rep-form-section .ant-typography {
+  margin-bottom: 0 !important;
+}
+
+/* Password strength indicator */
+.password-strength-weak { color: #ff4d4f; }
+.password-strength-medium { color: #faad14; }
+.password-strength-strong { color: #52c41a; }
+
+/* Account status badge */
+.account-status-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.account-status-connected {
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  color: #52c41a;
+}
+
+.account-status-not-connected {
+  background: #fff2e8;
+  border: 1px solid #ffbb96;
+  color: #fa8c16;
+}

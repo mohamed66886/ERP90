@@ -37,6 +37,10 @@ import PaymentMethodsPage from "./business/payment-methods";
 import Suppliers from "./suppliers";
 import NotFound from "./NotFound";
 import { useAuth } from "@/contexts/useAuth";
+import SalesRepresentativesManagement from "./management/SalesRepresentativesManagement";
+import SalesTargetsPage from "./management/SalesTargetsPage";
+import SalesCommissionsPage from "./management/SalesCommissionsPage";
+import PerformanceEvaluationPage from "./management/PerformanceEvaluationPage";
 import {
   FinancialManagement,
   HumanResources,
@@ -65,6 +69,7 @@ import ViewCustomerPage from "./customers/ViewCustomerPage";
 import CustomerStatusPage from "./customers/CustomerStatusPage";
 import CustomerClassificationPage from "./customers/CustomerClassificationPage";
 import CustomerFollowUpPage from "./customers/CustomerFollowUpPage";
+import SalesRepresentativesPage from "./management/SalesRepresentativesPageFixed";
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -184,6 +189,10 @@ const Index = () => {
             <Route path="/management/warehouse" element={<WarehouseManagement />} />
             <Route path="/management/projects" element={<ProjectManagement />} />
             <Route path="/management/sales" element={<SalesManagement />} />
+            <Route path="/management/sales-representatives" element={<SalesRepresentativesPage />} />
+            <Route path="/management/sales-targets" element={<SalesTargetsPage />} />
+            <Route path="/management/sales-commissions" element={<SalesCommissionsPage />} />
+            <Route path="/management/performance-evaluation" element={<PerformanceEvaluationPage />} />
             <Route path="/management/purchase" element={<PurchaseManagement />} />
             {/* <Route path="/management/contracts" element={<ContractManagement />} /> */}
             <Route path="/management/equipment" element={<EquipmentManagement />} />

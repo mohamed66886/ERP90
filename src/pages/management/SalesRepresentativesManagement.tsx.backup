@@ -1,0 +1,934 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Card,
+  Button,
+  Input,
+  Select,
+  Form,
+  Table,
+  Avatar,
+  Badge,
+  Space,
+  Statistic,
+  Row,
+  Col,
+  Modal,
+  message,
+  Typography,
+  Breadcrumb as AntBreadcrumb,
+  Switch,
+  Popconfirm,
+  Alert,
+  Spin,
+  Empty,
+  Divider,
+  Layout
+} from 'antd';
+import {
+  UserOutlined,
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  EyeInvisibleOutlined,
+  EyeTwoTone,
+  SearchOutlined,
+  FilterOutlined,
+  TeamOutlined,
+  PhoneOutlined,
+  MailOutlined,
+  EnvironmentOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  UserSwitchOutlined,
+  HomeOutlined
+} from '@ant-design/icons';
+import { db, auth } from "@/lib/firebase";
+import { 
+  collection, 
+  addDoc, 
+  getDocs, 
+  doc, 
+  updateDoc, 
+  deleteDoc,
+  query,
+  where,
+  setDoc
+} from "firebase/firestore";
+import { createUserWithEmailAndPassword, getAuth } from "firebase/auth";
+import { getApps, initializeApp } from "firebase/app";
+import { fetchBranches, Branch } from "@/lib/branches";
+import { initializeSampleBranches } from "@/utils/initializeBranches";
+
+const { Title, Text } = Typography;
+const { Option } = Select;
+const { Content } = Layout;
+
+interface SalesRepresentative {
+  id?: string;
+  name: string;
+  email: string;
+  phone: string;
+  branch: string;
+  password: string;
+  avatar?: string;
+  status: 'active' | 'inactive';
+  createdAt: Date;
+}
+
+const SalesRepresentativesManagement: React.FC = () => {
+  const [representatives, setRepresentatives] = useState<SalesRepresentative[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterBranch, setFilterBranch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [form] = Form.useForm();
+
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    branch: '',
+    password: '',
+    avatar: '',
+    status: 'active' as 'active' | 'inactive'
+  });
+
+  const [errors, setErrors] = useState<{[key: string]: string}>({});
+
+  // Load data on component mount
+  useEffect(() => {
+    const loadInitialData = async () => {
+      setLoading(true);
+      try {
+        // Load representatives
+        const repsSnapshot = await getDocs(collection(db, 'sales_representatives'));
+        const repsData = repsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate() || new Date()
+        })) as SalesRepresentative[];
+        setRepresentatives(repsData);
+
+        // Load branches
+        const branchesData = await fetchBranches();
+        if (branchesData.length === 0) {
+          // Initialize sample branches if none exist
+          await initializeSampleBranches();
+          const newBranchesData = await fetchBranches();
+          setBranches(newBranchesData);
+        } else {
+          setBranches(branchesData);
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+        message.error("حدث خطأ أثناء تحميل بيانات المندوبين");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadInitialData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      // Load representatives
+      const repsSnapshot = await getDocs(collection(db, 'sales_representatives'));
+      const repsData = repsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate() || new Date()
+      })) as SalesRepresentative[];
+      setRepresentatives(repsData);
+
+      // Load branches
+      const branchesData = await fetchBranches();
+      if (branchesData.length === 0) {
+        // Initialize sample branches if none exist
+        await initializeSampleBranches();
+        const newBranchesData = await fetchBranches();
+        setBranches(newBranchesData);
+      } else {
+        setBranches(branchesData);
+      }
+    } catch (error) {
+      console.error('Error loading data:', error);
+      toast({
+        title: "خطأ في تحميل البيانات",
+        description: "حدث خطأ أثناء تحميل بيانات المندوبين",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const validateForm = (): boolean => {
+    const newErrors: {[key: string]: string} = {};
+
+    // Validate name
+    if (!form.name.trim()) {
+      newErrors.name = 'الاسم مطلوب';
+    } else if (form.name.trim().length < 2) {
+      newErrors.name = 'الاسم يجب أن يكون حرفين على الأقل';
+    }
+
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!form.email.trim()) {
+      newErrors.email = 'البريد الإلكتروني مطلوب';
+    } else if (!emailRegex.test(form.email)) {
+      newErrors.email = 'البريد الإلكتروني غير صالح';
+    } else {
+      // Check if email already exists
+      const existingRep = representatives.find(rep => 
+        rep.email.toLowerCase() === form.email.toLowerCase() && 
+        rep.id !== editId
+      );
+      if (existingRep) {
+        newErrors.email = 'البريد الإلكتروني موجود بالفعل';
+      }
+    }
+
+    // Validate phone
+    const phoneRegex = /^05\d{8}$/;
+    if (!form.phone.trim()) {
+      newErrors.phone = 'رقم الهاتف مطلوب';
+    } else if (!phoneRegex.test(form.phone)) {
+      newErrors.phone = 'رقم الهاتف يجب أن يبدأ بـ 05 ويتكون من 10 أرقام';
+    }
+
+    // Validate branch
+    if (!form.branch) {
+      newErrors.branch = 'الفرع مطلوب';
+    }
+
+    // Validate password (only for new representatives)
+    if (!editId) {
+      if (!form.password.trim()) {
+        newErrors.password = 'كلمة المرور مطلوبة';
+      } else if (form.password.length < 6) {
+        newErrors.password = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setForm(prev => ({ ...prev, [name]: value }));
+    
+    // Clear error when user starts typing
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: '' }));
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!validateForm()) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      if (editId) {
+        // Update existing representative
+        const repRef = doc(db, 'sales_representatives', editId);
+        const updateData: Partial<SalesRepresentative> = {
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          branch: form.branch,
+          avatar: form.avatar || '',
+          status: form.status
+        };
+        
+        await updateDoc(repRef, updateData);
+        
+        toast({
+          title: "تم تحديث المندوب",
+          description: "تم تحديث بيانات المندوب بنجاح",
+        });
+      } else {
+        // Create new representative using secondary Firebase Auth instance
+        // This prevents changing the current user session
+        
+        // Create a secondary Firebase app instance
+        let secondaryApp;
+        const existingApps = getApps();
+        const secondaryAppName = 'secondaryApp';
+        
+        if (existingApps.find(app => app.name === secondaryAppName)) {
+          secondaryApp = existingApps.find(app => app.name === secondaryAppName);
+        } else {
+          // Get current app config
+          const currentApp = existingApps[0];
+          secondaryApp = initializeApp(currentApp.options, secondaryAppName);
+        }
+        
+        const secondaryAuth = getAuth(secondaryApp);
+        
+        // Create user with secondary auth
+        const userCredential = await createUserWithEmailAndPassword(secondaryAuth, form.email, form.password);
+        const firebaseUser = userCredential.user;
+
+        // Sign out from secondary auth to not affect current session
+        await secondaryAuth.signOut();
+
+        // Add representative to Firestore
+        const newRep: Omit<SalesRepresentative, 'id'> = {
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          branch: form.branch,
+          password: form.password, // In production, don't store plain passwords
+          avatar: form.avatar || '',
+          status: form.status,
+          createdAt: new Date()
+        };
+
+        await addDoc(collection(db, 'sales_representatives'), {
+          ...newRep,
+          uid: firebaseUser.uid
+        });
+
+        // Also create user document for authentication
+        await setDoc(doc(db, 'users', firebaseUser.uid), {
+          uid: firebaseUser.uid,
+          name: form.name,
+          email: form.email,
+          avatar: form.avatar || '',
+          role: 'sales_representative',
+          branch: form.branch,
+          phone: form.phone,
+          status: form.status
+        });
+
+        toast({
+          title: "تم إضافة المندوب",
+          description: "تم إضافة المندوب الجديد بنجاح",
+        });
+      }
+
+      // Reset form and reload data
+      setForm({
+        name: '',
+        email: '',
+        phone: '',
+        branch: '',
+        password: '',
+        avatar: '',
+        status: 'active'
+      });
+      setShowForm(false);
+      setEditId(null);
+      await loadData();
+
+    } catch (error: unknown) {
+      console.error('Error saving representative:', error);
+      let errorMessage = "حدث خطأ أثناء حفظ البيانات";
+      
+      if (error && typeof error === 'object' && 'code' in error) {
+        const firebaseError = error as { code: string };
+        if (firebaseError.code === 'auth/email-already-in-use') {
+          errorMessage = "البريد الإلكتروني مستخدم بالفعل";
+        } else if (firebaseError.code === 'auth/weak-password') {
+          errorMessage = "كلمة المرور ضعيفة جداً";
+        }
+      }
+      
+      toast({
+        title: "خطأ في الحفظ",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEdit = (rep: SalesRepresentative) => {
+    setForm({
+      name: rep.name,
+      email: rep.email,
+      phone: rep.phone,
+      branch: rep.branch,
+      password: '',
+      avatar: rep.avatar || '',
+      status: rep.status
+    });
+    setEditId(rep.id!);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذا المندوب؟')) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await deleteDoc(doc(db, 'sales_representatives', id));
+      toast({
+        title: "تم حذف المندوب",
+        description: "تم حذف المندوب بنجاح",
+      });
+      await loadData();
+    } catch (error) {
+      console.error('Error deleting representative:', error);
+      toast({
+        title: "خطأ في الحذف",
+        description: "حدث خطأ أثناء حذف المندوب",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleStatus = async (id: string, currentStatus: 'active' | 'inactive') => {
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'sales_representatives', id), {
+        status: newStatus
+      });
+      
+      toast({
+        title: "تم تحديث الحالة",
+        description: `تم ${newStatus === 'active' ? 'تفعيل' : 'إلغاء تفعيل'} المندوب`,
+      });
+      
+      await loadData();
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast({
+        title: "خطأ في التحديث",
+        description: "حدث خطأ أثناء تحديث حالة المندوب",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filter representatives based on search and filters
+  const filteredRepresentatives = representatives.filter(rep => {
+    const matchesSearch = rep.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         rep.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         rep.phone.includes(searchTerm);
+    
+    const matchesBranch = !filterBranch || rep.branch === filterBranch;
+    const matchesStatus = !filterStatus || rep.status === filterStatus;
+    
+    return matchesSearch && matchesBranch && matchesStatus;
+  });
+
+  const getBranchName = (branchId: string) => {
+    const branch = branches.find(b => b.id === branchId);
+    return branch ? branch.name : branchId;
+  };
+
+  return (
+    <div className="w-full p-6 space-y-8 min-h-screen" dir="rtl">
+      {/* Header */}
+      <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <UserCog className="h-8 w-8 text-purple-600 ml-3" />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800">إدارة المندوبين</h1>
+              <p className="text-gray-600 mt-2">إدارة فريق المبيعات والمندوبين</p>
+            </div>
+          </div>
+          <Button 
+            onClick={() => {
+              setShowForm(true);
+              setForm({
+                name: '',
+                email: '',
+                phone: '',
+                branch: '',
+                password: '',
+                avatar: '',
+                status: 'active'
+              });
+              setEditId(null);
+            }}
+            className="bg-purple-600 hover:bg-purple-700 text-white"
+          >
+            <Plus className="w-4 h-4 ml-2" />
+            إضافة مندوب جديد
+          </Button>
+        </div>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-purple-400 to-blue-500"></div>
+      </div>
+
+      <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "إدارة المبيعات", to: "/management/sales" },
+          { label: "إدارة المندوبين" }, 
+        ]}
+      />
+
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-2xl font-bold text-purple-600">{representatives.length}</p>
+                <p className="text-sm text-gray-600">إجمالي المندوبين</p>
+              </div>
+              <Users className="h-8 w-8 text-purple-600" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-2xl font-bold text-green-600">
+                  {representatives.filter(rep => rep.status === 'active').length}
+                </p>
+                <p className="text-sm text-gray-600">مندوبين نشطين</p>
+              </div>
+              <CheckCircle className="h-8 w-8 text-green-600" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-2xl font-bold text-red-600">
+                  {representatives.filter(rep => rep.status === 'inactive').length}
+                </p>
+                <p className="text-sm text-gray-600">مندوبين غير نشطين</p>
+              </div>
+              <XCircle className="h-8 w-8 text-red-600" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-2xl font-bold text-blue-600">{branches.length}</p>
+                <p className="text-sm text-gray-600">عدد الفروع</p>
+              </div>
+              <MapPin className="h-8 w-8 text-blue-600" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Add/Edit Form */}
+      {showForm && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UserCog className="w-5 h-5 text-purple-600" />
+              {editId ? 'تعديل بيانات المندوب' : 'إضافة مندوب جديد'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Name */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">الاسم الكامل *</Label>
+                  <Input 
+                    name="name" 
+                    value={form.name} 
+                    onChange={handleChange} 
+                    required 
+                    className={`text-sm ${errors.name ? 'border-red-500' : ''}`}
+                    placeholder="أدخل الاسم الكامل"
+                  />
+                  {errors.name && (
+                    <Alert variant="destructive" className="py-2">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">{errors.name}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+
+                {/* Email */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">البريد الإلكتروني *</Label>
+                  <Input 
+                    name="email" 
+                    type="email"
+                    value={form.email} 
+                    onChange={handleChange} 
+                    required 
+                    className={`text-sm ${errors.email ? 'border-red-500' : ''}`}
+                    placeholder="example@company.com"
+                  />
+                  {errors.email && (
+                    <Alert variant="destructive" className="py-2">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">{errors.email}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+
+                {/* Phone */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">رقم الهاتف *</Label>
+                  <Input 
+                    name="phone" 
+                    value={form.phone} 
+                    onChange={handleChange} 
+                    required 
+                    inputMode="numeric" 
+                    pattern="[0-9]*" 
+                    className={`text-sm ${errors.phone ? 'border-red-500' : ''}`}
+                    placeholder="05xxxxxxxx"
+                  />
+                  {errors.phone && (
+                    <Alert variant="destructive" className="py-2">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">{errors.phone}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+
+                {/* Branch */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">الفرع *</Label>
+                  <select 
+                    name="branch" 
+                    value={form.branch} 
+                    onChange={handleChange} 
+                    required 
+                    className={`w-full px-3 py-2 border rounded-md text-sm ${errors.branch ? 'border-red-500' : 'border-gray-300'}`}
+                  >
+                    <option value="">اختر الفرع</option>
+                    {branches.map(branch => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.branch && (
+                    <Alert variant="destructive" className="py-2">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">{errors.branch}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+
+                {/* Password - only for new representatives */}
+                {!editId && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-gray-700">كلمة المرور *</Label>
+                    <div className="relative">
+                      <Input 
+                        name="password" 
+                        type={showPassword ? "text" : "password"}
+                        value={form.password} 
+                        onChange={handleChange} 
+                        required 
+                        className={`text-sm pr-10 ${errors.password ? 'border-red-500' : ''}`}
+                        placeholder="أدخل كلمة مرور قوية"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute left-0 top-0 h-full px-3 text-gray-500 hover:text-gray-700"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                    {errors.password && (
+                      <Alert variant="destructive" className="py-2">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription className="text-sm">{errors.password}</AlertDescription>
+                      </Alert>
+                    )}
+                  </div>
+                )}
+
+                {/* Avatar URL */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">رابط الصورة الشخصية</Label>
+                  <Input 
+                    name="avatar" 
+                    type="url"
+                    value={form.avatar} 
+                    onChange={handleChange} 
+                    className="text-sm"
+                    placeholder="https://example.com/avatar.jpg"
+                  />
+                </div>
+
+                {/* Status - only for editing */}
+                {editId && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-gray-700">الحالة</Label>
+                    <select 
+                      name="status" 
+                      value={form.status} 
+                      onChange={handleChange} 
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    >
+                      <option value="active">نشط</option>
+                      <option value="inactive">غير نشط</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 justify-end pt-4">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => {
+                    setShowForm(false);
+                    setEditId(null);
+                    setErrors({});
+                  }}
+                  disabled={loading}
+                >
+                  إلغاء
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={loading}
+                  className="bg-purple-600 hover:bg-purple-700"
+                >
+                  {loading ? "جاري الحفظ..." : (editId ? 'تحديث البيانات' : 'حفظ المندوب')}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Search and Filters */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Search className="w-5 h-5" />
+            البحث والتصفية
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>البحث</Label>
+              <Input
+                placeholder="ابحث بالاسم، الإيميل، أو رقم الهاتف"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="text-sm"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>تصفية حسب الفرع</Label>
+              <select 
+                value={filterBranch} 
+                onChange={(e) => setFilterBranch(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              >
+                <option value="">جميع الفروع</option>
+                {branches.map(branch => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>تصفية حسب الحالة</Label>
+              <select 
+                value={filterStatus} 
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              >
+                <option value="">جميع الحالات</option>
+                <option value="active">نشط</option>
+                <option value="inactive">غير نشط</option>
+              </select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Representatives List */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            قائمة المندوبين ({filteredRepresentatives.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading && !showForm ? (
+            <div className="text-center py-8">
+              <p className="text-gray-500">جاري تحميل البيانات...</p>
+            </div>
+          ) : filteredRepresentatives.length === 0 ? (
+            <div className="text-center py-12">
+              <UserCog className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">لا يوجد مندوبين</h3>
+              <p className="text-gray-500 mb-4">
+                {searchTerm || filterBranch || filterStatus 
+                  ? "لم يتم العثور على نتائج مطابقة للبحث"
+                  : "لم يتم إضافة أي مندوبين بعد"
+                }
+              </p>
+              {!searchTerm && !filterBranch && !filterStatus && (
+                <Button 
+                  onClick={() => {
+                    setShowForm(true);
+                    setForm({
+                      name: '',
+                      email: '',
+                      phone: '',
+                      branch: '',
+                      password: '',
+                      avatar: '',
+                      status: 'active'
+                    });
+                    setEditId(null);
+                  }}
+                  className="bg-purple-600 hover:bg-purple-700"
+                >
+                  <Plus className="w-4 h-4 ml-2" />
+                  إضافة أول مندوب
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      المندوب
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      معلومات الاتصال
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      الفرع
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      الحالة
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      الإجراءات
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredRepresentatives.map((rep) => (
+                    <tr key={rep.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-10 w-10">
+                            <AvatarImage src={rep.avatar} alt={rep.name} />
+                            <AvatarFallback className="bg-purple-100 text-purple-600">
+                              {rep.name.split(' ').map(n => n[0]).join('')}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{rep.name}</div>
+                            <div className="text-xs text-gray-500">
+                              انضم في {rep.createdAt.toLocaleDateString('ar-SA')}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      
+                      <td className="px-4 py-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-sm text-gray-900">
+                            <Mail className="h-4 w-4 text-gray-400" />
+                            {rep.email}
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <Phone className="h-4 w-4 text-gray-400" />
+                            {rep.phone}
+                          </div>
+                        </div>
+                      </td>
+                      
+                      <td className="px-4 py-4 text-center">
+                        <Badge variant="outline" className="text-xs">
+                          {getBranchName(rep.branch)}
+                        </Badge>
+                      </td>
+                      
+                      <td className="px-4 py-4 text-center">
+                        <button
+                          onClick={() => toggleStatus(rep.id!, rep.status)}
+                          disabled={loading}
+                        >
+                          <Badge 
+                            variant={rep.status === 'active' ? 'default' : 'secondary'}
+                            className={`text-xs cursor-pointer ${
+                              rep.status === 'active' 
+                                ? 'bg-green-100 text-green-800 hover:bg-green-200' 
+                                : 'bg-red-100 text-red-800 hover:bg-red-200'
+                            }`}
+                          >
+                            {rep.status === 'active' ? 'نشط' : 'غير نشط'}
+                          </Badge>
+                        </button>
+                      </td>
+                      
+                      <td className="px-4 py-4 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEdit(rep)}
+                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDelete(rep.id!)}
+                            className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
+export default SalesRepresentativesManagement;

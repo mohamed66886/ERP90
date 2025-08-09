@@ -1,15 +1,35 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
-import { UserPlus, Save, ArrowRight, ArrowLeft } from 'lucide-react';
+import {
+  Card,
+  Button,
+  Input,
+  Form,
+  Select,
+  message,
+  Row,
+  Col,
+  Divider,
+  Typography,
+  Space,
+  DatePicker,
+  InputNumber,
+  Spin
+} from 'antd';
+import {
+  UserAddOutlined,
+  SaveOutlined,
+  ArrowRightOutlined,
+  ArrowLeftOutlined
+} from '@ant-design/icons';
 import Breadcrumb from "@/components/Breadcrumb";
 import { collection, addDoc, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { format } from 'date-fns';
+import dayjs from 'dayjs';
+
+const { Title } = Typography;
+const { Option } = Select;
 
 interface Customer {
   id: string;
@@ -38,43 +58,36 @@ interface Customer {
   taxFileExpiry?: string;
 }
 
+interface FormValues {
+  nameAr: string;
+  nameEn: string;
+  branch: string;
+  commercialReg?: string;
+  regDate?: dayjs.Dayjs;
+  regAuthority?: string;
+  businessType: string;
+  activity: string;
+  startDate?: dayjs.Dayjs;
+  city: string;
+  creditLimit?: number;
+  region?: string;
+  district?: string;
+  street?: string;
+  buildingNo?: string;
+  postalCode?: string;
+  phone?: string;
+  mobile: string;
+  email?: string;
+  status: "نشط" | "متوقف";
+  taxFileNumber?: string;
+  taxFileExpiry?: dayjs.Dayjs;
+}
+
 const AddCustomerPage: React.FC = () => {
   const navigate = useNavigate();
-  const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
-
-  const today = new Date();
-  const todayStr = format(today, "yyyy-MM-dd");
-
-  const initialForm: Customer = {
-    id: "",
-    nameAr: "",
-    nameEn: "",
-    branch: "",
-    commercialReg: "",
-    regDate: todayStr,
-    regAuthority: "",
-    businessType: "",
-    activity: "",
-    startDate: "",
-    city: "",
-    creditLimit: "",
-    region: "",
-    district: "",
-    street: "",
-    buildingNo: "",
-    postalCode: "",
-    countryCode: "SA",
-    phone: "",
-    mobile: "",
-    email: "",
-    status: "نشط",
-    taxFileNumber: "",
-    taxFileExpiry: ""
-  };
-
-  const [form, setForm] = useState<Customer>(initialForm);
+  const [form] = Form.useForm();
 
   const businessTypes = ["شركة", "مؤسسة", "فرد"];
   const activities = ["مقاولات", "تجارة تجزئة", "صناعة", "خدمات"];
@@ -133,28 +146,18 @@ const AddCustomerPage: React.FC = () => {
     return result.replace(/\s+/g, ' ').trim();
   }, []);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
+  // تحديث الاسم الإنجليزي عند تغيير الاسم العربي
+  const handleNameArChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const arabicName = e.target.value;
+    const englishName = arabicToEnglish(arabicName);
     
-    if (name === "nameAr") {
-      setForm(prev => ({
-        ...prev,
-        nameAr: value,
-        nameEn: !prev.nameEn || prev.nameEn === arabicToEnglish(prev.nameAr) 
-          ? arabicToEnglish(value) 
-          : prev.nameEn
-      }));
-    } else {
-      setForm(prev => ({ ...prev, [name]: value }));
-    }
+    form.setFieldsValue({
+      nameAr: arabicName,
+      nameEn: englishName
+    });
   };
 
-  const handleSelectChange = (name: keyof Customer, value: string) => {
-    setForm(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (values: FormValues) => {
     setLoading(true);
     
     try {
@@ -172,20 +175,43 @@ const AddCustomerPage: React.FC = () => {
       const nextNum = maxNum + 1;
       const newId = `c-${nextNum.toString().padStart(4, '0')}`;
 
-      await addDoc(collection(db, "customers"), { 
-        ...form, 
+      // تحويل التواريخ إلى strings
+      const customerData: Customer = {
         id: newId,
+        nameAr: values.nameAr,
+        nameEn: values.nameEn || arabicToEnglish(values.nameAr),
+        branch: values.branch,
+        commercialReg: values.commercialReg || '',
+        regDate: values.regDate ? values.regDate.format('YYYY-MM-DD') : '',
+        regAuthority: values.regAuthority || '',
+        businessType: values.businessType,
+        activity: values.activity,
+        startDate: values.startDate ? values.startDate.format('YYYY-MM-DD') : '',
+        city: values.city,
+        creditLimit: values.creditLimit?.toString() || '',
+        region: values.region || '',
+        district: values.district || '',
+        street: values.street || '',
+        buildingNo: values.buildingNo || '',
+        postalCode: values.postalCode || '',
+        countryCode: 'SA',
+        phone: values.phone || '',
+        mobile: values.mobile,
+        email: values.email || '',
+        status: values.status,
+        taxFileNumber: values.taxFileNumber || '',
+        taxFileExpiry: values.taxFileExpiry ? values.taxFileExpiry.format('YYYY-MM-DD') : ''
+      };
+
+      await addDoc(collection(db, "customers"), { 
+        ...customerData,
         createdAt: new Date().toISOString()
       });
       
-      toast({
-        title: "تم الإضافة",
-        description: "تم إضافة العميل بنجاح",
-        variant: "default",
-      });
+      message.success("تم إضافة العميل بنجاح");
       
       // إعادة تعيين النموذج
-      setForm(initialForm);
+      form.resetFields();
       
       // توجيه المستخدم إلى صفحة دليل العملاء
       setTimeout(() => {
@@ -193,332 +219,306 @@ const AddCustomerPage: React.FC = () => {
       }, 1500);
       
     } catch (err) {
-      toast({
-        title: "خطأ",
-        description: "حدث خطأ أثناء إضافة العميل",
-        variant: "destructive",
-      });
+      console.error('Error adding customer:', err);
+      message.error("حدث خطأ أثناء إضافة العميل");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-background rtl" dir="rtl">
-      <div className="p-6 lg:p-8">
-        {/* Header */}
-        <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
-          <div className="flex items-center">
-            <UserPlus className="h-8 w-8 text-blue-600 ml-3" />
-            <h1 className="text-2xl font-bold text-gray-800">إضافة عميل جديد</h1>
+    <div style={{ padding: 24, minHeight: '100vh', direction: 'rtl' }}>
+      {/* Header */}
+      <Card style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <UserAddOutlined style={{ fontSize: 32, color: '#1890ff', marginLeft: 16 }} />
+          <div>
+            <Title level={2} style={{ margin: 0, color: '#1f2937' }}>إضافة عميل جديد</Title>
+            <p style={{ margin: '8px 0 0 0', color: '#6b7280' }}>تسجيل عميل جديد في النظام</p>
           </div>
-          <p className="text-gray-600 mt-2">تسجيل عميل جديد في النظام</p>
-          <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
         </div>
+      </Card>
 
-        <Breadcrumb
-          items={[
-            { label: "الرئيسية", to: "/" },
-            { label: "إدارة المبيعات", to: "/management/sales" },
-            { label: "إضافة عميل جديد" },
-          ]}
-        />
+      <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "إدارة المبيعات", to: "/management/sales" },
+          { label: "إضافة عميل جديد" },
+        ]}
+      />
 
-        {/* Form Card */}
-        <Card className="mt-6 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">بيانات العميل الأساسية</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* العمود الأول */}
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">رقم العميل</label>
-                    <Input
-                      name="id"
-                      value={form.id}
-                      placeholder="تلقائي"
-                      disabled
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">الاسم بالعربي*</label>
-                    <Input 
-                      name="nameAr" 
-                      value={form.nameAr} 
-                      onChange={handleChange} 
-                      required 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">الاسم بالإنجليزي</label>
-                    <Input
-                      name="nameEn"
-                      value={form.nameEn}
-                      placeholder="تلقائي"
-                      disabled
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">الفرع*</label>
-                    <Select 
-                      value={form.branch} 
-                      onValueChange={(value) => handleSelectChange("branch", value)}
-                      required
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="اختر الفرع" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {branches.map(branch => (
-                          <SelectItem key={branch} value={branch}>{branch}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {/* العمود الثاني */}
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">السجل التجاري</label>
-                    <Input 
-                      name="commercialReg" 
-                      value={form.commercialReg} 
-                      onChange={handleChange} 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">تاريخ السجل</label>
-                    <Input 
-                      name="regDate" 
-                      value={form.regDate} 
-                      onChange={handleChange} 
-                      type="date" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">جهة الإصدار</label>
-                    <Input 
-                      name="regAuthority" 
-                      value={form.regAuthority} 
-                      onChange={handleChange} 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">نوع العمل*</label>
-                    <Select 
-                      value={form.businessType} 
-                      onValueChange={(value) => handleSelectChange("businessType", value)}
-                      required
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="اختر نوع العمل" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {businessTypes.map(type => (
-                          <SelectItem key={type} value={type}>{type}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {/* العمود الثالث */}
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">النشاط*</label>
-                    <Select 
-                      value={form.activity} 
-                      onValueChange={(value) => handleSelectChange("activity", value)}
-                      required
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="اختر النشاط" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {activities.map(activity => (
-                          <SelectItem key={activity} value={activity}>{activity}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">تاريخ بداية التعامل</label>
-                    <Input 
-                      name="startDate" 
-                      value={form.startDate} 
-                      onChange={handleChange} 
-                      type="date" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">المدينة*</label>
-                    <Select 
-                      value={form.city} 
-                      onValueChange={(value) => handleSelectChange("city", value)}
-                      required
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="اختر المدينة" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {cities.map(city => (
-                          <SelectItem key={city} value={city}>{city}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">الحد الائتماني (ر.س)</label>
-                    <Input 
-                      name="creditLimit" 
-                      value={form.creditLimit} 
-                      onChange={handleChange} 
-                      type="number" 
-                    />
-                  </div>
-                </div>
-
-                {/* العمود الرابع */}
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">الحالة*</label>
-                    <Select 
-                      value={form.status} 
-                      onValueChange={(value) => handleSelectChange("status", value)}
-                      required
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="اختر الحالة" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {statusOptions.map(status => (
-                          <SelectItem key={status} value={status}>{status}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">رقم الجوال*</label>
-                    <Input 
-                      name="mobile" 
-                      value={form.mobile} 
-                      onChange={handleChange} 
-                      required 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">البريد الإلكتروني</label>
-                    <Input 
-                      name="email" 
-                      value={form.email} 
-                      onChange={handleChange} 
-                      type="email" 
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* تفاصيل الملف الضريبي والعنوان */}
-              <Card className="p-4 mt-4">
-                <h3 className="font-medium mb-3">تفاصيل الملف الضريبي والعنوان</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">رقم الملف الضريبي</label>
-                    <Input
-                      name="taxFileNumber"
-                      value={form.taxFileNumber}
-                      onChange={handleChange}
-                      placeholder="أدخل رقم الملف الضريبي"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">تاريخ انتهاء الملف الضريبي</label>
-                    <Input
-                      name="taxFileExpiry"
-                      value={form.taxFileExpiry}
-                      onChange={handleChange}
-                      type="date"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">المنطقة</label>
-                    <Input 
-                      name="region" 
-                      value={form.region} 
-                      onChange={handleChange} 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">الحي</label>
-                    <Input 
-                      name="district" 
-                      value={form.district} 
-                      onChange={handleChange} 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">الشارع</label>
-                    <Input 
-                      name="street" 
-                      value={form.street} 
-                      onChange={handleChange} 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">رقم المبنى</label>
-                    <Input 
-                      name="buildingNo" 
-                      value={form.buildingNo} 
-                      onChange={handleChange} 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">الرمز البريدي</label>
-                    <Input 
-                      name="postalCode" 
-                      value={form.postalCode} 
-                      onChange={handleChange} 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">الهاتف</label>
-                    <Input 
-                      name="phone" 
-                      value={form.phone} 
-                      onChange={handleChange} 
-                    />
-                  </div>
-                </div>
-              </Card>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-4 pt-4">
-                <Button type="submit" disabled={loading} className="gap-2">
-                  {loading ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  ) : (
-                    <Save className="h-4 w-4" />
-                  )}
-                  حفظ العميل
-                </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => navigate('/management/sales')}
-                  className="gap-2"
+      {/* Form Card */}
+      <Card style={{ marginTop: 24 }}>
+        <Title level={4}>بيانات العميل الأساسية</Title>
+        <Divider />
+        
+        <Spin spinning={loading}>
+          <Form
+            form={form}
+            layout="vertical"
+            onFinish={handleSubmit}
+            initialValues={{
+              status: 'نشط',
+              regDate: dayjs(),
+              countryCode: 'SA'
+            }}
+          >
+            <Row gutter={16}>
+              {/* العمود الأول */}
+              <Col xs={24} sm={12} md={6}>
+                <Form.Item
+                  label="رقم العميل"
+                  name="id"
                 >
-                  <ArrowRight className="h-4 w-4" />
+                  <Input placeholder="تلقائي" disabled />
+                </Form.Item>
+
+                <Form.Item
+                  label="الاسم بالعربي"
+                  name="nameAr"
+                  rules={[{ required: true, message: 'الاسم بالعربي مطلوب' }]}
+                >
+                  <Input onChange={handleNameArChange} placeholder="أدخل الاسم بالعربي" />
+                </Form.Item>
+
+                <Form.Item
+                  label="الاسم بالإنجليزي"
+                  name="nameEn"
+                >
+                  <Input placeholder="تلقائي" disabled />
+                </Form.Item>
+
+                <Form.Item
+                  label="الفرع"
+                  name="branch"
+                  rules={[{ required: true, message: 'الفرع مطلوب' }]}
+                >
+                  <Select placeholder="اختر الفرع">
+                    {branches.map(branch => (
+                      <Option key={branch} value={branch}>{branch}</Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+
+              {/* العمود الثاني */}
+              <Col xs={24} sm={12} md={6}>
+                <Form.Item
+                  label="السجل التجاري"
+                  name="commercialReg"
+                >
+                  <Input placeholder="رقم السجل التجاري" />
+                </Form.Item>
+
+                <Form.Item
+                  label="تاريخ السجل"
+                  name="regDate"
+                >
+                  <DatePicker style={{ width: '100%' }} placeholder="اختر التاريخ" />
+                </Form.Item>
+
+                <Form.Item
+                  label="جهة الإصدار"
+                  name="regAuthority"
+                >
+                  <Input placeholder="جهة إصدار السجل" />
+                </Form.Item>
+
+                <Form.Item
+                  label="نوع العمل"
+                  name="businessType"
+                  rules={[{ required: true, message: 'نوع العمل مطلوب' }]}
+                >
+                  <Select placeholder="اختر نوع العمل">
+                    {businessTypes.map(type => (
+                      <Option key={type} value={type}>{type}</Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+
+              {/* العمود الثالث */}
+              <Col xs={24} sm={12} md={6}>
+                <Form.Item
+                  label="النشاط"
+                  name="activity"
+                  rules={[{ required: true, message: 'النشاط مطلوب' }]}
+                >
+                  <Select placeholder="اختر النشاط">
+                    {activities.map(activity => (
+                      <Option key={activity} value={activity}>{activity}</Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+
+                <Form.Item
+                  label="تاريخ بداية التعامل"
+                  name="startDate"
+                >
+                  <DatePicker style={{ width: '100%' }} placeholder="اختر التاريخ" />
+                </Form.Item>
+
+                <Form.Item
+                  label="المدينة"
+                  name="city"
+                  rules={[{ required: true, message: 'المدينة مطلوبة' }]}
+                >
+                  <Select placeholder="اختر المدينة">
+                    {cities.map(city => (
+                      <Option key={city} value={city}>{city}</Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+
+                <Form.Item
+                  label="الحد الائتماني (ر.س)"
+                  name="creditLimit"
+                >
+                  <InputNumber
+                    style={{ width: '100%' }}
+                    placeholder="0"
+                    min={0}
+                  />
+                </Form.Item>
+              </Col>
+
+              {/* العمود الرابع */}
+              <Col xs={24} sm={12} md={6}>
+                <Form.Item
+                  label="الحالة"
+                  name="status"
+                  rules={[{ required: true, message: 'الحالة مطلوبة' }]}
+                >
+                  <Select placeholder="اختر الحالة">
+                    {statusOptions.map(status => (
+                      <Option key={status} value={status}>{status}</Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+
+                <Form.Item
+                  label="رقم الجوال"
+                  name="mobile"
+                  rules={[
+                    { required: true, message: 'رقم الجوال مطلوب' },
+                    { pattern: /^05\d{8}$/, message: 'رقم الجوال يجب أن يبدأ بـ 05 ويتكون من 10 أرقام' }
+                  ]}
+                >
+                  <Input placeholder="05xxxxxxxx" />
+                </Form.Item>
+
+                <Form.Item
+                  label="البريد الإلكتروني"
+                  name="email"
+                  rules={[{ type: 'email', message: 'البريد الإلكتروني غير صالح' }]}
+                >
+                  <Input placeholder="example@company.com" />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            {/* تفاصيل الملف الضريبي والعنوان */}
+            <Card style={{ margin: '24px 0', backgroundColor: '#f8f9fa' }}>
+              <Title level={5}>تفاصيل الملف الضريبي والعنوان</Title>
+              <Row gutter={16}>
+                <Col xs={24} sm={12} md={6}>
+                  <Form.Item
+                    label="رقم الملف الضريبي"
+                    name="taxFileNumber"
+                  >
+                    <Input placeholder="أدخل رقم الملف الضريبي" />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} sm={12} md={6}>
+                  <Form.Item
+                    label="تاريخ انتهاء الملف الضريبي"
+                    name="taxFileExpiry"
+                  >
+                    <DatePicker style={{ width: '100%' }} placeholder="اختر التاريخ" />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} sm={12} md={6}>
+                  <Form.Item
+                    label="المنطقة"
+                    name="region"
+                  >
+                    <Input placeholder="المنطقة" />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} sm={12} md={6}>
+                  <Form.Item
+                    label="الحي"
+                    name="district"
+                  >
+                    <Input placeholder="الحي" />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} sm={12} md={6}>
+                  <Form.Item
+                    label="الشارع"
+                    name="street"
+                  >
+                    <Input placeholder="الشارع" />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} sm={12} md={6}>
+                  <Form.Item
+                    label="رقم المبنى"
+                    name="buildingNo"
+                  >
+                    <Input placeholder="رقم المبنى" />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} sm={12} md={6}>
+                  <Form.Item
+                    label="الرمز البريدي"
+                    name="postalCode"
+                  >
+                    <Input placeholder="الرمز البريدي" />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} sm={12} md={6}>
+                  <Form.Item
+                    label="الهاتف"
+                    name="phone"
+                  >
+                    <Input placeholder="رقم الهاتف" />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
+
+            {/* Action Buttons */}
+            <Divider />
+            <div style={{ textAlign: 'left' }}>
+              <Space>
+                <Button
+                  onClick={() => navigate('/management/sales')}
+                  icon={<ArrowRightOutlined />}
+                >
                   إلغاء
                 </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={loading}
+                  icon={<SaveOutlined />}
+                  style={{ backgroundColor: '#1890ff', borderColor: '#1890ff' }}
+                >
+                  حفظ العميل
+                </Button>
+              </Space>
+            </div>
+          </Form>
+        </Spin>
+      </Card>
     </div>
   );
 };

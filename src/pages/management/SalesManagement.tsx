@@ -124,6 +124,46 @@ const SalesManagement: React.FC = () => {
       color: "bg-orange-500"
     },
     {
+      title: "إدارة المندوبين",
+      description: "إضافة وإدارة مندوبي المبيعات",
+      icon: <UserCog className="h-6 w-6" />,
+      color: "bg-cyan-500",
+      onClick: () => {
+        navigate('/management/sales-representatives');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "أهداف المبيعات",
+      description: "تحديد ومتابعة أهداف المندوبين",
+      icon: <Target className="h-6 w-6" />,
+      color: "bg-teal-500",
+      onClick: () => {
+        navigate('/management/sales-targets');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "عمولات المبيعات",
+      description: "حساب وإدارة عمولات المندوبين",
+      icon: <Crown className="h-6 w-6" />,
+      color: "bg-amber-500",
+      onClick: () => {
+        navigate('/management/sales-commissions');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تقييم الأداء",
+      description: "تقييم أداء مندوبي المبيعات",
+      icon: <BarChart3 className="h-6 w-6" />,
+      color: "bg-violet-500",
+      onClick: () => {
+        navigate('/management/performance-evaluation');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
       title: "إعدادات عامة",
       description: "الإعدادات العامة لنظام المبيعات",
       icon: <Settings className="h-6 w-6" />,
@@ -301,25 +341,41 @@ const SalesManagement: React.FC = () => {
       title: "إدارة المندوبين",
       description: "إدارة فريق المبيعات والمندوبين",
       icon: <UserCog className="h-6 w-6" />,
-      color: "bg-purple-600"
+      color: "bg-purple-600",
+      onClick: () => {
+        navigate('/management/sales-representatives');
+        window.scrollTo(0, 0);
+      }
     },
     {
       title: "أهداف المبيعات",
       description: "تحديد ومتابعة أهداف المبيعات",
       icon: <Target className="h-6 w-6" />,
-      color: "bg-orange-600"
+      color: "bg-orange-600",
+      onClick: () => {
+        navigate('/management/sales-targets');
+        window.scrollTo(0, 0);
+      }
     },
     {
       title: "عمولات المبيعات",
       description: "حساب وإدارة عمولات المندوبين",
       icon: <Crown className="h-6 w-6" />,
-      color: "bg-amber-600"
+      color: "bg-amber-600",
+      onClick: () => {
+        navigate('/management/sales-commissions');
+        window.scrollTo(0, 0);
+      }
     },
     {
       title: "تقييم الأداء",
       description: "تقييم أداء فريق المبيعات",
       icon: <BarChart3 className="h-6 w-6" />,
-      color: "bg-teal-600"
+      color: "bg-teal-600",
+      onClick: () => {
+        navigate('/management/performance-evaluation');
+        window.scrollTo(0, 0);
+      }
     }
   ];
 
