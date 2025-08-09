@@ -707,7 +707,7 @@ const SalesRepresentativesPage: React.FC = () => {
         return (
           <Space>
             <DollarOutlined style={{ color: '#52c41a' }} />
-            <Text strong>{sales.toLocaleString()} ج.م</Text>
+            <Text strong>{sales.toLocaleString()} ريال</Text>
           </Space>
         );
       },
@@ -722,7 +722,7 @@ const SalesRepresentativesPage: React.FC = () => {
         return (
           <Space>
             <StarOutlined style={{ color: '#faad14' }} />
-            <Text>{commission.toLocaleString()} ج.م</Text>
+            <Text>{commission.toLocaleString()} ريال</Text>
           </Space>
         );
       },
@@ -790,31 +790,10 @@ const SalesRepresentativesPage: React.FC = () => {
     },
   ];
 
-  const statistics = [
-    {
-      title: 'إجمالي المندوبين',
-      value: representatives.length,
-      prefix: <TeamOutlined style={{ color: '#1890ff' }} />,
-    },
-    {
-      title: 'المندوبين النشطين',
-      value: representatives.filter(r => r.status === 'active').length,
-      prefix: <CheckCircleOutlined style={{ color: '#52c41a' }} />,
-    },
-    {
-      title: 'المرتبطين بحساب',
-      value: representatives.filter(r => r.uid).length,
-      prefix: <UserOutlined style={{ color: '#722ed1' }} />,
-    },
-    {
-      title: 'إجمالي المبيعات',
-      value: Object.values(salesData).reduce((sum, data) => sum + data.totalSales, 0),
-      prefix: <DollarOutlined style={{ color: '#fa8c16' }} />,
-      formatter: (value: number) => `${value.toLocaleString()} ج.م`,
-    },
-  ];
+  // ...تمت إزالة الإحصائيات...
 
   return (
+
     <div className="p-6" dir="rtl">
       {/* Header */}
       <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
@@ -824,12 +803,6 @@ const SalesRepresentativesPage: React.FC = () => {
             <Text type="secondary">إدارة فريق المبيعات والمندوبين</Text>
           </div>
           <Space>
-            <Button 
-              onClick={testFirebaseConnection}
-              style={{ backgroundColor: '#f0f0f0' }}
-            >
-              اختبار الاتصال
-            </Button>
             <Button 
               icon={<BarChartOutlined />}
               onClick={() => navigate('/management/performance-evaluation')}
@@ -873,22 +846,6 @@ const SalesRepresentativesPage: React.FC = () => {
           { label: "إدارة المندوبين" }
         ]}
       />
-
-      {/* Statistics */}
-      <Row gutter={16} className="mb-6">
-        {statistics.map((stat, index) => (
-          <Col xs={24} sm={6} key={index}>
-            <Card>
-              <Statistic
-                title={stat.title}
-                value={stat.value}
-                prefix={stat.prefix}
-                formatter={stat.formatter}
-              />
-            </Card>
-          </Col>
-        ))}
-      </Row>
 
       {/* Search and Filters */}
       <Card className="mb-6">
