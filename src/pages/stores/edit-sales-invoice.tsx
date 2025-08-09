@@ -15,7 +15,19 @@ import {
   Typography
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { SearchOutlined, EditOutlined, EyeOutlined, FilterOutlined } from '@ant-design/icons';
+import { 
+  SearchOutlined, 
+  EditOutlined, 
+  EyeOutlined, 
+  FilterOutlined,
+  ShopOutlined,
+  NumberOutlined,
+  UserOutlined,
+  PhoneOutlined,
+  HomeOutlined,
+  CalendarOutlined,
+  CreditCardOutlined
+} from '@ant-design/icons';
 import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import Breadcrumb from '@/components/Breadcrumb';
@@ -44,6 +56,18 @@ interface InvoiceRecord {
   itemsCount?: number;
 }
 
+interface Branch {
+  id: string;
+  name: string;
+  nameAr?: string;
+}
+
+interface Warehouse {
+  id: string;
+  name: string;
+  nameAr?: string;
+}
+
 const EditSalesInvoicePage: React.FC = () => {
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
@@ -52,11 +76,15 @@ const EditSalesInvoicePage: React.FC = () => {
   const [searchText, setSearchText] = useState('');
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('');
-  const [branches, setBranches] = useState<any[]>([]);
-  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>('');
   const [invoiceNumberSimple, setInvoiceNumberSimple] = useState<string>('');
+  const [entryNumberSearch, setEntryNumberSearch] = useState<string>('');
+  const [customerNameSearch, setCustomerNameSearch] = useState<string>('');
+  const [customerPhoneSearch, setCustomerPhoneSearch] = useState<string>('');
 
   // جلب البيانات من Firebase
   useEffect(() => {
@@ -142,7 +170,7 @@ const EditSalesInvoicePage: React.FC = () => {
   useEffect(() => {
     let filtered = [...invoices];
 
-    // البحث بالنص
+    // البحث بالنص العام
     if (searchText) {
       filtered = filtered.filter(invoice =>
         invoice.invoiceNumber.toLowerCase().includes(searchText.toLowerCase()) ||
@@ -150,11 +178,6 @@ const EditSalesInvoicePage: React.FC = () => {
         invoice.customerPhone?.includes(searchText) ||
         invoice.entryNumber?.toLowerCase().includes(searchText.toLowerCase())
       );
-    }
-
-    // البحث بالفرع
-    if (selectedBranch) {
-      filtered = filtered.filter(invoice => invoice.branch === selectedBranch);
     }
 
     // البحث برقم الفاتورة المبسط
@@ -166,6 +189,37 @@ const EditSalesInvoicePage: React.FC = () => {
         const lastPart = parts[parts.length - 1];
         return lastPart === invoiceNumberSimple;
       });
+    }
+
+    // البحث برقم القيد
+    if (entryNumberSearch) {
+      filtered = filtered.filter(invoice =>
+        invoice.entryNumber?.toLowerCase().includes(entryNumberSearch.toLowerCase())
+      );
+    }
+
+    // البحث باسم العميل
+    if (customerNameSearch) {
+      filtered = filtered.filter(invoice =>
+        invoice.customerName.toLowerCase().includes(customerNameSearch.toLowerCase())
+      );
+    }
+
+    // البحث برقم الهاتف
+    if (customerPhoneSearch) {
+      filtered = filtered.filter(invoice =>
+        invoice.customerPhone?.includes(customerPhoneSearch)
+      );
+    }
+
+    // البحث بالفرع
+    if (selectedBranch) {
+      filtered = filtered.filter(invoice => invoice.branch === selectedBranch);
+    }
+
+    // البحث بالمخزن
+    if (selectedWarehouse) {
+      filtered = filtered.filter(invoice => invoice.warehouse === selectedWarehouse);
     }
 
     // فلتر التاريخ
@@ -183,7 +237,8 @@ const EditSalesInvoicePage: React.FC = () => {
     }
 
     setFilteredInvoices(filtered);
-  }, [searchText, dateRange, selectedPaymentMethod, invoices, selectedBranch, invoiceNumberSimple]);
+  }, [searchText, dateRange, selectedPaymentMethod, invoices, selectedBranch, selectedWarehouse, 
+      invoiceNumberSimple, entryNumberSearch, customerNameSearch, customerPhoneSearch]);
 
   const getBranchName = (branchId: string) => {
     const branch = branches.find(b => b.id === branchId);
@@ -209,7 +264,11 @@ const EditSalesInvoicePage: React.FC = () => {
     setDateRange(null);
     setSelectedPaymentMethod('');
     setSelectedBranch('');
+    setSelectedWarehouse('');
     setInvoiceNumberSimple('');
+    setEntryNumberSearch('');
+    setCustomerNameSearch('');
+    setCustomerPhoneSearch('');
   };
 
   const columns: ColumnsType<InvoiceRecord> = [
@@ -333,6 +392,10 @@ const EditSalesInvoicePage: React.FC = () => {
         .ant-table-tbody > tr:hover {
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
+        .ant-table-thead > tr > th {
+          background-color: #b6e0fe !important;
+          color: #222;
+        }
       `}</style>
       {/* Header */}
       <Card style={{ marginBottom: '24px' }}>
@@ -363,14 +426,15 @@ const EditSalesInvoicePage: React.FC = () => {
           <Col xs={24} sm={12} md={8} lg={6}>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#333' }}>
-                البحث العام:
+               رقم الفاتورة:
               </label>
               <Input
-                placeholder="البحث باسم العميل أو رقم الهاتف..."
+                placeholder="البحث العام..."
                 prefix={<SearchOutlined />}
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
                 allowClear
+                style={{ height: '40px' }}
               />
             </div>
           </Col>
@@ -381,24 +445,26 @@ const EditSalesInvoicePage: React.FC = () => {
               </label>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <Select
-                  style={{ flex: 1 }}
-                  placeholder="اختر الفرع"
+                  style={{ flex: 1, height: '40px' }}
+                  placeholder="اختر الفرع..."
                   value={selectedBranch}
                   onChange={setSelectedBranch}
                   allowClear
+                  suffixIcon={<ShopOutlined />}
                 >
                   {branches.map(branch => (
-                    <Select.Option key={branch.id} value={branch.id}>
+                    <Select.Option key={branch.id} value={branch.id} style={{ minHeight: '40px' }}>
                       {branch.name}
                     </Select.Option>
                   ))}
                 </Select>
                 <Input
                   placeholder="رقم"
+                  prefix={<NumberOutlined />}
                   value={invoiceNumberSimple}
                   onChange={(e) => setInvoiceNumberSimple(e.target.value)}
                   allowClear
-                  style={{ width: '70px', textAlign: 'center' }}
+                  style={{ width: '100px', textAlign: 'center', height: '40px' }}
                 />
               </div>
             </div>
@@ -406,14 +472,30 @@ const EditSalesInvoicePage: React.FC = () => {
           <Col xs={24} sm={12} md={8} lg={6}>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#333' }}>
-                فترة التاريخ:
+                رقم القيد:
               </label>
-              <RangePicker
-                style={{ width: '100%' }}
-                placeholder={['من تاريخ', 'إلى تاريخ']}
-                value={dateRange}
-                onChange={setDateRange}
-                format="YYYY/MM/DD"
+              <Input
+                placeholder="رقم القيد..."
+                prefix={<NumberOutlined />}
+                value={entryNumberSearch}
+                onChange={(e) => setEntryNumberSearch(e.target.value)}
+                allowClear
+                style={{ height: '40px' }}
+              />
+            </div>
+          </Col>
+          <Col xs={24} sm={12} md={8} lg={6}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#333' }}>
+                اسم العميل:
+              </label>
+              <Input
+                placeholder="اسم العميل..."
+                prefix={<UserOutlined />}
+                value={customerNameSearch}
+                onChange={(e) => setCustomerNameSearch(e.target.value)}
+                allowClear
+                style={{ height: '40px' }}
               />
             </div>
           </Col>
@@ -422,23 +504,79 @@ const EditSalesInvoicePage: React.FC = () => {
           <Col xs={24} sm={12} md={8} lg={6}>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#333' }}>
+                رقم الهاتف:
+              </label>
+              <Input
+                placeholder="رقم الهاتف..."
+                prefix={<PhoneOutlined />}
+                value={customerPhoneSearch}
+                onChange={(e) => setCustomerPhoneSearch(e.target.value)}
+                allowClear
+                style={{ height: '40px' }}
+              />
+            </div>
+          </Col>
+          <Col xs={24} sm={12} md={8} lg={6}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#333' }}>
+                المخزن:
+              </label>
+              <Select
+                style={{ width: '100%', height: '40px' }}
+                placeholder="اختر المخزن..."
+                value={selectedWarehouse}
+                onChange={setSelectedWarehouse}
+                allowClear
+                suffixIcon={<HomeOutlined />}
+              >
+                {warehouses.map(warehouse => (
+                  <Select.Option key={warehouse.id} value={warehouse.id} style={{ minHeight: '40px' }}>
+                    {warehouse.name}
+                  </Select.Option>
+                ))}
+              </Select>
+            </div>
+          </Col>
+          <Col xs={24} sm={12} md={8} lg={6}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#333' }}>
+                فترة التاريخ:
+              </label>
+              <RangePicker
+                style={{ width: '100%', height: '40px' }}
+                placeholder={['من تاريخ', 'إلى تاريخ']}
+                value={dateRange}
+                onChange={setDateRange}
+                format="YYYY/MM/DD"
+                suffixIcon={<CalendarOutlined />}
+              />
+            </div>
+          </Col>
+                    <Col xs={24} sm={12} md={8} lg={6}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#333' }}>
                 طريقة الدفع:
               </label>
               <Select
-                style={{ width: '100%' }}
-                placeholder="اختر طريقة الدفع"
+                style={{ width: '100%', height: '40px' }}
+                placeholder="اختر طريقة الدفع..."
                 value={selectedPaymentMethod}
                 onChange={setSelectedPaymentMethod}
                 allowClear
+                suffixIcon={<CreditCardOutlined />}
               >
                 {paymentMethods.map(method => (
-                  <Select.Option key={method} value={method}>
+                  <Select.Option key={method} value={method} style={{ minHeight: '40px' }}>
                     {method}
                   </Select.Option>
                 ))}
               </Select>
             </div>
           </Col>
+
+        </Row>
+        <Row gutter={[16, 16]} align="middle" style={{ marginTop: '16px' }}>
+
           <Col xs={24} sm={12} md={8} lg={6}>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#333' }}>
