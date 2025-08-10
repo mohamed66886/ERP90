@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { SearchOutlined } from '@ant-design/icons';
 import { useAuth } from '@/contexts/useAuth';
-import { doc, getDoc, collection, getDocs, addDoc, query, where, updateDoc } from 'firebase/firestore';
-import { useParams, useNavigate } from 'react-router-dom';
+import { doc, getDoc, collection, getDocs, addDoc, query, where } from 'firebase/firestore';
 import dayjs from 'dayjs';
 import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space } from 'antd';
 import * as XLSX from 'xlsx';
 import Divider from 'antd/es/divider';
 import Breadcrumb from "../../components/Breadcrumb";
 import Card from 'antd/es/card';
-import { PlusOutlined, SaveOutlined, UserOutlined, EditOutlined } from '@ant-design/icons';
+import { PlusOutlined, SaveOutlined, UserOutlined } from '@ant-design/icons';
 import { db } from '@/lib/firebase';
 import { FileText } from 'lucide-react';
 import { fetchCashBoxes } from '../../services/cashBoxesService';
@@ -280,12 +279,7 @@ function calculateDueDate(invoiceDate: string): string {
   return dayjs(invoiceDate).add(12, 'day').format('YYYY-MM-DD');
 }
 
-const EditSalesInvoiceDetailPage: React.FC = () => {
-  const { id: invoiceId } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [loadingInvoice, setLoadingInvoice] = useState<boolean>(true);
-  const [invoiceNotFound, setInvoiceNotFound] = useState<boolean>(false);
-
+const SalesPage: React.FC = () => {
   // حالة الرسائل
   const [notifications, setNotifications] = useState<Array<{
     id: string;
@@ -404,6 +398,9 @@ const EditSalesInvoiceDetailPage: React.FC = () => {
         await addDoc(collection(db, 'sales_invoices'), invoiceData);
       }
       customMessage.success('تم توليد 3000 فاتورة عشوائية بنجاح');
+      if (fetchInvoices) {
+        fetchInvoices();
+      }
     } catch (err) {
       customMessage.error('حدث خطأ أثناء توليد الفواتير');
     } finally {
@@ -441,35 +438,36 @@ const EditSalesInvoiceDetailPage: React.FC = () => {
     setAddItemLoading(true);
     try {
       // بناء بيانات الصنف الجديد
-      const newItem: InventoryItem = {
-        id: `temp_${Date.now()}`, // معرف مؤقت
+      const newItemData = {
         name: addItemForm.name.trim(),
         itemCode: addItemForm.itemCode?.trim() || '',
         salePrice: addItemForm.salePrice ? Number(addItemForm.salePrice) : 0,
         discount: addItemForm.discount ? Number(addItemForm.discount) : 0,
         isVatIncluded: !!addItemForm.isVatIncluded,
         tempCodes: !!addItemForm.tempCodes,
-        type: 'مستوى ثاني'
+        type: 'مستوى ثاني',
+        purchasePrice: addItemForm.purchasePrice ? Number(addItemForm.purchasePrice) : 0,
+        minOrder: addItemForm.minOrder ? Number(addItemForm.minOrder) : 0,
+        allowNegative: !!addItemForm.allowNegative,
+        supplier: addItemForm.supplier || '',
+        unit: addItemForm.unit || '',
+        createdAt: new Date().toISOString()
       };
 
-      // إضافة الصنف إلى قاعدة البيانات (صفحة الأصناف)
-      try {
-        const { addDoc, collection } = await import('firebase/firestore');
-        await addDoc(collection(db, 'inventory_items'), newItem);
-      } catch (err) {
-        console.error('خطأ في حفظ الصنف في قاعدة البيانات:', err);
-        if (typeof message !== 'undefined' && message.error) {
-          message.error('حدث خطأ أثناء حفظ الصنف في قاعدة البيانات');
-        }
-      }
+      // إضافة الصنف إلى قاعدة البيانات
+      const docRef = await addDoc(collection(db, 'inventory_items'), newItemData);
+      
+      // بناء بيانات الصنف مع المعرف الحقيقي
+      const newItem: InventoryItem = {
+        id: docRef.id,
+        ...newItemData
+      };
 
-      // تحديث القوائم المحلية
-      if (typeof setItemNames === 'function') {
-        setItemNames((prev: InventoryItem[]) => [...prev, newItem]);
-      }
-      if (typeof setAllItems === 'function') {
-        setAllItems((prev: InventoryItem[]) => [...prev, newItem]);
-      }
+      // تحديث القوائم المحلية فوراً
+      setItemNames((prev: InventoryItem[]) => [...prev, newItem]);
+      setAllItems((prev: InventoryItem[]) => [...prev, newItem]);
+      
+      // إغلاق المودال وإعادة تعيين النموذج
       setShowAddItemModal(false);
       setAddItemForm({
         name: '',
@@ -486,17 +484,78 @@ const EditSalesInvoiceDetailPage: React.FC = () => {
         type: '',
         parentId: ''
       });
-      if (typeof customMessage !== 'undefined' && customMessage.success) {
-        customMessage.success('تمت إضافة الصنف بنجاح');
-      }
+      
+      // تحديد الصنف الجديد في القائمة المنسدلة
+      setItem({
+        ...item,
+        itemName: newItem.name,
+        itemNumber: newItem.itemCode || '',
+        price: String(newItem.salePrice || ''),
+        discountPercent: String(newItem.discount || '0'),
+        taxPercent: taxRate,
+        quantity: '1'
+      });
+      
+      customMessage.success('تمت إضافة الصنف بنجاح وتم تحديد اختياره');
+      
     } catch (e) {
-      if (typeof message !== 'undefined' && message.error) {
-        message.error('حدث خطأ أثناء إضافة الصنف');
-      }
+      console.error('خطأ في إضافة الصنف:', e);
+      message.error('حدث خطأ أثناء إضافة الصنف');
     } finally {
       setAddItemLoading(false);
     }
   };
+  // دالة تحديث قائمة العملاء
+  const refreshCustomers = async () => {
+    try {
+      setFetchingItems(true);
+      const customersSnap = await getDocs(collection(db, 'customers'));
+      const customersData = customersSnap.docs.map(doc => {
+        const data = doc.data();
+        return { id: doc.id, ...data, taxFile: data.taxFile || '' };
+      });
+      setCustomers(customersData);
+      customMessage.success('تم تحديث قائمة العملاء بنجاح');
+    } catch (error) {
+      console.error('خطأ في تحديث العملاء:', error);
+      message.error('حدث خطأ أثناء تحديث قائمة العملاء');
+    } finally {
+      setFetchingItems(false);
+    }
+  };
+
+  // دالة تحديث قائمة الأصناف
+  const refreshItems = async () => {
+    try {
+      setFetchingItems(true);
+      const itemsSnap = await getDocs(collection(db, 'inventory_items'));
+      const allItemsData = itemsSnap.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: data.name || '',
+          itemCode: data.itemCode || '',
+          salePrice: data.salePrice || 0,
+          discount: data.discount || 0,
+          isVatIncluded: data.isVatIncluded || false,
+          type: data.type || '',
+          tempCodes: data.tempCodes || false,
+          allowNegative: data.allowNegative || false
+        };
+      }).filter(item => item.name);
+      
+      setAllItems(allItemsData);
+      const secondLevelItems = allItemsData.filter(item => item.type === 'مستوى ثاني');
+      setItemNames(secondLevelItems);
+      customMessage.success('تم تحديث قائمة الأصناف بنجاح');
+    } catch (error) {
+      console.error('خطأ في تحديث الأصناف:', error);
+      message.error('حدث خطأ أثناء تحديث قائمة الأصناف');
+    } finally {
+      setFetchingItems(false);
+    }
+  };
+
   // --- Add Customer Modal State (fix: must be inside component, before return) ---
   const businessTypes = ["شركة", "مؤسسة", "فرد"];
   const initialAddCustomer = {
@@ -541,12 +600,34 @@ const EditSalesInvoiceDetailPage: React.FC = () => {
         status: 'نشط',
         createdAt: new Date().toISOString(),
       };
-      await addDoc(collection(db, 'customers'), docData);
-      customMessage.success('تم إضافة العميل بنجاح! يمكنك تعديل باقي البيانات من صفحة العملاء.');
+      
+      const docRef = await addDoc(collection(db, 'customers'), docData);
+      
+      // بناء بيانات العميل الجديد مع المعرف الحقيقي
+      const newCustomer = {
+        id: docRef.id,
+        ...docData,
+        taxFile: docData.taxFileNumber || ''
+      };
+      
+      // تحديث قائمة العملاء فوراً
+      setCustomers(prev => [...prev, newCustomer]);
+      
+      // تحديد العميل الجديد في الفاتورة
+      setInvoiceData(prev => ({
+        ...prev,
+        customerName: newCustomer.nameAr,
+        customerNumber: newCustomer.phone || '',
+        commercialRecord: newCustomer.commercialReg || '',
+        taxFile: newCustomer.taxFile || ''
+      }));
+      
+      customMessage.success('تم إضافة العميل بنجاح وتم تحديد اختياره في الفاتورة!');
       setShowAddCustomerModal(false);
       setAddCustomerForm(initialAddCustomer);
-      // Optionally, you can refresh the customers list here if you have a fetchCustomers function available
+      
     } catch (err) {
+      console.error('خطأ في إضافة العميل:', err);
       message.error('حدث خطأ أثناء إضافة العميل');
     } finally {
       setAddCustomerLoading(false);
@@ -579,7 +660,198 @@ interface CompanyData {
 
   // بيانات الشركة
   const [companyData, setCompanyData] = useState<CompanyData>({});
-  
+  // دالة تصدير سجل الفواتير إلى ملف Excel
+  const exportInvoicesToExcel = () => {
+    if (!invoices.length) {
+      message.info('لا يوجد بيانات للتصدير');
+      return;
+    }
+    // تجهيز البيانات
+    const data = invoices.map(inv => {
+      // البحث عن اسم المخزن بناءً على id
+      let warehouseName = inv.warehouse;
+      if (warehouses && Array.isArray(warehouses)) {
+        const found = warehouses.find(w => w.id === inv.warehouse);
+        if (found) warehouseName = found.name || found.id;
+      }
+      // البحث عن اسم الفرع بناءً على id
+      let branchName = inv.branch;
+      if (branches && Array.isArray(branches)) {
+        const foundBranch = branches.find(b => b.id === inv.branch);
+        if (foundBranch) branchName = foundBranch.name || foundBranch.id;
+      }
+      return {
+        'رقم الفاتورة': inv.invoiceNumber,
+        'التاريخ': inv.date,
+        'الفرع': branchName,
+        'كود الصنف': inv.itemNumber,
+        'اسم الصنف': inv.itemName,
+        'المجموعة الرئيسية': inv.firstLevelCategory || '',
+        'المستوى الأول': inv.mainCategory || '',
+        'الكمية': inv.quantity,
+        'السعر': inv.price,
+        'الإجمالي': inv.total,
+        'قيمة الخصم': inv.discountValue,
+        '% الخصم': inv.discountPercent,
+        'قيمة الضريبة': inv.taxValue,
+        '% الضريبة': inv.taxPercent,
+        'الصافي': inv.net,
+        'التكلفة': inv.cost,
+        'ربح الصنف': inv.profit,
+        'المخزن': warehouseName,
+        'العميل': inv.customer,
+        'تليفون العميل': inv.customerPhone,
+        'البائع': getDelegateName(inv.seller),
+        'طريقة الدفع': inv.paymentMethod,
+        'نوع الفاتورة': inv.invoiceType
+      };
+    });
+
+    // بيانات الشركة (يمكنك التعديل)
+    const companyInfo = ['شركة حساب عربي', 'الهاتف: 01000000000', 'العنوان: القاهرة - مصر'];
+    const companyTitle = 'سجل فواتير المبيعات';
+    const userName = (user?.displayName || user?.name || user?.email || '');
+    const exportDate = new Date().toLocaleString('ar-EG');
+
+    // إجماليات
+    const totalsRow = {
+      'رقم الفاتورة': 'الإجماليات',
+      'التاريخ': '',
+      'الفرع': '',
+      'كود الصنف': '',
+      'اسم الصنف': '',
+      'المجموعة الرئيسية': '',
+      'المستوى الأول': '',
+      'الكمية': data.reduce((sum, r) => sum + Number(r['الكمية'] || 0), 0),
+      'السعر': '',
+      'الإجمالي': data.reduce((sum, r) => sum + Number(r['الإجمالي'] || 0), 0),
+      'قيمة الخصم': data.reduce((sum, r) => sum + Number(r['قيمة الخصم'] || 0), 0),
+      '% الخصم': '',
+      'قيمة الضريبة': data.reduce((sum, r) => sum + Number(r['قيمة الضريبة'] || 0), 0),
+      '% الضريبة': '',
+      'الصافي': data.reduce((sum, r) => sum + Number(r['الصافي'] || 0), 0),
+      'التكلفة': data.reduce((sum, r) => sum + Number(r['التكلفة'] || 0), 0),
+      'ربح الصنف': data.reduce((sum, r) => sum + Number(r['ربح الصنف'] || 0), 0),
+      'المخزن': '',
+      'العميل': '',
+      'تليفون العميل': '',
+      'البائع': '',
+      'طريقة الدفع': '',
+      'نوع الفاتورة': ''
+    };
+
+    // بناء الورقة
+    const ws = XLSX.utils.json_to_sheet([]);
+    // عنوان الشركة
+    XLSX.utils.sheet_add_aoa(ws, [[companyTitle]], { origin: 'A1' });
+    ws['!merges'] = ws['!merges'] || [];
+    const colCount = Object.keys(data[0]).length;
+    ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: colCount - 1 } });
+    // بيانات الشركة
+    XLSX.utils.sheet_add_aoa(ws, [companyInfo], { origin: 'A2' });
+    ws['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: colCount - 1 } });
+    // إضافة البيانات مع رؤوس الأعمدة
+    XLSX.utils.sheet_add_json(ws, data, { origin: 'A4', header: Object.keys(data[0]) });
+    // صف الإجماليات
+    XLSX.utils.sheet_add_json(ws, [totalsRow], { origin: `A${data.length + 5}`, skipHeader: true });
+    // ترويسة التصدير
+    XLSX.utils.sheet_add_aoa(ws, [[`تم التصدير بواسطة: ${userName} - التاريخ: ${exportDate}`]], { origin: `A${data.length + 7}` });
+    ws['!merges'].push({ s: { r: data.length + 6, c: 0 }, e: { r: data.length + 6, c: colCount - 1 } });
+
+    // تنسيق العنوان الرئيسي
+    const titleCell = ws[XLSX.utils.encode_cell({ r: 0, c: 0 })];
+    if (titleCell) {
+      titleCell.s = {
+        font: { bold: true, sz: 18, color: { rgb: 'FFFFFF' } },
+        fill: { fgColor: { rgb: '305496' } },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      };
+    }
+    // تنسيق بيانات الشركة
+    const infoCell = ws[XLSX.utils.encode_cell({ r: 1, c: 0 })];
+    if (infoCell) {
+      infoCell.s = {
+        font: { bold: true, sz: 12, color: { rgb: '305496' } },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      };
+    }
+    // تنسيق صف العناوين
+    const headerRow = 3; // الصف الرابع (A4)
+    for (let c = 0; c < colCount; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r: headerRow, c })];
+      if (cell) {
+        cell.s = {
+          font: { bold: true, sz: 13, color: { rgb: 'FFFFFF' } },
+          fill: { fgColor: { rgb: '4472C4' } },
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border: {
+            top: { style: 'thin', color: { rgb: 'AAAAAA' } },
+            bottom: { style: 'thin', color: { rgb: 'AAAAAA' } },
+            left: { style: 'thin', color: { rgb: 'AAAAAA' } },
+            right: { style: 'thin', color: { rgb: 'AAAAAA' } }
+          }
+        };
+      }
+    }
+    // تنسيق الأرقام وتوسيط الأعمدة وإضافة حدود
+    const rowCount = data.length;
+    for (let r = headerRow + 1; r <= headerRow + rowCount + 1; r++) {
+      for (let c = 0; c < colCount; c++) {
+        const cell = ws[XLSX.utils.encode_cell({ r, c })];
+        if (cell) {
+          // تنسيق الأرقام لبعض الأعمدة
+          if ([6,7,8,9,10,11,12,13,14,15,16].includes(c)) {
+            cell.z = '#,##0.00';
+          }
+          // إبراز الصافي والربح في صف الإجماليات
+          if (r === headerRow + rowCount + 1 && (c === 13 || c === 15)) {
+            cell.s = {
+              font: { bold: true, sz: 13, color: { rgb: 'FFFFFF' } },
+              fill: { fgColor: { rgb: c === 13 ? '70AD47' : 'FFC000' } },
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: {
+                top: { style: 'thin', color: { rgb: 'AAAAAA' } },
+                bottom: { style: 'thin', color: { rgb: 'AAAAAA' } },
+                left: { style: 'thin', color: { rgb: 'AAAAAA' } },
+                right: { style: 'thin', color: { rgb: 'AAAAAA' } }
+              }
+            };
+          } else {
+            cell.s = {
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: {
+                top: { style: 'thin', color: { rgb: 'AAAAAA' } },
+                bottom: { style: 'thin', color: { rgb: 'AAAAAA' } },
+                left: { style: 'thin', color: { rgb: 'AAAAAA' } },
+                right: { style: 'thin', color: { rgb: 'AAAAAA' } }
+              }
+            };
+          }
+        }
+      }
+    }
+    // ترويسة التصدير
+    const footerCell = ws[XLSX.utils.encode_cell({ r: data.length + 6, c: 0 })];
+    if (footerCell) {
+      footerCell.s = {
+        font: { italic: true, sz: 11, color: { rgb: '888888' } },
+        alignment: { horizontal: 'right', vertical: 'center' }
+      };
+    }
+    // ضبط عرض الأعمدة تلقائيًا حسب المحتوى
+    ws['!cols'] = Object.keys(data[0]).map((k, i) => {
+      const maxLen = Math.max(
+        k.length,
+        ...data.map(row => String(row[k] ?? '').length),
+        String(totalsRow[k] ?? '').length
+      );
+      return { wch: Math.min(Math.max(maxLen + 2, 12), 30) };
+    });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'سجل الفواتير');
+    XLSX.writeFile(wb, `سجل_الفواتير_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
   const { user } = useAuth();
   const [invoiceType, setInvoiceType] = useState<'ضريبة مبسطة' | 'ضريبة'>('ضريبة مبسطة');
   const [warehouseMode, setWarehouseMode] = useState<'single' | 'multiple'>('single');
@@ -655,85 +927,10 @@ interface CompanyData {
     tax: 0
   });
 
-  // دالة تحميل بيانات الفاتورة المحددة
-  const loadInvoiceData = useCallback(async () => {
-    if (!invoiceId) {
-      setInvoiceNotFound(true);
-      setLoadingInvoice(false);
-      return;
-    }
-
-    try {
-      setLoadingInvoice(true);
-      
-      // البحث في قاعدة البيانات عن الفاتورة
-      const invoiceDoc = await getDoc(doc(db, 'sales_invoices', invoiceId));
-      
-      if (!invoiceDoc.exists()) {
-        setInvoiceNotFound(true);
-        addNotification('error', 'خطأ', 'لم يتم العثور على الفاتورة المطلوبة');
-        return;
-      }
-
-      const invoiceData = invoiceDoc.data();
-      
-      // تعبئة بيانات الفاتورة في النموذج
-      setInvoiceData({
-        invoiceNumber: invoiceData.invoiceNumber || '',
-        entryNumber: invoiceData.entryNumber || '',
-        date: invoiceData.date || '',
-        paymentMethod: invoiceData.paymentMethod || '',
-        cashBox: invoiceData.cashBox || '',
-        multiplePayment: invoiceData.multiplePayment || {},
-        branch: invoiceData.branch || '',
-        warehouse: invoiceData.warehouse || '',
-        customerNumber: invoiceData.customerNumber || '',
-        customerName: invoiceData.customerName || '',
-        delegate: invoiceData.delegate || '',
-        priceRule: invoiceData.priceRule || '',
-        commercialRecord: invoiceData.commercialRecord || '',
-        taxFile: invoiceData.taxFile || '',
-        dueDate: invoiceData.dueDate || ''
-      });
-
-      // تعبئة الأصناف
-      setItems(invoiceData.items || []);
-      
-      // تعبئة الإجماليات
-      setTotals(invoiceData.totals || {
-        afterDiscount: 0,
-        afterTax: 0,
-        total: 0,
-        tax: 0
-      });
-
-      // تعيين نوع الفاتورة
-      if (invoiceData.type) {
-        setInvoiceType(invoiceData.type);
-      }
-
-      // تعيين وضع الدفع المتعدد
-      if (invoiceData.multiplePayment && Object.keys(invoiceData.multiplePayment).length > 0) {
-        setMultiplePaymentMode(true);
-      }
-
-      addNotification('success', 'نجح', 'تم تحميل بيانات الفاتورة بنجاح');
-      
-    } catch (error) {
-      console.error('Error loading invoice:', error);
-      addNotification('error', 'خطأ', 'حدث خطأ في تحميل بيانات الفاتورة');
-    } finally {
-      setLoadingInvoice(false);
-    }
-  }, [invoiceId, addNotification]);
-
-  // تحميل بيانات الفاتورة عند تحميل الصفحة
-  useEffect(() => {
-    loadInvoiceData();
-  }, [loadInvoiceData]);
-
   const [taxRate, setTaxRate] = useState<string>('15');
   const [priceType, setPriceType] = useState<'سعر البيع' | 'آخر سعر العميل'>('سعر البيع');
+  const [invoices, setInvoices] = useState<(InvoiceRecord & { firstLevelCategory?: string })[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState<boolean>(false);
 interface FirebaseInvoiceItem {
   itemNumber?: string;
   itemName?: string;
@@ -961,6 +1158,83 @@ interface SavedInvoice {
     }
   };
 
+  // جلب الفواتير من Firebase
+  const fetchInvoices = async () => {
+    try {
+      setInvoicesLoading(true);
+      const invoicesSnap = await getDocs(collection(db, 'sales_invoices'));
+      const invoicesData: (InvoiceRecord & { firstLevelCategory?: string })[] = [];
+      // جلب الأصناف لتعريف المستويات
+      let inventoryItems: ItemData[] = [];
+      try {
+        const itemsSnap = await getDocs(collection(db, 'inventory_items'));
+        inventoryItems = itemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch {
+        // Handle error silently
+      }
+      
+      invoicesSnap.forEach(doc => {
+        const data = doc.data();
+        if (Array.isArray(data.items)) {
+          data.items.forEach((item: FirebaseInvoiceItem) => {
+            // البحث عن الصنف لجلب المستويات
+            const foundItem = inventoryItems.find(i => i.name === item.itemName);
+            // البحث عن اسم الصنف الرئيسي (الأب) واسمه الأعلى (الجد) إذا كان هناك parentId
+            let parentName = '';
+            let grandParentName = '';
+            if (foundItem && foundItem.parentId) {
+              const parentItem = inventoryItems.find(i => i.id === foundItem.parentId || i.id === String(foundItem.parentId));
+              parentName = parentItem?.name || '';
+              if (parentItem && parentItem.parentId) {
+                const grandParentItem = inventoryItems.find(i => i.id === parentItem.parentId || i.id === String(parentItem.parentId));
+                grandParentName = grandParentItem?.name || '';
+              }
+            }
+            invoicesData.push({
+              key: doc.id + '-' + item.itemNumber,
+              invoiceNumber: data.invoiceNumber || 'N/A',
+              date: data.date || '',
+              dueDate: data.dueDate || calculateDueDate(data.date || ''), // إضافة تاريخ الاستحقاق
+              branch: data.branch || '',
+              itemNumber: item.itemNumber || 'N/A',
+              itemName: item.itemName || '',
+              mainCategory: parentName,
+              firstLevelCategory: grandParentName,
+              quantity: Number(item.quantity) || 0,
+              price: Number(item.price) || 0,
+              total: Number(item.total) || 0,
+              discountValue: Number(item.discountValue) || 0,
+              discountPercent: Number(item.discountPercent) || 0,
+              taxValue: Number(item.taxValue) || 0,
+              taxPercent: Number(item.taxPercent) || 0,
+              net: (Number(item.total) - Number(item.discountValue) + Number(item.taxValue)) || 0,
+              cost: Number(item.cost) || 0,
+              profit: (Number(item.total) - Number(item.discountValue) - Number(item.cost)) || 0,
+              warehouse: data.warehouse || '',
+              customer: data.customerName || '',
+              customerPhone: data.customerNumber || '',
+              seller: data.delegate || '',
+              paymentMethod: data.paymentMethod || '',
+              invoiceType: data.type || '',
+              itemData: foundItem || {}
+            });
+          });
+        }
+      });
+      setInvoices(invoicesData);
+    } catch (err) {
+      console.error('Error fetching invoices:', err);
+      message.error('تعذر تحميل سجل الفواتير');
+    } finally {
+      setInvoicesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchInvoices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // جلب نسبة الضريبة من إعدادات الشركة (companies)
   useEffect(() => {
     const fetchTaxRate = async () => {
@@ -1150,11 +1424,6 @@ interface SavedInvoice {
       customMessage.error('لا يمكن حفظ فاتورة بدون أصناف');
       return;
     }
-
-    if (!invoiceId) {
-      customMessage.error('معرف الفاتورة غير موجود');
-      return;
-    }
     
     // التحقق من صحة التواريخ
     if (invoiceData.date && !validateDate(invoiceData.date)) {
@@ -1204,7 +1473,7 @@ interface SavedInvoice {
       // إذا لم تكن القيمة موجودة، اختر أول طريقة دفع كافتراضي أو اتركها فارغة
       paymentMethodName = paymentNames[0] || '';
     }
-    const invoice: Partial<SavedInvoice> & { updatedAt: string; source: string } = {
+    const invoice: Partial<SavedInvoice> & { createdAt: string; source: string } = {
       ...cleanInvoiceData,
       paymentMethod: paymentMethodName,
       items,
@@ -1212,7 +1481,7 @@ interface SavedInvoice {
         ...totals
       },
       type: invoiceType,
-      updatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
       source: 'sales'
     };
 
@@ -1221,11 +1490,12 @@ interface SavedInvoice {
       invoice.multiplePayment = invoiceData.multiplePayment;
     }
     try {
-      // تحديث الفاتورة في Firestore
-      await updateDoc(doc(db, 'sales_invoices', invoiceId), invoice);
-      customMessage.success('تم تحديث الفاتورة بنجاح!');
+      // حفظ الفاتورة في Firestore مباشرة
+      const { addDoc, collection } = await import('firebase/firestore');
+      await addDoc(collection(db, 'sales_invoices'), invoice);
+      customMessage.success('تم حفظ الفاتورة بنجاح!');
       
-      // تحديث الأرصدة بعد التحديث
+      // تحديث الأرصدة بعد الحفظ
       if (warehouseMode === 'single' && invoiceData.warehouse) {
         await fetchItemStocks(invoiceData.warehouse);
       } else if (warehouseMode === 'multiple') {
@@ -1238,13 +1508,42 @@ interface SavedInvoice {
         }
       }
       
-      // إظهار مودال الطباعة بعد الحفظ
+      // إعادة تعيين النموذج
+      setItems([]);
+      setTotals({ afterDiscount: 0, afterTax: 0, total: 0, tax: 0 });
+      setMultiplePaymentMode(false);
+      // توليد رقم فاتورة جديد بعد الحفظ
+      if (branchCode) {
+        generateAndSetInvoiceNumber(branchCode);
+      } else {
+        const newDate = getTodayString();
+        setInvoiceData(prev => ({
+          ...prev,
+          invoiceNumber: '',
+          entryNumber: generateEntryNumber(),
+          date: newDate,
+          paymentMethod: '',
+          cashBox: '',
+          multiplePayment: {},
+          branch: '',
+          warehouse: '',
+          customerNumber: '',
+          customerName: '',
+          delegate: '',
+          priceRule: '',
+          commercialRecord: '',
+          taxFile: '',
+          dueDate: calculateDueDate(newDate) // إضافة تاريخ الاستحقاق عند الإعادة تعيين
+        }));
+      }
+      // تحديث سجل الفواتير
+      await fetchInvoices();
+      // حفظ بيانات الفاتورة الأخيرة للمودال
       setLastSavedInvoice(invoice as SavedInvoice);
-      setShowPrintModal(true); // إرجاع السلوك السابق إذا كان هناك مودال للطباعة
-      
+      setShowPrintModal(true);
     } catch (err) {
-      console.error('Error updating invoice:', err);
-      customMessage.error('حدث خطأ أثناء تحديث الفاتورة');
+      console.error('Error saving invoice:', err);
+      message.error(err.message || 'حدث خطأ أثناء الحفظ');
     } finally {
       setLoading(false);
     }
@@ -1431,7 +1730,248 @@ interface SavedInvoice {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // (الأعمدة الخاصة بسجل الفواتير تم حذفها لأنها غير مطلوبة في صفحة التعديل)
+  const handleDeleteInvoice = async (record: InvoiceRecord & { firstLevelCategory?: string; id?: string }) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذه الفاتورة؟')) return;
+    setInvoicesLoading(true);
+    try {
+      // حذف الفاتورة من قاعدة البيانات (Firebase أو أي مصدر آخر)
+      // مثال: await deleteInvoiceById(record.id)
+      // إذا كنت تستخدم Firebase:
+      if (record.id) {
+        const { deleteDoc, doc } = await import('firebase/firestore');
+        const { db } = await import('../../lib/firebase');
+        await deleteDoc(doc(db, 'salesInvoices', record.id));
+        setInvoices(prev => prev.filter(inv => inv.key !== record.key));
+      } else {
+        setInvoices(prev => prev.filter(inv => inv.invoiceNumber !== record.invoiceNumber));
+      }
+    } catch (err) {
+      alert('حدث خطأ أثناء الحذف');
+    } finally {
+      setInvoicesLoading(false);
+    }
+  };
+
+  const invoiceColumns = [
+    {
+      title: 'رقم الفاتورة',
+      dataIndex: 'invoiceNumber',
+      key: 'invoiceNumber',
+      width: 150,
+      fixed: 'left' as const,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.invoiceNumber.localeCompare(b.invoiceNumber)
+    },
+    {
+      title: 'التاريخ',
+      dataIndex: 'date',
+      key: 'date',
+      width: 120,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+      render: (date: string) => dayjs(date).format('YYYY-MM-DD')
+    },
+    {
+      title: 'تاريخ الاستحقاق',
+      dataIndex: 'dueDate',
+      key: 'dueDate',
+      width: 120,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => {
+        const dateA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+        const dateB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+        return dateA - dateB;
+      },
+      render: (dueDate: string) => dueDate ? dayjs(dueDate).format('YYYY-MM-DD') : ''
+    },
+    {
+      title: 'الفرع',
+      dataIndex: 'branch',
+      key: 'branch',
+      width: 120,
+      render: (branchId: string) => {
+        const branch = branches.find(b => b.id === branchId);
+        return branch ? (branch.name || branch.id) : branchId;
+      }
+    },
+    {
+      title: 'كود الصنف',
+      dataIndex: 'itemNumber',
+      key: 'itemNumber',
+      width: 100,
+      align: 'center' as const
+    },
+    {
+      title: 'اسم الصنف',
+      dataIndex: 'itemName',
+      key: 'itemName',
+      width: 150
+    },
+    {
+      title: 'المجموعة الرئيسية',
+      dataIndex: 'firstLevelCategory',
+      key: 'firstLevelCategory',
+      width: 150,
+      render: (value: string) => value || ''
+    },
+    {
+      title: 'المستوى الأول',
+      dataIndex: 'mainCategory',
+      key: 'mainCategory',
+      width: 150,
+      render: (value: string) => value || ''
+    },
+    {
+      title: 'الكمية',
+      dataIndex: 'quantity',
+      key: 'quantity',
+      width: 80,
+      align: 'center' as const,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.quantity - b.quantity,
+      render: (quantity: number) => Math.round(quantity).toString()
+    },
+    {
+      title: 'السعر',
+      dataIndex: 'price',
+      key: 'price',
+      width: 100,
+      align: 'center' as const,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.price - b.price,
+      render: (price: number) => price.toFixed(2)
+    },
+    {
+      title: 'الإجمالي',
+      dataIndex: 'total',
+      key: 'total',
+      width: 100,
+      align: 'center' as const,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.total - b.total,
+      render: (total: number) => total.toFixed(2)
+    },
+    {
+      title: 'قيمة الخصم',
+      dataIndex: 'discountValue',
+      key: 'discountValue',
+      width: 100,
+      align: 'center' as const,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.discountValue - b.discountValue,
+      render: (discount: number) => discount.toFixed(2)
+    },
+    {
+      title: '% الخصم',
+      dataIndex: 'discountPercent',
+      key: 'discountPercent',
+      width: 80,
+      align: 'center' as const,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.discountPercent - b.discountPercent,
+      render: (percent: number) => percent.toFixed(2)
+    },
+    {
+      title: 'قيمة الضريبة',
+      dataIndex: 'taxValue',
+      key: 'taxValue',
+      width: 100,
+      align: 'center' as const,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.taxValue - b.taxValue,
+      render: (tax: number) => tax.toFixed(2)
+    },
+    {
+      title: '% الضريبة',
+      dataIndex: 'taxPercent',
+      key: 'taxPercent',
+      width: 80,
+      align: 'center' as const,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.taxPercent - b.taxPercent,
+      render: (percent: number) => percent.toFixed(2)
+    },
+    {
+      title: 'الصافي',
+      dataIndex: 'net',
+      key: 'net',
+      width: 100,
+      align: 'center' as const,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.net - b.net,
+      render: (net: number) => net.toFixed(2)
+    },
+    {
+      title: 'التكلفة',
+      dataIndex: 'cost',
+      key: 'cost',
+      width: 100,
+      align: 'center' as const,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.cost - b.cost,
+      render: (cost: number) => cost.toFixed(2)
+    },
+    {
+      title: 'ربح الصنف',
+      dataIndex: 'profit',
+      key: 'profit',
+      width: 100,
+      align: 'center' as const,
+      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.profit - b.profit,
+      render: (profit: number) => profit.toFixed(2)
+    },
+    {
+      title: 'المخزن',
+      dataIndex: 'warehouse',
+      key: 'warehouse',
+      width: 120
+    ,
+      render: (warehouseId: string) => {
+        const warehouse = warehouses.find(w => w.id === warehouseId);
+        return warehouse ? (warehouse.name || warehouse.id) : warehouseId;
+      }
+    },
+    {
+      title: 'العميل',
+      dataIndex: 'customer',
+      key: 'customer',
+      width: 150
+    },
+    {
+      title: 'تليفون العميل',
+      dataIndex: 'customerPhone',
+      key: 'customerPhone',
+      width: 120
+    },
+    {
+      title: 'البائع',
+      dataIndex: 'seller',
+      key: 'seller',
+      width: 150,
+      render: (seller: string) => getDelegateName(seller)
+    },
+    {
+      title: 'طريقة الدفع',
+      dataIndex: 'paymentMethod',
+      key: 'paymentMethod',
+      width: 120
+    },
+    {
+      title: 'نوع الفاتورة',
+      dataIndex: 'invoiceType',
+      key: 'invoiceType',
+      width: 120,
+      render: (type: string) => type === 'ضريبة' ? 'ضريبة' : 'ضريبة مبسطة'
+    },
+    // ...existing code...
+    {
+      title: 'إجراءات',
+      key: 'actions',
+      width: 120,
+      align: 'center' as const,
+      fixed: 'right' as const,
+      render: (_: unknown, record: InvoiceRecord & { firstLevelCategory?: string }) => (
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+          <Button
+            danger
+            size="small"
+            onClick={() => handleDeleteInvoice(record)}
+            style={{ fontWeight: 600 }}
+          >
+            حذف
+          </Button>
+        </div>
+      )
+    },
+  ];
 
   // تعريف الدالة خارج useEffect
   const fetchLists = useCallback(async () => {
@@ -1470,13 +2010,8 @@ interface SavedInvoice {
         ...doc.data() 
       }));
       console.log('تم تحميل المندوبين بنجاح:', delegatesData.length, 'مندوب');
-      // console.log('قائمة المندوبين:', delegatesData.map(d => ({ 
-      //   id: d.id, 
-      //   name: d.name || '', 
-      //   email: d.email || '', 
-      //   uid: d.uid || '' 
-      // })));
-      setDelegates(delegatesData as Delegate[]);
+      console.log('قائمة المندوبين:', delegatesData.map(d => ({ id: d.id, data: d })));
+      setDelegates(delegatesData);
       // قوائم ثابتة
       setUnits(['قطعة', 'كرتونة', 'كيلو', 'جرام', 'لتر', 'متر', 'علبة']);
       setPriceRules(['السعر العادي', 'سعر الجملة', 'سعر التخفيض']);
@@ -1560,9 +2095,19 @@ interface SavedInvoice {
     net: totals.afterTax.toFixed(2) // الصافي = الاجمالي بعد الخصم + الضريبة
   }), [totals]);
 
+  // حالة إظهار/إخفاء جدول سجل الفواتير
+  const [showInvoicesTable, setShowInvoicesTable] = useState(false);
+
   // حالة مودال البحث عن عميل
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
   const [customerSearchText, setCustomerSearchText] = useState('');
+  
+  // حالة مودال الإضافة السريعة للعميل
+  const [showQuickAddCustomer, setShowQuickAddCustomer] = useState(false);
+  const [quickCustomerForm, setQuickCustomerForm] = useState({
+    nameAr: '',
+    phone: ''
+  });
 
   // تصفية العملاء حسب البحث
   const filteredCustomers = useMemo(() => {
@@ -1617,27 +2162,11 @@ const handlePrint = () => {
         // Ignore error silently
       }
 
-      // استخدم بيانات الفاتورة الحالية من الحالة
-      const invoice = {
-        ...invoiceData,
-        items,
-        totals,
-        type: invoiceType,
-        branch: invoiceData.branch,
-        warehouse: invoiceData.warehouse,
-        customerName: invoiceData.customerName,
-        customerNumber: invoiceData.customerNumber,
-        paymentMethod: invoiceData.paymentMethod,
-        cashBox: invoiceData.cashBox,
-        multiplePayment: invoiceData.multiplePayment,
-        date: invoiceData.date,
-        dueDate: invoiceData.dueDate,
-        entryNumber: invoiceData.entryNumber,
-        delegate: invoiceData.delegate,
-        priceRule: invoiceData.priceRule,
-        commercialRecord: invoiceData.commercialRecord,
-        taxFile: invoiceData.taxFile
-      };
+      const invoice = lastSavedInvoice;
+      if (!invoice) {
+        message.error('لا توجد فاتورة للطباعة');
+        return;
+      }
 
       // Generate QR code data URL (using qrcode library)
       let qrDataUrl = '';
@@ -1882,7 +2411,7 @@ const handlePrint = () => {
               <tr><td class="label">اسم العميل</td><td class="value">${invoice.customerName || ''}</td></tr>
               <tr><td class="label">رقم الجوال</td><td class="value">${invoice.customerNumber || ''}</td></tr>
               <tr><td class="label">م.ض</td><td class="value">${invoice.taxFile || ''}</td></tr>
-
+              <tr><td class="label">عنوان العميل</td><td class="value">${invoice.customerAddress || ''}</td></tr>
             </table>
           </div>
           <!-- Items Table -->
@@ -2420,47 +2949,21 @@ const handlePrint = () => {
 
       <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
         <div className="flex items-center">
-          <EditOutlined className="h-8 w-8 text-blue-600 ml-3" />
-          <h1 className="text-2xl font-bold text-gray-800">تعديل فاتورة مبيعات</h1>
+          <FileText className="h-8 w-8 text-blue-600 ml-3" />
+          <h1 className="text-2xl font-bold text-gray-800">فاتورة مبيعات</h1>
         </div>
-        <p className="text-gray-600 mt-2">تعديل وتحديث بيانات فاتورة المبيعات</p>
+        <p className="text-gray-600 mt-2">إدارة فاتورة المبيعات</p>
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
       </div>
 
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "إدارة المبيعات", to: "/management/sales" },
-          { label: "قائمة الفواتير", to: "/stores/edit-sales-invoice" },
-          { label: "تعديل فاتورة" }
+                      { label: "إدارة المبيعات", to: "/management/sales" },
+
+          { label: "فاتورة مبيعات" }
         ]}
       />
-
-      {/* التحقق من حالة التحميل */}
-      {loadingInvoice && (
-        <div className="flex justify-center items-center h-64">
-          <Spin size="large" />
-          <span className="ml-3">جاري تحميل بيانات الفاتورة...</span>
-        </div>
-      )}
-
-      {/* التحقق من عدم وجود الفاتورة */}
-      {invoiceNotFound && !loadingInvoice && (
-        <div className="text-center p-8">
-          <div className="text-red-500 text-6xl mb-4">❌</div>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">لم يتم العثور على الفاتورة</h2>
-          <p className="text-gray-600 mb-4">الفاتورة المطلوبة غير موجودة أو تم حذفها</p>
-          <Button
-            type="primary"
-            onClick={() => navigate('/stores/edit-sales-invoice')}
-          >
-            العودة إلى قائمة الفواتير
-          </Button>
-        </div>
-      )}
-
-      {/* النموذج - يظهر فقط إذا تم تحميل الفاتورة بنجاح */}
-      {!loadingInvoice && !invoiceNotFound && (
       <Spin spinning={fetchingItems}>
         {/* مودال الطباعة بعد الحفظ */}
 
@@ -2761,23 +3264,7 @@ const handlePrint = () => {
           <Row gutter={16} className="mb-4">
             <Col xs={24} sm={18} md={18}>
               <Form.Item label="اسم العميل">
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <Button
-                    type="default"
-                    style={{ padding: '0 8px', fontWeight: 700, background: 'transparent', boxShadow: 'none', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}
-                    onClick={() => setShowAddCustomerModal(true)}
-                  >
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <circle cx="10" cy="8" r="4" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5" />
-                        <path d="M4 20c0-2.5 3.5-4.5 8-4.5s8 2 8 4.5" stroke="#2563eb" strokeWidth="1.5" fill="none" />
-                        <g>
-                          <circle cx="17.5" cy="7.5" r="2.5" fill="#22c55e" stroke="#2563eb" strokeWidth="1.2" />
-                          <path d="M17.5 6v3M16 7.5h3" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" />
-                        </g>
-                      </svg>
-                    </span>
-                  </Button>
+                <Space.Compact style={{ display: 'flex', width: '100%' }}>
                   <Select
                     showSearch
                     value={invoiceData.customerName}
@@ -2792,7 +3279,7 @@ const handlePrint = () => {
                         taxFile: selected ? (selected.taxFileNumber || selected.taxFile || '') : ''
                       });
                     }}
-                    style={{ fontFamily: 'Cairo, sans-serif', fontWeight: 500, fontSize: 16, width: '100%' }}
+                    style={{ fontFamily: 'Cairo, sans-serif', fontWeight: 500, fontSize: 16, flex: 1 }}
                     filterOption={(input, option) =>
                       String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                     }
@@ -2802,13 +3289,36 @@ const handlePrint = () => {
                       value: customer.nameAr 
                     }))}
                   />
+                                  <Button
+                    type="default"
+                    icon={
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 4v6h6V4H4zm10 0v6h6V4h-6zM4 14v6h6v-6H4zm10 0v6h6v-6h-6z" stroke="currentColor" strokeWidth="2"/>
+                      </svg>
+                    }
+                    style={{ 
+                      minWidth: 40,
+                      borderLeft: 0,
+                      borderTopLeftRadius: 0,
+                      borderBottomLeftRadius: 0
+                    }}
+                    onClick={() => setShowQuickAddCustomer(true)}
+                    title="إضافة سريعة"
+                  />
                   <Button
                     type="default"
                     icon={<SearchOutlined />}
-                    style={{ minWidth: 40 }}
+                    style={{ 
+                      minWidth: 40,
+                      borderLeft: 0,
+                      borderTopLeftRadius: 0,
+                      borderBottomLeftRadius: 0
+                    }}
                     onClick={() => setShowCustomerSearch(true)}
+                    title="البحث عن عميل"
                   />
-                </div>
+  
+                </Space.Compact>
               </Form.Item>
             </Col>
             <Col xs={24} sm={6} md={6}>
@@ -3029,7 +3539,7 @@ const handlePrint = () => {
                 disabled
               />
             </Col>
-            <Col xs={24} sm={12} md={6}>
+            <Col xs={24} sm={12} md={7}>
 
               <div style={{ width: '100%' }}>
                 <div style={{ marginBottom: 0, fontWeight: 500 }}>اسم الصنف</div>
@@ -3184,6 +3694,7 @@ const handlePrint = () => {
                       backgroundColor: '#ffffff',
                       borderColor: '#d1d5db',
                       display: 'flex',
+                      
                       alignItems: 'center',
                       justifyContent: 'center',
                       minWidth: 40
@@ -3191,9 +3702,8 @@ const handlePrint = () => {
                     onClick={() => setShowAddItemModal(true)}
                     title="إضافة صنف جديد"
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <rect x="3" y="3" width="18" height="18" rx="3" stroke="#2563eb" strokeWidth="2" fill="none"/>
-                      <path d="M9 12h6m-3-3v6" stroke="#2563eb" strokeWidth="2" strokeLinecap="round"/>
+                    <svg width="16"  height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M4 4v6h6V4H4zm10 0v6h6V4h-6zM4 14v6h6v-6H4zm10 0v6h6v-6h-6z" stroke="currentColor" strokeWidth="2"/>
                     </svg>
                   </Button>
                 </Space.Compact>
@@ -4099,17 +4609,7 @@ const handlePrint = () => {
                 loading={loading}
                 disabled={items.length === 0}
               >
-                تحديث الفاتورة 
-              </Button>
-            </Col>
-            <Col>
-              <Button
-                type="default"
-                size="large"
-                onClick={() => navigate('/stores/edit-sales-invoice')}
-                style={{ width: 150 }}
-              >
-                العودة إلى القائمة
+                حفظ الفاتورة 
               </Button>
             </Col>
             <Col>
@@ -4124,7 +4624,7 @@ const handlePrint = () => {
                   </svg>
                 }
                 onClick={handlePrint}
-                disabled={loading}
+                disabled={loading || !lastSavedInvoice}
                 style={{ width: 150 }}
               >
                 طباعة الفاتورة
@@ -4151,10 +4651,570 @@ const handlePrint = () => {
           {/* سجل الفواتير تمت إزالته بناءً على طلب المستخدم */}
         </Card>
       </Spin>
-      )}
 
-    </div>
-  );
+      {/* مودال البحث عن العميل الرسمي */}
+      <Modal
+        open={showCustomerSearch}
+        onCancel={() => {
+          setShowCustomerSearch(false);
+          setCustomerSearchText('');
+        }}
+        footer={null}
+        title={
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            fontFamily: 'Cairo', 
+            fontWeight: 600,
+            padding: '16px 0',
+            borderBottom: '1px solid #e5e7eb',
+            margin: '-24px -24px 20px -24px',
+            paddingLeft: 24,
+            paddingRight: 24
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ 
+                background: '#f8fafc', 
+                borderRadius: '8px', 
+                padding: 8,
+                border: '1px solid #e2e8f0'
+              }}>
+                <SearchOutlined style={{ color: '#475569', fontSize: 16 }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: '#1e293b' }}>البحث في قاعدة بيانات العملاء</div>
+                <div style={{ fontSize: 12, color: '#64748b', fontWeight: 400, marginTop: 2 }}>
+                  العثور على العميل المطلوب من خلال معايير البحث المختلفة
+                </div>
+              </div>
+            </div>
+            <div style={{ 
+              background: '#f1f5f9', 
+              borderRadius: '6px', 
+              padding: '4px 8px',
+              fontSize: 11,
+              fontWeight: 500,
+              color: '#475569',
+              border: '1px solid #e2e8f0'
+            }}>
+              {filteredCustomers.length} نتيجة
+            </div>
+          </div>
+        }
+        width={800}
+        styles={{ 
+          body: { 
+            background: '#ffffff', 
+            padding: 0
+          } 
+        }}
+        style={{ top: 60 }}
+        destroyOnClose
+        className="formal-search-modal"
+      >
+        {/* إضافة الأنماط الرسمية */}
+        <style>{`
+          .formal-search-modal .ant-modal-content {
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border: 1px solid #e5e7eb;
+          }
+          .formal-search-modal .ant-modal-header {
+            border: none;
+            padding: 0;
+          }
+          .formal-search-modal .ant-modal-body {
+            padding: 0;
+          }
+          .formal-search-input {
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            margin: 20px 24px;
+            padding: 0;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+          }
+          .formal-customer-card {
+            border-bottom: 1px solid #f1f5f9;
+            padding: 16px 24px;
+            background: white;
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+          }
+          .formal-customer-card:hover {
+            background: #f8fafc;
+          }
+          .formal-customer-card:last-child {
+            border-bottom: none;
+          }
+          .customer-info-grid {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 16px;
+            align-items: center;
+          }
+          .customer-initial {
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            background: #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #475569;
+            font-weight: 600;
+            font-size: 14px;
+            border: 1px solid #e2e8f0;
+          }
+          .customer-details {
+            min-width: 0;
+          }
+          .customer-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1e293b;
+            margin: 0 0 4px 0;
+            font-family: 'Cairo', sans-serif;
+          }
+          .customer-contact {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 4px;
+          }
+          .contact-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: #64748b;
+          }
+          .contact-icon {
+            width: 12px;
+            height: 12px;
+            fill: #94a3b8;
+          }
+          .select-button {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #475569;
+            cursor: pointer;
+            transition: all 0.15s ease;
+          }
+          .select-button:hover {
+            background: #f1f5f9;
+            border-color: #cbd5e1;
+            color: #334155;
+          }
+          .search-stats {
+            background: #f8fafc;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 12px 24px;
+            font-size: 12px;
+            color: #64748b;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .empty-state {
+            text-align: center;
+            padding: 60px 24px;
+            color: #64748b;
+          }
+          .empty-icon {
+            width: 48px;
+            height: 48px;
+            background: #f1f5f9;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+            border: 1px solid #e2e8f0;
+          }
+        `}</style>
+
+        {/* حقل البحث الرسمي */}
+        <div className="formal-search-input">
+          <Input
+            placeholder="البحث في العملاء (الاسم، رقم الهاتف، السجل التجاري، الملف الضريبي)"
+            size="large"
+            value={customerSearchText}
+            onChange={(e) => setCustomerSearchText(e.target.value)}
+            style={{ 
+              fontFamily: 'Cairo', 
+              fontSize: 14,
+              border: 'none',
+              boxShadow: 'none',
+              padding: '12px 16px'
+            }}
+            prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+            suffix={
+              customerSearchText && (
+                <Button
+                  type="text"
+                  size="small"
+                  icon={
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#94a3b8">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </svg>
+                  }
+                  onClick={() => setCustomerSearchText('')}
+                  style={{ padding: '4px', height: 'auto' }}
+                />
+              )
+            }
+          />
+        </div>
+
+        {/* إحصائيات البحث */}
+        <div className="search-stats">
+          <div>
+            إجمالي العملاء: <strong>{customers.length}</strong> | 
+            نتائج البحث: <strong>{filteredCustomers.length}</strong> | 
+            عملاء الشركات: <strong>{customers.filter(c => c.commercialReg).length}</strong>
+          </div>
+          {customerSearchText && (
+            <div>
+              البحث عن: "<strong>{customerSearchText}</strong>"
+            </div>
+          )}
+        </div>
+
+        {/* قائمة النتائج */}
+        <div style={{ maxHeight: 400, overflow: 'auto' }}>
+          {filteredCustomers.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">
+                <SearchOutlined style={{ fontSize: 20, color: '#94a3b8' }} />
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8, color: '#374151' }}>
+                {customerSearchText ? 'لا توجد نتائج مطابقة للبحث' : 'ابدأ في كتابة اسم العميل للبحث'}
+              </div>
+              <div style={{ fontSize: 13, color: '#9ca3af' }}>
+                {customerSearchText ? 
+                  'تأكد من صحة الإملاء أو جرب كلمات بحث أخرى' : 
+                  'يمكنك البحث بالاسم أو رقم الهاتف أو السجل التجاري'
+                }
+              </div>
+            </div>
+          ) : (
+            filteredCustomers.map((customer, index) => (
+              <div
+                key={customer.id || index}
+                className="formal-customer-card"
+                onClick={() => {
+                  setInvoiceData({
+                    ...invoiceData,
+                    customerName: customer.nameAr || customer.name || customer.nameEn || '',
+                    customerNumber: customer.phone || customer.mobile || customer.phoneNumber || '',
+                    commercialRecord: customer.commercialReg || '',
+                    taxFile: customer.taxFileNumber || customer.taxFile || ''
+                  });
+                  setShowCustomerSearch(false);
+                  setCustomerSearchText('');
+                  message.success('تم اختيار العميل بنجاح');
+                }}
+              >
+                <div className="customer-info-grid">
+                  {/* الحرف الأول */}
+                  <div className="customer-initial">
+                    {(customer.nameAr || customer.name || 'ع').charAt(0)}
+                  </div>
+                  
+                  {/* تفاصيل العميل */}
+                  <div className="customer-details">
+                    <h4 className="customer-name">
+                      {customer.nameAr || customer.name || customer.nameEn || 'غير محدد'}
+                    </h4>
+                    {customer.nameEn && customer.nameEn !== customer.nameAr && (
+                      <div style={{ 
+                        fontSize: 12, 
+                        color: '#9ca3af',
+                        fontFamily: 'Arial, sans-serif',
+                        marginBottom: 8
+                      }}>
+                        {customer.nameEn}
+                      </div>
+                    )}
+                    
+                    <div className="customer-contact">
+                      {(customer.phone || customer.mobile || customer.phoneNumber) && (
+                        <div className="contact-item">
+                          <svg className="contact-icon" viewBox="0 0 24 24">
+                            <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+                          </svg>
+                          <span>{customer.phone || customer.mobile || customer.phoneNumber}</span>
+                        </div>
+                      )}
+                      
+                      {customer.commercialReg && (
+                        <div className="contact-item">
+                          <svg className="contact-icon" viewBox="0 0 24 24">
+                            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                          </svg>
+                          <span>س.ت: {customer.commercialReg}</span>
+                        </div>
+                      )}
+                      
+                      {(customer.taxFileNumber || customer.taxFile) && (
+                        <div className="contact-item">
+                          <svg className="contact-icon" viewBox="0 0 24 24">
+                            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                          </svg>
+                          <span>م.ض: {customer.taxFileNumber || customer.taxFile}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* زر الاختيار */}
+                  <button
+                    className="select-button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setInvoiceData({
+                        ...invoiceData,
+                        customerName: customer.nameAr || customer.name || customer.nameEn || '',
+                        customerNumber: customer.phone || customer.mobile || customer.phoneNumber || '',
+                        commercialRecord: customer.commercialReg || '',
+                        taxFile: customer.taxFileNumber || customer.taxFile || ''
+                      });
+                      setShowCustomerSearch(false);
+                      setCustomerSearchText('');
+                      message.success('تم اختيار العميل بنجاح');
+                    }}
+                  >
+                    اختيار
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Modal>
+
+      {/* مودال الإضافة السريعة للعميل */}
+      <Modal
+        open={showQuickAddCustomer}
+        onCancel={() => {
+          setShowQuickAddCustomer(false);
+          setQuickCustomerForm({ nameAr: '', phone: '' });
+        }}
+        footer={null}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'Cairo', fontWeight: 700 }}>
+            <span style={{ background: '#f0f9ff', borderRadius: '50%', padding: 8, boxShadow: '0 2px 8px #e0e7ef' }}>
+              <PlusOutlined style={{ color: '#52c41a' }} />
+            </span>
+            إضافة عميل سريع
+          </div>
+        }
+        width={500}
+        styles={{ 
+          body: { 
+            background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', 
+            borderRadius: 16, 
+            padding: 24, 
+            boxShadow: '0 8px 32px rgba(34, 197, 94, 0.15)' 
+          } 
+        }}
+        style={{ top: 120 }}
+        destroyOnClose
+      >
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ 
+            marginBottom: 12, 
+            padding: 12, 
+            background: 'rgba(34, 197, 94, 0.1)', 
+            borderRadius: 8, 
+            textAlign: 'center', 
+            fontWeight: 500, 
+            color: '#16a34a', 
+            fontFamily: 'Cairo', 
+            fontSize: 14,
+            border: '1px solid rgba(34, 197, 94, 0.2)'
+          }}>
+            ⚡ إضافة سريعة - الحقول الأساسية فقط
+          </div>
+        </div>
+
+        <Form
+          layout="vertical"
+          style={{ fontFamily: 'Cairo' }}
+          onFinish={async () => {
+            if (!quickCustomerForm.nameAr.trim()) {
+              message.error('يرجى إدخال اسم العميل');
+              return;
+            }
+            if (!quickCustomerForm.phone.trim()) {
+              message.error('يرجى إدخال رقم الهاتف');
+              return;
+            }
+
+            try {
+              // حفظ العميل في قاعدة البيانات
+              const maxNum = customers
+                .map(c => {
+                  const match = /^c-(\d{4})$/.exec(c.id);
+                  return match ? parseInt(match[1], 10) : 0;
+                })
+                .reduce((a, b) => Math.max(a, b), 0);
+              const nextNum = maxNum + 1;
+              const newId = `c-${nextNum.toString().padStart(4, '0')}`;
+              
+              const docData = {
+                id: newId,
+                nameAr: quickCustomerForm.nameAr.trim(),
+                phone: quickCustomerForm.phone.trim(),
+                businessType: 'فرد', // افتراضي للإضافة السريعة
+                commercialReg: '',
+                taxFileNumber: '',
+                status: 'نشط',
+                createdAt: new Date().toISOString(),
+              };
+              
+              const docRef = await addDoc(collection(db, 'customers'), docData);
+              
+              // بناء بيانات العميل الجديد
+              const newCustomer = {
+                id: docRef.id,
+                ...docData,
+                taxFile: ''
+              };
+
+              // تحديث قائمة العملاء المحلية
+              setCustomers(prev => [...prev, newCustomer]);
+
+              // تحديد العميل الجديد في الفاتورة
+              setInvoiceData({
+                ...invoiceData,
+                customerName: newCustomer.nameAr,
+                customerNumber: newCustomer.phone,
+                commercialRecord: '',
+                taxFile: ''
+              });
+
+              customMessage.success('تم إضافة العميل بنجاح وتم تحديد اختياره في الفاتورة!');
+              setShowQuickAddCustomer(false);
+              setQuickCustomerForm({ nameAr: '', phone: '' });
+              
+            } catch (error) {
+              console.error('خطأ في إضافة العميل:', error);
+              message.error('حدث خطأ أثناء إضافة العميل');
+            }
+          }}
+        >
+          <Form.Item
+            label="اسم العميل"
+            required
+            style={{ marginBottom: 16 }}
+          >
+            <Input
+              value={quickCustomerForm.nameAr}
+              onChange={(e) => setQuickCustomerForm({
+                ...quickCustomerForm,
+                nameAr: e.target.value
+              })}
+              placeholder="اسم العميل باللغة العربية"
+              style={{ 
+                fontFamily: 'Cairo', 
+                fontSize: 15,
+                height: 40
+              }}
+              prefix={
+                <UserOutlined style={{ color: '#52c41a' }} />
+              }
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="رقم الهاتف"
+            required
+            style={{ marginBottom: 20 }}
+          >
+            <Input
+              value={quickCustomerForm.phone}
+              onChange={(e) => setQuickCustomerForm({
+                ...quickCustomerForm,
+                phone: e.target.value
+              })}
+              placeholder="رقم الهاتف أو الجوال"
+              style={{ 
+                fontFamily: 'Cairo', 
+                fontSize: 15,
+                height: 40
+              }}
+              prefix={
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#52c41a">
+                  <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+                </svg>
+              }
+            />
+          </Form.Item>
+
+          <div style={{ 
+            background: 'rgba(34, 197, 94, 0.05)', 
+            padding: 12, 
+            borderRadius: 8, 
+            marginBottom: 20,
+            border: '1px solid rgba(34, 197, 94, 0.2)'
+          }}>
+            <div style={{ 
+              fontSize: 13, 
+              color: '#16a34a', 
+              fontFamily: 'Cairo',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="#16a34a">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+              </svg>
+              سيتم إضافة العميل واختياره تلقائياً في الفاتورة
+            </div>
+          </div>
+
+          <Form.Item style={{ marginBottom: 0 }}>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+              <Button
+                onClick={() => {
+                  setShowQuickAddCustomer(false);
+                  setQuickCustomerForm({ nameAr: '', phone: '' });
+                }}
+                style={{ 
+                  fontFamily: 'Cairo',
+                  minWidth: 80,
+                  height: 38
+                }}
+              >
+                إلغاء
+              </Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                style={{ 
+                  fontFamily: 'Cairo',
+                  minWidth: 100,
+                  fontWeight: 600,
+                  height: 38,
+                  backgroundColor: '#52c41a',
+                  borderColor: '#52c41a'
+                }}
+                icon={<PlusOutlined />}
+              >
+                إضافة واختيار
+              </Button>
+            </div>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+    </div>);
 };
 
-export default EditSalesInvoiceDetailPage;
+export default SalesPage;

@@ -218,7 +218,11 @@ const SalesManagement: React.FC = () => {
       title: "سند قبض",
       description: "تسجيل سندات القبض من العملاء",
       icon: <Receipt className="h-6 w-6" />,
-      color: "bg-purple-600"
+      color: "bg-purple-600",
+      onClick: () => {
+        navigate('/stores/receipt-voucher');
+        window.scrollTo(0, 0);
+      }
     },
     // {
     //   title: "طلب شراء",

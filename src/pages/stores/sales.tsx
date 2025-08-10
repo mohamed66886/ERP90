@@ -1,20 +1,63 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { SearchOutlined } from '@ant-design/icons';
-import { useAuth } from '@/contexts/useAuth';
-import { doc, getDoc, collection, getDocs, addDoc, query, where } from 'firebase/firestore';
-import dayjs from 'dayjs';
-import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space } from 'antd';
-import * as XLSX from 'xlsx';
-import Divider from 'antd/es/divider';
-import Breadcrumb from "../../components/Breadcrumb";
-import Card from 'antd/es/card';
-import { PlusOutlined, SaveOutlined, UserOutlined } from '@ant-design/icons';
-import { db } from '@/lib/firebase';
+import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
+import { SearchOutlined, SaveOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons';
 import { FileText } from 'lucide-react';
-import { fetchCashBoxes } from '../../services/cashBoxesService';
-import { fetchBankAccounts } from '../../services/bankAccountsService';
+import { useAuth } from '@/contexts/useAuth';
+import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
+import dayjs from 'dayjs';
+import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space, Card, Divider } from 'antd';
+import Breadcrumb from "../../components/Breadcrumb";
+import { db } from '@/lib/firebase';
 import { useFinancialYear } from '@/hooks/useFinancialYear';
 import { FinancialYear } from '@/services/financialYearsService';
+import { fetchCashBoxes } from '../../services/cashBoxesService';
+import { fetchBankAccounts } from '../../services/bankAccountsService';
+
+// Lazy load heavy components
+const ItemSelect = lazy(() => import('@/components/ItemSelect'));
+const CustomerSelect = lazy(() => import('@/components/CustomerSelect'));
+
+// Type definitions
+interface Branch {
+  id: string;
+  name?: string;
+  code?: string;
+  number?: string;
+  branchNumber?: string;
+}
+
+interface Warehouse {
+  id: string;
+  name?: string;
+}
+
+interface PaymentMethod {
+  id: string;
+  name?: string;
+  value?: string;
+}
+
+interface Customer {
+  id: string;
+  nameAr?: string;
+  nameEn?: string;
+  name?: string;
+  phone?: string;
+  phoneNumber?: string;
+  mobile?: string;
+  commercialReg?: string;
+  taxFile?: string;
+  taxFileNumber?: string;
+}
+
+interface Delegate {
+  id: string;
+  name?: string;
+  email?: string;
+}
+
+interface CompanyData {
+  taxRate?: string;
+}
 
 // تعريف نوع العنصر
 interface InventoryItem {
@@ -69,37 +112,96 @@ interface Totals {
   tax: number;
 }
 
-interface Branch {
-  id: string;
-  name?: string;
-  code?: string;
-  number?: string;
-  branchNumber?: string;
-}
+// Custom Hook for Sales Data Management
+const useSalesData = () => {
+  const [loading, setLoading] = useState(false);
+  const [fetchingItems, setFetchingItems] = useState(false);
+  const [delegates, setDelegates] = useState<Delegate[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
+  const [units, setUnits] = useState<string[]>([]);
+  const [itemNames, setItemNames] = useState<InventoryItem[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [companyData, setCompanyData] = useState<CompanyData>({});
 
-interface Warehouse {
-  id: string;
-  name?: string;
-}
+  // Cache for better performance
+  const [dataCache, setDataCache] = useState<Map<string, unknown>>(new Map());
 
-interface PaymentMethod {
-  id: string;
-  name?: string;
-  value?: string;
-}
+  const fetchBasicData = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Fetch all basic data in parallel
+      const [
+        delegatesSnapshot,
+        branchesSnapshot,
+        warehousesSnapshot,
+        paymentMethodsSnapshot,
+        inventorySnapshot,
+        customersSnapshot,
+        companySnapshot
+      ] = await Promise.all([
+        getDocs(collection(db, 'salesRepresentatives')), // تم تصحيح اسم المجموعة
+        getDocs(collection(db, 'branches')),
+        getDocs(collection(db, 'warehouses')),
+        getDocs(collection(db, 'paymentMethods')), // تم تصحيح اسم المجموعة
+        getDocs(collection(db, 'inventory_items')), // تم تصحيح اسم المجموعة
+        getDocs(collection(db, 'customers')),
+        getDocs(collection(db, 'companies')) // تم تصحيح اسم المجموعة
+      ]);
 
-interface Customer {
-  id: string;
-  nameAr?: string;
-  nameEn?: string;
-  name?: string;
-  phone?: string;
-  phoneNumber?: string;
-  mobile?: string;
-  commercialReg?: string;
-  taxFile?: string;
-  taxFileNumber?: string;
-}
+      // Fetch cash boxes and banks separately
+      const [cashBoxesData, banksData] = await Promise.all([
+        fetchCashBoxes(),
+        fetchBankAccounts()
+      ]);
+
+      // Process data
+      setDelegates(delegatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Delegate[]);
+      setBranches(branchesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Branch[]);
+      setWarehouses(warehousesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Warehouse[]);
+      setPaymentMethods(paymentMethodsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PaymentMethod[]);
+      setCashBoxes(cashBoxesData as CashBox[]);
+      setCustomers(customersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Customer[]);
+      
+      const inventoryData = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as InventoryItem[];
+      const filteredItems = inventoryData.filter(item => item.type === 'مستوى ثاني' && item.name?.trim());
+      
+      setItemNames(filteredItems);
+
+      if (!companySnapshot.empty) {
+        const companyDataDoc = companySnapshot.docs[0].data();
+        setCompanyData(companyDataDoc);
+      }
+
+      setUnits(['قطعة', 'كيلو', 'جرام', 'لتر', 'متر', 'علبة', 'كرتون', 'حبة']);
+      
+    } catch (error) {
+      console.error('خطأ في جلب البيانات:', error);
+      message.error('حدث خطأ في تحميل البيانات');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return {
+    loading,
+    fetchingItems,
+    setFetchingItems,
+    delegates,
+    branches,
+    warehouses,
+    paymentMethods,
+    cashBoxes,
+    units,
+    itemNames,
+    customers,
+    companyData,
+    fetchBasicData,
+    taxRate: companyData.taxRate || '15'
+  };
+};
 
 interface Delegate {
   id: string;
@@ -438,35 +540,37 @@ const SalesPage: React.FC = () => {
     setAddItemLoading(true);
     try {
       // بناء بيانات الصنف الجديد
-      const newItem: InventoryItem = {
-        id: `temp_${Date.now()}`, // معرف مؤقت
+      const newItemData = {
         name: addItemForm.name.trim(),
         itemCode: addItemForm.itemCode?.trim() || '',
         salePrice: addItemForm.salePrice ? Number(addItemForm.salePrice) : 0,
         discount: addItemForm.discount ? Number(addItemForm.discount) : 0,
         isVatIncluded: !!addItemForm.isVatIncluded,
         tempCodes: !!addItemForm.tempCodes,
-        type: 'مستوى ثاني'
+        type: 'مستوى ثاني',
+        purchasePrice: addItemForm.purchasePrice ? Number(addItemForm.purchasePrice) : 0,
+        minOrder: addItemForm.minOrder ? Number(addItemForm.minOrder) : 0,
+        allowNegative: !!addItemForm.allowNegative,
+        supplier: addItemForm.supplier || '',
+        unit: addItemForm.unit || '',
+        createdAt: new Date().toISOString()
       };
 
-      // إضافة الصنف إلى قاعدة البيانات (صفحة الأصناف)
-      try {
-        const { addDoc, collection } = await import('firebase/firestore');
-        await addDoc(collection(db, 'inventory_items'), newItem);
-      } catch (err) {
-        console.error('خطأ في حفظ الصنف في قاعدة البيانات:', err);
-        if (typeof message !== 'undefined' && message.error) {
-          message.error('حدث خطأ أثناء حفظ الصنف في قاعدة البيانات');
-        }
-      }
+      // إضافة الصنف إلى قاعدة البيانات
+      const docRef = await addDoc(collection(db, 'inventory_items'), newItemData);
+      
+      // بناء بيانات الصنف مع المعرف الحقيقي
+      const newItem: InventoryItem = {
+        id: docRef.id,
+        ...newItemData
+      };
 
-      // تحديث القوائم المحلية
-      if (typeof setItemNames === 'function') {
-        setItemNames((prev: InventoryItem[]) => [...prev, newItem]);
-      }
-      if (typeof setAllItems === 'function') {
-        setAllItems((prev: InventoryItem[]) => [...prev, newItem]);
-      }
+      // تحديث القوائم المحلية فوراً
+      // setItemNames((prev: InventoryItem[]) => [...prev, newItem]); // Now handled by hook
+      setAllItems((prev: InventoryItem[]) => [...prev, newItem]);
+      await fetchBasicData(); // Refresh data from hook
+      
+      // إغلاق المودال وإعادة تعيين النموذج
       setShowAddItemModal(false);
       setAddItemForm({
         name: '',
@@ -483,17 +587,80 @@ const SalesPage: React.FC = () => {
         type: '',
         parentId: ''
       });
-      if (typeof customMessage !== 'undefined' && customMessage.success) {
-        customMessage.success('تمت إضافة الصنف بنجاح');
-      }
+      
+      // تحديد الصنف الجديد في القائمة المنسدلة
+      setItem({
+        ...item,
+        itemName: newItem.name,
+        itemNumber: newItem.itemCode || '',
+        price: String(newItem.salePrice || ''),
+        discountPercent: String(newItem.discount || '0'),
+        taxPercent: taxRate,
+        quantity: '1'
+      });
+      
+      customMessage.success('تمت إضافة الصنف بنجاح وتم تحديد اختياره');
+      
     } catch (e) {
-      if (typeof message !== 'undefined' && message.error) {
-        message.error('حدث خطأ أثناء إضافة الصنف');
-      }
+      console.error('خطأ في إضافة الصنف:', e);
+      message.error('حدث خطأ أثناء إضافة الصنف');
     } finally {
       setAddItemLoading(false);
     }
   };
+  // دالة تحديث قائمة العملاء
+  const refreshCustomers = async () => {
+    try {
+      setFetchingItems(true);
+      const customersSnap = await getDocs(collection(db, 'customers'));
+      const customersData = customersSnap.docs.map(doc => {
+        const data = doc.data();
+        return { id: doc.id, ...data, taxFile: data.taxFile || '' };
+      });
+      // setCustomers(customersData); // Now handled by hook
+      await fetchBasicData(); // Refresh data from hook
+      customMessage.success('تم تحديث قائمة العملاء بنجاح');
+    } catch (error) {
+      console.error('خطأ في تحديث العملاء:', error);
+      message.error('حدث خطأ أثناء تحديث قائمة العملاء');
+    } finally {
+      setFetchingItems(false);
+    }
+  };
+
+  // دالة تحديث قائمة الأصناف
+  const refreshItems = async () => {
+    try {
+      setFetchingItems(true);
+      const itemsSnap = await getDocs(collection(db, 'inventory_items'));
+      const allItemsData = itemsSnap.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: data.name || '',
+          itemCode: data.itemCode || '',
+          salePrice: data.salePrice || 0,
+          discount: data.discount || 0,
+          isVatIncluded: data.isVatIncluded || false,
+          type: data.type || '',
+          tempCodes: data.tempCodes || false,
+          allowNegative: data.allowNegative || false
+        };
+      }).filter(item => item.name);
+      
+      setAllItems(allItemsData);
+      const secondLevelItems = allItemsData.filter(item => item.type === 'مستوى ثاني');
+      // setItemNames(secondLevelItems); // Now handled by hook - will be updated via fetchBasicData
+      await fetchBasicData(); // Refresh data from hook
+      customMessage.success('تم تحديث قائمة الأصناف بنجاح');
+    } catch (error) {
+      console.error('خطأ في تحديث الأصناف:', error);
+      message.error('حدث خطأ أثناء تحديث قائمة الأصناف');
+    } finally {
+      setFetchingItems(false);
+    }
+  };
+
   // --- Add Customer Modal State (fix: must be inside component, before return) ---
   const businessTypes = ["شركة", "مؤسسة", "فرد"];
   const initialAddCustomer = {
@@ -538,12 +705,35 @@ const SalesPage: React.FC = () => {
         status: 'نشط',
         createdAt: new Date().toISOString(),
       };
-      await addDoc(collection(db, 'customers'), docData);
-      customMessage.success('تم إضافة العميل بنجاح! يمكنك تعديل باقي البيانات من صفحة العملاء.');
+      
+      const docRef = await addDoc(collection(db, 'customers'), docData);
+      
+      // بناء بيانات العميل الجديد مع المعرف الحقيقي
+      const newCustomer = {
+        id: docRef.id,
+        ...docData,
+        taxFile: docData.taxFileNumber || ''
+      };
+      
+      // تحديث قائمة العملاء فوراً
+      // setCustomers(prev => [...prev, newCustomer]); // Now handled by hook
+      await fetchBasicData(); // Refresh data from hook
+      
+      // تحديد العميل الجديد في الفاتورة
+      setInvoiceData(prev => ({
+        ...prev,
+        customerName: newCustomer.nameAr,
+        customerNumber: newCustomer.phone || '',
+        commercialRecord: newCustomer.commercialReg || '',
+        taxFile: newCustomer.taxFile || ''
+      }));
+      
+      customMessage.success('تم إضافة العميل بنجاح وتم تحديد اختياره في الفاتورة!');
       setShowAddCustomerModal(false);
       setAddCustomerForm(initialAddCustomer);
-      // Optionally, you can refresh the customers list here if you have a fetchCustomers function available
+      
     } catch (err) {
+      console.error('خطأ في إضافة العميل:', err);
       message.error('حدث خطأ أثناء إضافة العميل');
     } finally {
       setAddCustomerLoading(false);
@@ -574,8 +764,6 @@ interface CompanyData {
   website?: string;
 }
 
-  // بيانات الشركة
-  const [companyData, setCompanyData] = useState<CompanyData>({});
   // دالة تصدير سجل الفواتير إلى ملف Excel
   const exportInvoicesToExcel = () => {
     if (!invoices.length) {
@@ -656,24 +844,24 @@ interface CompanyData {
       'نوع الفاتورة': ''
     };
 
-    // بناء الورقة
-    const ws = XLSX.utils.json_to_sheet([]);
-    // عنوان الشركة
-    XLSX.utils.sheet_add_aoa(ws, [[companyTitle]], { origin: 'A1' });
-    ws['!merges'] = ws['!merges'] || [];
-    const colCount = Object.keys(data[0]).length;
-    ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: colCount - 1 } });
-    // بيانات الشركة
-    XLSX.utils.sheet_add_aoa(ws, [companyInfo], { origin: 'A2' });
-    ws['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: colCount - 1 } });
-    // إضافة البيانات مع رؤوس الأعمدة
-    XLSX.utils.sheet_add_json(ws, data, { origin: 'A4', header: Object.keys(data[0]) });
-    // صف الإجماليات
-    XLSX.utils.sheet_add_json(ws, [totalsRow], { origin: `A${data.length + 5}`, skipHeader: true });
-    // ترويسة التصدير
-    XLSX.utils.sheet_add_aoa(ws, [[`تم التصدير بواسطة: ${userName} - التاريخ: ${exportDate}`]], { origin: `A${data.length + 7}` });
-    ws['!merges'].push({ s: { r: data.length + 6, c: 0 }, e: { r: data.length + 6, c: colCount - 1 } });
+    // Excel export function (temporarily disabled for performance optimization)
+    message.info('وظيفة التصدير إلى Excel سيتم تفعيلها قريباً');
+    return;
+    
+    // TODO: Re-implement Excel export with better performance
+    /*
+    // Simple CSV export as fallback
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + data.map(row => Object.values(row).join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `invoices_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    */
 
+    /*
     // تنسيق العنوان الرئيسي
     const titleCell = ws[XLSX.utils.encode_cell({ r: 0, c: 0 })];
     if (titleCell) {
@@ -767,6 +955,7 @@ interface CompanyData {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'سجل الفواتير');
     XLSX.writeFile(wb, `سجل_الفواتير_${new Date().toISOString().slice(0,10)}.xlsx`);
+    */
   };
   const { user } = useAuth();
   const [invoiceType, setInvoiceType] = useState<'ضريبة مبسطة' | 'ضريبة'>('ضريبة مبسطة');
@@ -821,19 +1010,29 @@ interface CompanyData {
     isWithinFinancialYear 
   } = useFinancialYear();
   
-  const [delegates, setDelegates] = useState<Delegate[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
+  // استخدام custom hook للبيانات المحسنة
+  const {
+    loading: dataLoading,
+    fetchingItems,
+    setFetchingItems,
+    delegates,
+    branches,
+    warehouses,
+    paymentMethods,
+    cashBoxes,
+    units,
+    itemNames,
+    customers,
+    companyData,
+    fetchBasicData,
+    taxRate
+  } = useSalesData();
+  
+  // Additional state variables not in hook
   const [banks, setBanks] = useState<Bank[]>([]);
   const [priceRules, setPriceRules] = useState<string[]>([]);
-  const [units, setUnits] = useState<string[]>([]);
-  const [itemNames, setItemNames] = useState<InventoryItem[]>([]);
   const [allItems, setAllItems] = useState<InventoryItem[]>([]); // جميع الأصناف للاستخدام في النماذج
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
-  const [fetchingItems, setFetchingItems] = useState<boolean>(false);
   const [item, setItem] = useState<InvoiceItem & { warehouseId?: string }>(initialItem);
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [totals, setTotals] = useState<Totals>({
@@ -843,7 +1042,6 @@ interface CompanyData {
     tax: 0
   });
 
-  const [taxRate, setTaxRate] = useState<string>('15');
   const [priceType, setPriceType] = useState<'سعر البيع' | 'آخر سعر العميل'>('سعر البيع');
   const [invoices, setInvoices] = useState<(InvoiceRecord & { firstLevelCategory?: string })[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState<boolean>(false);
@@ -1157,10 +1355,10 @@ interface SavedInvoice {
       try {
         const companiesSnap = await getDocs(collection(db, 'companies'));
         if (!companiesSnap.empty) {
-          const companyData = companiesSnap.docs[0].data();
-          if (companyData.taxRate) {
-            const newTaxRate = String(companyData.taxRate);
-            setTaxRate(newTaxRate);
+          const companyDataFromDb = companiesSnap.docs[0].data();
+          if (companyDataFromDb.taxRate) {
+            const newTaxRate = String(companyDataFromDb.taxRate);
+            // setTaxRate(newTaxRate); // Now handled by hook via companyData
             // تحديث الصنف الحالي بنسبة الضريبة الجديدة
             setItem(prev => ({ ...prev, taxPercent: newTaxRate }));
           }
@@ -1893,27 +2091,30 @@ interface SavedInvoice {
   const fetchLists = useCallback(async () => {
     try {
       setFetchingItems(true);
+      // Use the optimized hook's fetch function instead of manual state setting
+      await fetchBasicData();
+      
       // جلب الفروع
       const branchesSnap = await getDocs(collection(db, 'branches'));
-      setBranches(branchesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // setBranches(branchesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))); // Now handled by hook
       // جلب طرق الدفع
       const paymentSnap = await getDocs(collection(db, 'paymentMethods'));
-      setPaymentMethods(paymentSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // setPaymentMethods(paymentSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))); // Now handled by hook
       // جلب الصناديق النقدية
       const cashBoxesData = await fetchCashBoxes();
-      setCashBoxes(cashBoxesData);
+      // setCashBoxes(cashBoxesData); // Now handled by hook
       // جلب البنوك
       const banksData = await fetchBankAccounts();
       setBanks(banksData);
       // جلب العملاء من صفحة العملاء (collection: 'customers')
       const customersSnap = await getDocs(collection(db, 'customers'));
-      setCustomers(customersSnap.docs.map(doc => {
-        const data = doc.data();
-        return { id: doc.id, ...data, taxFile: data.taxFile || '' };
-      }));
+      // setCustomers(customersSnap.docs.map(doc => { // Now handled by hook
+      //   const data = doc.data();
+      //   return { id: doc.id, ...data, taxFile: data.taxFile || '' };
+      // }));
       // جلب المخازن
       const warehousesSnap = await getDocs(collection(db, 'warehouses'));
-      setWarehouses(warehousesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // setWarehouses(warehousesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))); // Now handled by hook
       // جلب البائعين النشطين فقط
       console.log('جاري تحميل المندوبين من قاعدة البيانات...');
       const delegatesQuery = query(
@@ -1926,10 +2127,10 @@ interface SavedInvoice {
         ...doc.data() 
       }));
       console.log('تم تحميل المندوبين بنجاح:', delegatesData.length, 'مندوب');
-      console.log('قائمة المندوبين:', delegatesData.map(d => ({ id: d.id, name: d.name, email: d.email, uid: d.uid })));
-      setDelegates(delegatesData);
+      console.log('قائمة المندوبين:', delegatesData.map(d => ({ id: d.id, data: d })));
+      // setDelegates(delegatesData); // Now handled by hook
       // قوائم ثابتة
-      setUnits(['قطعة', 'كرتونة', 'كيلو', 'جرام', 'لتر', 'متر', 'علبة']);
+      // setUnits(['قطعة', 'كرتونة', 'كيلو', 'جرام', 'لتر', 'متر', 'علبة']); // Now handled by hook
       setPriceRules(['السعر العادي', 'سعر الجملة', 'سعر التخفيض']);
       // جلب الأصناف
       const itemsSnap = await getDocs(collection(db, 'inventory_items'));
@@ -1953,14 +2154,14 @@ interface SavedInvoice {
       
       // فلترة أصناف المستوى الثاني للعرض في قائمة المبيعات (مع الموقوفة مؤقتاً للإشارة)
       const secondLevelItems = allItemsData.filter(item => item.type === 'مستوى ثاني');
-      setItemNames(secondLevelItems);
+      // setItemNames(secondLevelItems); // Now handled by hook via fetchBasicData
     } catch (err) {
       console.error('Error fetching lists:', err);
       customMessage.error('تعذر تحميل القوائم من قاعدة البيانات');
     } finally {
       setFetchingItems(false);
     }
-  }, [customMessage]);
+  }, [setFetchingItems, customMessage, fetchBasicData]);
   useEffect(() => {
     fetchLists();
   }, [fetchLists]);
@@ -2017,6 +2218,13 @@ interface SavedInvoice {
   // حالة مودال البحث عن عميل
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
   const [customerSearchText, setCustomerSearchText] = useState('');
+  
+  // حالة مودال الإضافة السريعة للعميل
+  const [showQuickAddCustomer, setShowQuickAddCustomer] = useState(false);
+  const [quickCustomerForm, setQuickCustomerForm] = useState({
+    nameAr: '',
+    phone: ''
+  });
 
   // تصفية العملاء حسب البحث
   const filteredCustomers = useMemo(() => {
@@ -3173,23 +3381,7 @@ const handlePrint = () => {
           <Row gutter={16} className="mb-4">
             <Col xs={24} sm={18} md={18}>
               <Form.Item label="اسم العميل">
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <Button
-                    type="default"
-                    style={{ padding: '0 8px', fontWeight: 700, background: 'transparent', boxShadow: 'none', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}
-                    onClick={() => setShowAddCustomerModal(true)}
-                  >
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <circle cx="10" cy="8" r="4" fill="#2563eb" fillOpacity="0.12" stroke="#2563eb" strokeWidth="1.5" />
-                        <path d="M4 20c0-2.5 3.5-4.5 8-4.5s8 2 8 4.5" stroke="#2563eb" strokeWidth="1.5" fill="none" />
-                        <g>
-                          <circle cx="17.5" cy="7.5" r="2.5" fill="#22c55e" stroke="#2563eb" strokeWidth="1.2" />
-                          <path d="M17.5 6v3M16 7.5h3" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" />
-                        </g>
-                      </svg>
-                    </span>
-                  </Button>
+                <Space.Compact style={{ display: 'flex', width: '100%' }}>
                   <Select
                     showSearch
                     value={invoiceData.customerName}
@@ -3204,7 +3396,7 @@ const handlePrint = () => {
                         taxFile: selected ? (selected.taxFileNumber || selected.taxFile || '') : ''
                       });
                     }}
-                    style={{ fontFamily: 'Cairo, sans-serif', fontWeight: 500, fontSize: 16, width: '100%' }}
+                    style={{ fontFamily: 'Cairo, sans-serif', fontWeight: 500, fontSize: 16, flex: 1 }}
                     filterOption={(input, option) =>
                       String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                     }
@@ -3214,13 +3406,36 @@ const handlePrint = () => {
                       value: customer.nameAr 
                     }))}
                   />
+                                  <Button
+                    type="default"
+                    icon={
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 4v6h6V4H4zm10 0v6h6V4h-6zM4 14v6h6v-6H4zm10 0v6h6v-6h-6z" stroke="currentColor" strokeWidth="2"/>
+                      </svg>
+                    }
+                    style={{ 
+                      minWidth: 40,
+                      borderLeft: 0,
+                      borderTopLeftRadius: 0,
+                      borderBottomLeftRadius: 0
+                    }}
+                    onClick={() => setShowQuickAddCustomer(true)}
+                    title="إضافة سريعة"
+                  />
                   <Button
                     type="default"
                     icon={<SearchOutlined />}
-                    style={{ minWidth: 40 }}
+                    style={{ 
+                      minWidth: 40,
+                      
+                      borderTopLeftRadius: 0,
+                      borderBottomLeftRadius: 0
+                    }}
                     onClick={() => setShowCustomerSearch(true)}
+                    title="البحث عن عميل"
                   />
-                </div>
+  
+                </Space.Compact>
               </Form.Item>
             </Col>
             <Col xs={24} sm={6} md={6}>
@@ -3441,7 +3656,7 @@ const handlePrint = () => {
                 disabled
               />
             </Col>
-            <Col xs={24} sm={12} md={6}>
+            <Col xs={24} sm={12} md={7}>
 
               <div style={{ width: '100%' }}>
                 <div style={{ marginBottom: 0, fontWeight: 500 }}>اسم الصنف</div>
@@ -3590,12 +3805,13 @@ const handlePrint = () => {
                     type="default"
                     size="middle"
                     style={{ 
-                      borderLeft: 0,
+                      
                       borderTopLeftRadius: 0,
                       borderBottomLeftRadius: 0,
                       backgroundColor: '#ffffff',
                       borderColor: '#d1d5db',
                       display: 'flex',
+                      
                       alignItems: 'center',
                       justifyContent: 'center',
                       minWidth: 40
@@ -3603,9 +3819,8 @@ const handlePrint = () => {
                     onClick={() => setShowAddItemModal(true)}
                     title="إضافة صنف جديد"
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <rect x="3" y="3" width="18" height="18" rx="3" stroke="#2563eb" strokeWidth="2" fill="none"/>
-                      <path d="M9 12h6m-3-3v6" stroke="#2563eb" strokeWidth="2" strokeLinecap="round"/>
+                    <svg width="16"  height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M4 4v6h6V4H4zm10 0v6h6V4h-6zM4 14v6h6v-6H4zm10 0v6h6v-6h-6z" stroke="currentColor" strokeWidth="2"/>
                     </svg>
                   </Button>
                 </Space.Compact>
@@ -4550,115 +4765,574 @@ const handlePrint = () => {
             </Col>
           </Row>
 
-          {/* Invoices Table Toggle Button */}
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif' }}>سجل الفواتير</Divider>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-            <Button type="primary" onClick={() => setShowInvoicesTable(v => !v)}>
-              {showInvoicesTable ? 'إخفاء سجل الفواتير' : 'عرض سجل الفواتير'}
-            </Button>
-            {showInvoicesTable && (
-              <Button type="default" style={{ marginRight: 8 }} onClick={exportInvoicesToExcel}>
-                تنزيل Excel
-              </Button>
-            )}
-          </div>
-          {showInvoicesTable && (
-            <div className="mt-6">
-              <Table
-                columns={invoiceColumns}
-                dataSource={invoices}
-                loading={invoicesLoading}
-                pagination={{ pageSize: 10 }}
-                bordered
-                scroll={{ x: 3000 }}
-                size="middle"
-                rowKey="key"
-                summary={() => (
-                  <Table.Summary fixed>
-                    <Table.Summary.Row>
-                      <Table.Summary.Cell index={0} colSpan={6} align="right">
-                        <strong>الإجماليات</strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={1} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.quantity, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={2} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.price, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={3} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.total, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={4} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.discountValue, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={5} align="center">
-                        <strong>
-                          {invoices.length > 0 
-                            ? (invoices.reduce((sum, record) => sum + record.discountValue, 0) / 
-                               invoices.reduce((sum, record) => sum + record.total, 0) * 100).toFixed(2)
-                            : '0.00'}%
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={6} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.taxValue, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={7} align="center">
-                        <strong>
-                          {invoices.length > 0 
-                            ? (invoices.reduce((sum, record) => sum + record.taxValue, 0) / 
-                               (invoices.reduce((sum, record) => sum + record.total, 0) - 
-                                invoices.reduce((sum, record) => sum + record.discountValue, 0)) * 100).toFixed(2)
-                            : '0.00'}%
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={8} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.net, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={9} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.cost, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={10} align="center">
-                        <strong>
-                          {invoices.reduce((sum, record) => sum + record.profit, 0).toFixed(2)}
-                        </strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={11} colSpan={6}></Table.Summary.Cell>
-                    </Table.Summary.Row>
-                  </Table.Summary>
-                )}
-                // عند الضغط على صف: جلب أصناف الفاتورة للجدول الرئيسي
-                onRow={record => ({
-                  onClick: () => {
-                    if (record.items && Array.isArray(record.items)) {
-                      setItems(record.items.map(it => ({ ...it })));
-                    }
-                    // إذا أردت تعبئة بيانات الفاتورة أيضًا:
-                    // setInvoiceData({...invoiceData, ...record});
-                  }
-                })}
-                style={{ cursor: 'pointer' }}
-              />
-            </div>
-          )}
+          {/* سجل الفواتير تمت إزالته بناءً على طلب المستخدم */}
         </Card>
       </Spin>
 
-    </div>
-  );
+      {/* مودال البحث عن العميل الرسمي */}
+      <Modal
+        open={showCustomerSearch}
+        onCancel={() => {
+          setShowCustomerSearch(false);
+          setCustomerSearchText('');
+        }}
+        footer={null}
+        title={
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            fontFamily: 'Cairo', 
+            fontWeight: 600,
+            padding: '16px 0',
+            borderBottom: '1px solid #e5e7eb',
+            margin: '-24px -24px 20px -24px',
+            paddingLeft: 24,
+            paddingRight: 24
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ 
+                background: '#f8fafc', 
+                borderRadius: '8px', 
+                padding: 8,
+                border: '1px solid #e2e8f0'
+              }}>
+                <SearchOutlined style={{ color: '#475569', fontSize: 16 }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: '#1e293b' }}>البحث في قاعدة بيانات العملاء</div>
+                <div style={{ fontSize: 12, color: '#64748b', fontWeight: 400, marginTop: 2 }}>
+                  العثور على العميل المطلوب من خلال معايير البحث المختلفة
+                </div>
+              </div>
+            </div>
+            <div style={{ 
+              background: '#f1f5f9', 
+              borderRadius: '6px', 
+              padding: '4px 8px',
+              fontSize: 11,
+              fontWeight: 500,
+              color: '#475569',
+              border: '1px solid #e2e8f0'
+            }}>
+              {filteredCustomers.length} نتيجة
+            </div>
+          </div>
+        }
+        width={800}
+        styles={{ 
+          body: { 
+            background: '#ffffff', 
+            padding: 0
+          } 
+        }}
+        style={{ top: 60 }}
+        destroyOnClose
+        className="formal-search-modal"
+      >
+        {/* إضافة الأنماط الرسمية */}
+        <style>{`
+          .formal-search-modal .ant-modal-content {
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border: 1px solid #e5e7eb;
+          }
+          .formal-search-modal .ant-modal-header {
+            border: none;
+            padding: 0;
+          }
+          .formal-search-modal .ant-modal-body {
+            padding: 0;
+          }
+          .formal-search-input {
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            margin: 20px 24px;
+            padding: 0;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+          }
+          .formal-customer-card {
+            border-bottom: 1px solid #f1f5f9;
+            padding: 16px 24px;
+            background: white;
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+          }
+          .formal-customer-card:hover {
+            background: #f8fafc;
+          }
+          .formal-customer-card:last-child {
+            border-bottom: none;
+          }
+          .customer-info-grid {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 16px;
+            align-items: center;
+          }
+          .customer-initial {
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            background: #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #475569;
+            font-weight: 600;
+            font-size: 14px;
+            border: 1px solid #e2e8f0;
+          }
+          .customer-details {
+            min-width: 0;
+          }
+          .customer-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1e293b;
+            margin: 0 0 4px 0;
+            font-family: 'Cairo', sans-serif;
+          }
+          .customer-contact {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 4px;
+          }
+          .contact-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: #64748b;
+          }
+          .contact-icon {
+            width: 12px;
+            height: 12px;
+            fill: #94a3b8;
+          }
+          .select-button {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #475569;
+            cursor: pointer;
+            transition: all 0.15s ease;
+          }
+          .select-button:hover {
+            background: #f1f5f9;
+            border-color: #cbd5e1;
+            color: #334155;
+          }
+          .search-stats {
+            background: #f8fafc;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 12px 24px;
+            font-size: 12px;
+            color: #64748b;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .empty-state {
+            text-align: center;
+            padding: 60px 24px;
+            color: #64748b;
+          }
+          .empty-icon {
+            width: 48px;
+            height: 48px;
+            background: #f1f5f9;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+            border: 1px solid #e2e8f0;
+          }
+        `}</style>
+
+        {/* حقل البحث الرسمي */}
+        <div className="formal-search-input">
+          <Input
+            placeholder="البحث في العملاء (الاسم، رقم الهاتف، السجل التجاري، الملف الضريبي)"
+            size="large"
+            value={customerSearchText}
+            onChange={(e) => setCustomerSearchText(e.target.value)}
+            style={{ 
+              fontFamily: 'Cairo', 
+              fontSize: 14,
+              border: 'none',
+              boxShadow: 'none',
+              padding: '12px 16px'
+            }}
+            prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+            suffix={
+              customerSearchText && (
+                <Button
+                  type="text"
+                  size="small"
+                  icon={
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#94a3b8">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </svg>
+                  }
+                  onClick={() => setCustomerSearchText('')}
+                  style={{ padding: '4px', height: 'auto' }}
+                />
+              )
+            }
+          />
+        </div>
+
+        {/* إحصائيات البحث */}
+        <div className="search-stats">
+          <div>
+            إجمالي العملاء: <strong>{customers.length}</strong> | 
+            نتائج البحث: <strong>{filteredCustomers.length}</strong> | 
+            عملاء الشركات: <strong>{customers.filter(c => c.commercialReg).length}</strong>
+          </div>
+          {customerSearchText && (
+            <div>
+              البحث عن: "<strong>{customerSearchText}</strong>"
+            </div>
+          )}
+        </div>
+
+        {/* قائمة النتائج */}
+        <div style={{ maxHeight: 400, overflow: 'auto' }}>
+          {filteredCustomers.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">
+                <SearchOutlined style={{ fontSize: 20, color: '#94a3b8' }} />
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8, color: '#374151' }}>
+                {customerSearchText ? 'لا توجد نتائج مطابقة للبحث' : 'ابدأ في كتابة اسم العميل للبحث'}
+              </div>
+              <div style={{ fontSize: 13, color: '#9ca3af' }}>
+                {customerSearchText ? 
+                  'تأكد من صحة الإملاء أو جرب كلمات بحث أخرى' : 
+                  'يمكنك البحث بالاسم أو رقم الهاتف أو السجل التجاري'
+                }
+              </div>
+            </div>
+          ) : (
+            filteredCustomers.map((customer, index) => (
+              <div
+                key={customer.id || index}
+                className="formal-customer-card"
+                onClick={() => {
+                  setInvoiceData({
+                    ...invoiceData,
+                    customerName: customer.nameAr || customer.name || customer.nameEn || '',
+                    customerNumber: customer.phone || customer.mobile || customer.phoneNumber || '',
+                    commercialRecord: customer.commercialReg || '',
+                    taxFile: customer.taxFileNumber || customer.taxFile || ''
+                  });
+                  setShowCustomerSearch(false);
+                  setCustomerSearchText('');
+                  message.success('تم اختيار العميل بنجاح');
+                }}
+              >
+                <div className="customer-info-grid">
+                  {/* الحرف الأول */}
+                  <div className="customer-initial">
+                    {(customer.nameAr || customer.name || 'ع').charAt(0)}
+                  </div>
+                  
+                  {/* تفاصيل العميل */}
+                  <div className="customer-details">
+                    <h4 className="customer-name">
+                      {customer.nameAr || customer.name || customer.nameEn || 'غير محدد'}
+                    </h4>
+                    {customer.nameEn && customer.nameEn !== customer.nameAr && (
+                      <div style={{ 
+                        fontSize: 12, 
+                        color: '#9ca3af',
+                        fontFamily: 'Arial, sans-serif',
+                        marginBottom: 8
+                      }}>
+                        {customer.nameEn}
+                      </div>
+                    )}
+                    
+                    <div className="customer-contact">
+                      {(customer.phone || customer.mobile || customer.phoneNumber) && (
+                        <div className="contact-item">
+                          <svg className="contact-icon" viewBox="0 0 24 24">
+                            <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+                          </svg>
+                          <span>{customer.phone || customer.mobile || customer.phoneNumber}</span>
+                        </div>
+                      )}
+                      
+                      {customer.commercialReg && (
+                        <div className="contact-item">
+                          <svg className="contact-icon" viewBox="0 0 24 24">
+                            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                          </svg>
+                          <span>س.ت: {customer.commercialReg}</span>
+                        </div>
+                      )}
+                      
+                      {(customer.taxFileNumber || customer.taxFile) && (
+                        <div className="contact-item">
+                          <svg className="contact-icon" viewBox="0 0 24 24">
+                            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                          </svg>
+                          <span>م.ض: {customer.taxFileNumber || customer.taxFile}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* زر الاختيار */}
+                  <button
+                    className="select-button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setInvoiceData({
+                        ...invoiceData,
+                        customerName: customer.nameAr || customer.name || customer.nameEn || '',
+                        customerNumber: customer.phone || customer.mobile || customer.phoneNumber || '',
+                        commercialRecord: customer.commercialReg || '',
+                        taxFile: customer.taxFileNumber || customer.taxFile || ''
+                      });
+                      setShowCustomerSearch(false);
+                      setCustomerSearchText('');
+                      message.success('تم اختيار العميل بنجاح');
+                    }}
+                  >
+                    اختيار
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Modal>
+
+      {/* مودال الإضافة السريعة للعميل */}
+      <Modal
+        open={showQuickAddCustomer}
+        onCancel={() => {
+          setShowQuickAddCustomer(false);
+          setQuickCustomerForm({ nameAr: '', phone: '' });
+        }}
+        footer={null}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'Cairo', fontWeight: 700 }}>
+            <span style={{ background: '#f0f9ff', borderRadius: '50%', padding: 8, boxShadow: '0 2px 8px #e0e7ef' }}>
+              <PlusOutlined style={{ color: '#52c41a' }} />
+            </span>
+            إضافة عميل سريع
+          </div>
+        }
+        width={500}
+        styles={{ 
+          body: { 
+            background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', 
+            borderRadius: 16, 
+            padding: 24, 
+            boxShadow: '0 8px 32px rgba(34, 197, 94, 0.15)' 
+          } 
+        }}
+        style={{ top: 120 }}
+        destroyOnClose
+      >
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ 
+            marginBottom: 12, 
+            padding: 12, 
+            background: 'rgba(34, 197, 94, 0.1)', 
+            borderRadius: 8, 
+            textAlign: 'center', 
+            fontWeight: 500, 
+            color: '#16a34a', 
+            fontFamily: 'Cairo', 
+            fontSize: 14,
+            border: '1px solid rgba(34, 197, 94, 0.2)'
+          }}>
+            ⚡ إضافة سريعة - الحقول الأساسية فقط
+          </div>
+        </div>
+
+        <Form
+          layout="vertical"
+          style={{ fontFamily: 'Cairo' }}
+          onFinish={async () => {
+            if (!quickCustomerForm.nameAr.trim()) {
+              message.error('يرجى إدخال اسم العميل');
+              return;
+            }
+            if (!quickCustomerForm.phone.trim()) {
+              message.error('يرجى إدخال رقم الهاتف');
+              return;
+            }
+
+            try {
+              // حفظ العميل في قاعدة البيانات
+              const maxNum = customers
+                .map(c => {
+                  const match = /^c-(\d{4})$/.exec(c.id);
+                  return match ? parseInt(match[1], 10) : 0;
+                })
+                .reduce((a, b) => Math.max(a, b), 0);
+              const nextNum = maxNum + 1;
+              const newId = `c-${nextNum.toString().padStart(4, '0')}`;
+              
+              const docData = {
+                id: newId,
+                nameAr: quickCustomerForm.nameAr.trim(),
+                phone: quickCustomerForm.phone.trim(),
+                businessType: 'فرد', // افتراضي للإضافة السريعة
+                commercialReg: '',
+                taxFileNumber: '',
+                status: 'نشط',
+                createdAt: new Date().toISOString(),
+              };
+              
+              const docRef = await addDoc(collection(db, 'customers'), docData);
+              
+              // بناء بيانات العميل الجديد
+              const newCustomer = {
+                id: docRef.id,
+                ...docData,
+                taxFile: ''
+              };
+
+              // تحديث قائمة العملاء المحلية
+              // setCustomers(prev => [...prev, newCustomer]); // Now handled by hook
+              await fetchBasicData(); // Refresh data from hook
+
+              // تحديد العميل الجديد في الفاتورة
+              setInvoiceData({
+                ...invoiceData,
+                customerName: newCustomer.nameAr,
+                customerNumber: newCustomer.phone,
+                commercialRecord: '',
+                taxFile: ''
+              });
+
+              customMessage.success('تم إضافة العميل بنجاح وتم تحديد اختياره في الفاتورة!');
+              setShowQuickAddCustomer(false);
+              setQuickCustomerForm({ nameAr: '', phone: '' });
+              
+            } catch (error) {
+              console.error('خطأ في إضافة العميل:', error);
+              message.error('حدث خطأ أثناء إضافة العميل');
+            }
+          }}
+        >
+          <Form.Item
+            label="اسم العميل"
+            required
+            style={{ marginBottom: 16 }}
+          >
+            <Input
+              value={quickCustomerForm.nameAr}
+              onChange={(e) => setQuickCustomerForm({
+                ...quickCustomerForm,
+                nameAr: e.target.value
+              })}
+              placeholder="اسم العميل باللغة العربية"
+              style={{ 
+                fontFamily: 'Cairo', 
+                fontSize: 15,
+                height: 40
+              }}
+              prefix={
+                <UserOutlined style={{ color: '#52c41a' }} />
+              }
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="رقم الهاتف"
+            required
+            style={{ marginBottom: 20 }}
+          >
+            <Input
+              value={quickCustomerForm.phone}
+              onChange={(e) => setQuickCustomerForm({
+                ...quickCustomerForm,
+                phone: e.target.value
+              })}
+              placeholder="رقم الهاتف أو الجوال"
+              style={{ 
+                fontFamily: 'Cairo', 
+                fontSize: 15,
+                height: 40
+              }}
+              prefix={
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#52c41a">
+                  <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+                </svg>
+              }
+            />
+          </Form.Item>
+
+          <div style={{ 
+            background: 'rgba(34, 197, 94, 0.05)', 
+            padding: 12, 
+            borderRadius: 8, 
+            marginBottom: 20,
+            border: '1px solid rgba(34, 197, 94, 0.2)'
+          }}>
+            <div style={{ 
+              fontSize: 13, 
+              color: '#16a34a', 
+              fontFamily: 'Cairo',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="#16a34a">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+              </svg>
+              سيتم إضافة العميل واختياره تلقائياً في الفاتورة
+            </div>
+          </div>
+
+          <Form.Item style={{ marginBottom: 0 }}>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+              <Button
+                onClick={() => {
+                  setShowQuickAddCustomer(false);
+                  setQuickCustomerForm({ nameAr: '', phone: '' });
+                }}
+                style={{ 
+                  fontFamily: 'Cairo',
+                  minWidth: 80,
+                  height: 38
+                }}
+              >
+                إلغاء
+              </Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                style={{ 
+                  fontFamily: 'Cairo',
+                  minWidth: 100,
+                  fontWeight: 600,
+                  height: 38,
+                  backgroundColor: '#52c41a',
+                  borderColor: '#52c41a'
+                }}
+                icon={<PlusOutlined />}
+              >
+                إضافة واختيار
+              </Button>
+            </div>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+    </div>);
 };
 
 export default SalesPage;
