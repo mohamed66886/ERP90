@@ -3776,6 +3776,34 @@ const handlePrint = () => {
                               {i.itemCode && (
                                 <span style={{ fontSize: '12px', color: '#666', fontFamily: 'monospace' }}>
                                   كود: {i.itemCode}
+                                  {i.allowNegative && (
+                                    <span style={{ 
+                                      marginLeft: 8, 
+                                      color: '#52c41a', 
+                                      fontWeight: 'bold',
+                                      fontSize: '11px',
+                                      backgroundColor: '#f6ffed',
+                                      padding: '1px 4px',
+                                      borderRadius: '2px',
+                                      border: '1px solid #b7eb8f'
+                                    }}>
+                                      ✓ سالب
+                                    </span>
+                                  )}
+                                  {i.allowNegative === false && (
+                                    <span style={{ 
+                                      marginLeft: 8, 
+                                      color: '#ff4d4f', 
+                                      fontWeight: 'bold',
+                                      fontSize: '11px',
+                                      backgroundColor: '#fff2f0',
+                                      padding: '1px 4px',
+                                      borderRadius: '2px',
+                                      border: '1px solid #ffccc7'
+                                    }}>
+                                      ✗ سالب
+                                    </span>
+                                  )}
                                 </span>
                               )}
                             </div>
@@ -3867,6 +3895,32 @@ const handlePrint = () => {
   <Form
     layout="vertical"
     onFinish={() => {
+      // التحقق من الحقول الإجبارية
+      if (!addItemForm.parentId) {
+        message.error('يرجى اختيار المستوى الأول');
+        return;
+      }
+      if (!addItemForm.name) {
+        message.error('يرجى إدخال اسم الصنف');
+        return;
+      }
+      if (!addItemForm.itemCode) {
+        message.error('يرجى إدخال كود الصنف');
+        return;
+      }
+      if (!addItemForm.salePrice) {
+        message.error('يرجى إدخال سعر البيع');
+        return;
+      }
+      if (!addItemForm.purchasePrice) {
+        message.error('يرجى إدخال سعر الشراء');
+        return;
+      }
+      if (!addItemForm.unit) {
+        message.error('يرجى اختيار الوحدة');
+        return;
+      }
+      
       if (addItemForm.tempCodes && message && message.warning) {
         message.warning('تم إيقاف هذا الصنف مؤقتًا.');
       }
@@ -3883,7 +3937,11 @@ const handlePrint = () => {
     </Col>
     <Col span={8}>
       {allItems && allItems.filter(i => i.type === 'مستوى أول').length > 0 && (
-        <Form.Item label="المستوى الأول" required>
+        <Form.Item 
+          label={<span style={{ color: '#ff4d4f' }}>المستوى الأول *</span>} 
+          required
+          rules={[{ required: true, message: 'يرجى اختيار المستوى الأول' }]}
+        >
           <Select
             value={addItemForm.parentId || ''}
             onChange={v => setAddItemForm(f => ({ ...f, parentId: v }))}
@@ -3898,7 +3956,11 @@ const handlePrint = () => {
       )}
     </Col>
     <Col span={8}>
-      <Form.Item label="اسم الصنف" required>
+      <Form.Item 
+        label={<span style={{ color: '#ff4d4f' }}>اسم الصنف *</span>} 
+        required
+        rules={[{ required: true, message: 'يرجى إدخال اسم الصنف' }]}
+      >
         <Input
           value={addItemForm.name || ''}
           onChange={e => setAddItemForm(f => ({ ...f, name: e.target.value }))}
@@ -3911,7 +3973,11 @@ const handlePrint = () => {
   </Row>
   <Row gutter={16}>
     <Col span={8}>
-      <Form.Item label="كود الصنف">
+      <Form.Item 
+        label={<span style={{ color: '#ff4d4f' }}>كود الصنف *</span>} 
+        required
+        rules={[{ required: true, message: 'يرجى إدخال كود الصنف' }]}
+      >
         <Input
           value={addItemForm.itemCode || ''}
           onChange={e => setAddItemForm(f => ({ ...f, itemCode: e.target.value }))}
@@ -3921,7 +3987,11 @@ const handlePrint = () => {
       </Form.Item>
     </Col>
     <Col span={8}>
-      <Form.Item label="سعر الشراء">
+      <Form.Item 
+        label={<span style={{ color: '#ff4d4f' }}>سعر الشراء *</span>} 
+        required
+        rules={[{ required: true, message: 'يرجى إدخال سعر الشراء' }]}
+      >
         <Input
           value={addItemForm.purchasePrice || ''}
           onChange={e => setAddItemForm(f => ({ ...f, purchasePrice: e.target.value }))}
@@ -3933,7 +4003,11 @@ const handlePrint = () => {
       </Form.Item>
     </Col>
     <Col span={8}>
-      <Form.Item label="سعر البيع">
+      <Form.Item 
+        label={<span style={{ color: '#ff4d4f' }}>سعر البيع *</span>} 
+        required
+        rules={[{ required: true, message: 'يرجى إدخال سعر البيع' }]}
+      >
         <Input
           value={addItemForm.salePrice || ''}
           onChange={e => setAddItemForm(f => ({ ...f, salePrice: e.target.value }))}
@@ -4019,7 +4093,11 @@ const handlePrint = () => {
         ))}
       </Select>
     </Form.Item>
-    <Form.Item label="الوحدة" required>
+    <Form.Item 
+      label={<span style={{ color: '#ff4d4f' }}>الوحدة *</span>} 
+      required
+      rules={[{ required: true, message: 'يرجى اختيار الوحدة' }]}
+    >
       <Select
         value={addItemForm.unit || ''}
         onChange={v => setAddItemForm(f => ({ ...f, unit: v }))}

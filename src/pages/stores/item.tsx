@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { useDropzone } from 'react-dropzone';
 import { collection, addDoc, getDocs, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore';
@@ -38,12 +38,63 @@ const ItemManagementPage: React.FC = () => {
   const [items, setItems] = useState<ItemExtended[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<number[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [selectedItem, setSelectedItem] = useState<ItemExtended | null>(null);
   const [activeTab, setActiveTab] = useState<'tree' | 'list'>('tree');
-  const [taxRate, setTaxRate] = useState<number>(0);
+  
+  // مرجع لنموذج التعديل للتمرير إليه
+  const editFormRef = useRef<HTMLDivElement>(null);
+  
+  const [taxRate, setTaxRate] = useState<number>(() => {
+    // جلب معدل الضريبة من localStorage أو استخدام 15% كقيمة افتراضية
+    const savedTaxRate = localStorage.getItem('taxRate');
+    return savedTaxRate ? parseFloat(savedTaxRate) : 15;
+  });
+
+  // حفظ معدل الضريبة في localStorage عند تغييره
+  useEffect(() => {
+    localStorage.setItem('taxRate', taxRate.toString());
+  }, [taxRate]);
+
+  // التمرير إلى نموذج التعديل عند تحديد صنف
+  useEffect(() => {
+    if (selectedItem && editFormRef.current) {
+      // انتظار قصير للتأكد من عرض المكون بالكامل قبل التمرير
+      setTimeout(() => {
+        editFormRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+          inline: 'nearest'
+        });
+      }, 100);
+    }
+  }, [selectedItem]);
+  
+  // دوال حساب الضريبة
+  const calculatePriceWithoutVAT = (priceWithVAT: number, vatRate: number = taxRate) => {
+    return priceWithVAT / (1 + vatRate / 100);
+  };
+
+  const calculatePriceWithVAT = (priceWithoutVAT: number, vatRate: number = taxRate) => {
+    return priceWithoutVAT * (1 + vatRate / 100);
+  };
+
+  const getDisplayPrice = (item: ItemExtended) => {
+    if (!item.salePrice) return 0;
+    return item.isVatIncluded 
+      ? calculatePriceWithoutVAT(item.salePrice, taxRate)
+      : item.salePrice;
+  };
+
+  const getFinalPrice = (item: ItemExtended) => {
+    if (!item.salePrice) return 0;
+    return item.isVatIncluded 
+      ? item.salePrice
+      : calculatePriceWithVAT(item.salePrice, taxRate);
+  };
   
   // حالات النموذج
   const [formData, setFormData] = useState<Omit<ItemExtended, 'docId'>>({
@@ -123,6 +174,35 @@ const ItemManagementPage: React.FC = () => {
   // معالجة تغيير النموذج
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
+    
+    // معالجة خاصة لتغيير حالة الضريبة
+    if (name === 'isVatIncluded' && type === 'checkbox') {
+      const isChecked = (e.target as HTMLInputElement).checked;
+      const currentPrice = formData.salePrice || 0;
+      
+      setFormData(prev => {
+        let newPrice = currentPrice;
+        if (currentPrice > 0) {
+          if (isChecked) {
+            // تحويل من سعر شامل ضريبة إلى سعر بدون ضريبة
+            // مثال: إذا كان السعر 115 وأصبح "شامل ضريبة"، يتحول إلى 100
+            newPrice = currentPrice / (1 + taxRate / 100);
+          } else {
+            // تحويل من سعر بدون ضريبة إلى سعر شامل ضريبة
+            // مثال: إذا كان السعر 100 وأصبح "غير شامل ضريبة"، يتحول إلى 115
+            newPrice = currentPrice * (1 + taxRate / 100);
+          }
+        }
+        
+        return {
+          ...prev,
+          isVatIncluded: isChecked,
+          salePrice: Math.round(newPrice * 100) / 100 // تقريب لمنزلتين عشريتين
+        };
+      });
+      return;
+    }
+    
     setFormData(prev => ({
       ...prev,
       [name]:
@@ -134,6 +214,7 @@ const ItemManagementPage: React.FC = () => {
               ? Number(value)
               : value
     }));
+    
     // إذا تغير النوع، مسح parentId
     if (name === 'type') {
       setFormData(prev => ({ ...prev, parentId: undefined }));
@@ -145,6 +226,7 @@ const ItemManagementPage: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setSuccess(null);
     
     try {
       // التحقق من عدم وجود ID مكرر
@@ -202,6 +284,11 @@ const ItemManagementPage: React.FC = () => {
       
       // تحديث القائمة
       await fetchItems();
+      
+      // عرض رسالة نجاح
+      setSuccess(`تم إضافة الصنف "${newItem.name}" بنجاح! ✅`);
+      setTimeout(() => setSuccess(null), 3000); // إخفاء الرسالة بعد 3 ثواني
+      
     } catch (e) {
       console.error('Add error:', e);
       setError('حدث خطأ أثناء الإضافة. تحقق من الاتصال أو الصلاحيات.');
@@ -236,6 +323,7 @@ const ItemManagementPage: React.FC = () => {
     
     setLoading(true);
     setError(null);
+    setSuccess(null);
     
     try {
       const updateData: Partial<ItemExtended> = {
@@ -254,8 +342,23 @@ const ItemManagementPage: React.FC = () => {
       };
       
       await updateDoc(doc(db, 'inventory_items', updatedItem.docId), updateData);
-      await fetchItems();
-      setSelectedItem(null);
+      
+      // إعادة جلب البيانات
+      const q = query(collection(db, 'inventory_items'), orderBy('id', 'asc'));
+      const querySnapshot = await getDocs(q);
+      const data = querySnapshot.docs.map(doc => ({ ...doc.data(), docId: doc.id } as ItemExtended));
+      setItems(data);
+      
+      // العثور على الصنف المحدث والاحتفاظ به محدداً
+      const updatedSelectedItem = data.find(item => item.docId === updatedItem.docId);
+      if (updatedSelectedItem) {
+        setSelectedItem(updatedSelectedItem);
+      }
+      
+      // عرض رسالة نجاح
+      setSuccess('تم حفظ التعديلات بنجاح! ✅');
+      setTimeout(() => setSuccess(null), 3000); // إخفاء الرسالة بعد 3 ثواني
+      
     } catch (e) {
       console.error('Update error:', e);
       setError('حدث خطأ أثناء التعديل');
@@ -376,14 +479,24 @@ const ItemManagementPage: React.FC = () => {
           {/* بطاقة العنصر */}
           <motion.div 
             whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.98 }}
             className={`flex-1 p-3 rounded-lg border transition-all cursor-pointer ${
               level === 0 ? 'bg-blue-50 border-blue-200' : 
               level === 1 ? 'bg-purple-50 border-purple-200' : 
               'bg-gray-50 border-gray-200'
             } ${
-              isSelected ? 'ring-2 ring-[#1a365d]' : ''
+              isSelected ? 'ring-2 ring-[#1a365d] shadow-md transform scale-[1.02]' : 'hover:shadow-sm'
             }`}
-            onClick={() => setSelectedItem(item)}
+            onClick={() => {
+              setSelectedItem(item);
+              // إضافة تأثير بصري فوري
+              if (editFormRef.current) {
+                editFormRef.current.classList.add('animate-pulse');
+                setTimeout(() => {
+                  editFormRef.current?.classList.remove('animate-pulse');
+                }, 500);
+              }
+            }}
           >
             <ItemView 
               item={item}
@@ -394,6 +507,7 @@ const ItemManagementPage: React.FC = () => {
               onDelete={() => handleDelete(item.docId!)}
               suppliers={suppliers}
               items={items}
+              taxRate={taxRate}
             />
           </motion.div>
         </div>
@@ -439,7 +553,25 @@ const ItemManagementPage: React.FC = () => {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredItems.map((item) => (
-              <tr key={item.id} className="hover:bg-gray-50">
+              <tr 
+                key={item.id} 
+                className={`cursor-pointer transition-all ${
+                  selectedItem?.id === item.id 
+                    ? 'bg-indigo-50 hover:bg-indigo-100' 
+                    : 'hover:bg-gray-50'
+                }`}
+                onClick={() => {
+                  setSelectedItem(item);
+                  // إضافة تأثير بصري فوري
+                  if (editFormRef.current) {
+                    editFormRef.current.classList.add('animate-pulse');
+                    setTimeout(() => {
+                      editFormRef.current?.classList.remove('animate-pulse');
+                    }, 500);
+                  }
+                }}
+                title="اضغط لتحديد الصنف"
+              >
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.id}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -455,12 +587,29 @@ const ItemManagementPage: React.FC = () => {
                   {item.parentId ? items.find(i => i.id === item.parentId)?.name || item.parentId : '-'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {item.salePrice ? `${item.salePrice.toFixed(2)} ر.س` : '-'}
+                  {item.salePrice ? (
+                    <div>
+                      <span className="block">{item.salePrice.toFixed(2)} ر.س</span>
+                      <span className="text-xs text-gray-400">
+                        {item.isVatIncluded ? 'شامل ضريبة' : 'بدون ضريبة'}
+                      </span>
+                    </div>
+                  ) : '-'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <button
-                    onClick={() => startEdit(item)}
+                    onClick={() => {
+                      setSelectedItem(item);
+                      // إضافة تأثير بصري فوري
+                      if (editFormRef.current) {
+                        editFormRef.current.classList.add('animate-pulse');
+                        setTimeout(() => {
+                          editFormRef.current?.classList.remove('animate-pulse');
+                        }, 500);
+                      }
+                    }}
                     className="text-indigo-600 hover:text-indigo-900 mr-3"
+                    title="تحديد وتعديل الصنف"
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
@@ -482,6 +631,36 @@ const ItemManagementPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
+        {/* رسائل النجاح والخطأ */}
+        {(success || error) && (
+          <div className="mb-6">
+            {success && (
+              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg shadow-sm flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <span>{success}</span>
+                <button 
+                  onClick={() => setSuccess(null)}
+                  className="mr-auto text-green-600 hover:text-green-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg shadow-sm flex items-center gap-2">
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                <span>{error}</span>
+                <button 
+                  onClick={() => setError(null)}
+                  className="mr-auto text-red-600 hover:text-red-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* شريط العنوان */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
@@ -492,6 +671,22 @@ const ItemManagementPage: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-3">
+            {/* إعداد معدل الضريبة */}
+            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
+              <span className="text-sm text-gray-600">الضريبة:</span>
+              <input
+                type="number"
+                value={taxRate}
+                onChange={(e) => setTaxRate(Number(e.target.value))}
+                className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                min={0}
+                max={100}
+                step={0.1}
+                title="معدل ضريبة القيمة المضافة - يستخدم في حساب الأسعار شاملة/غير شاملة للضريبة"
+              />
+              <span className="text-sm text-gray-600">%</span>
+            </div>
+            
             <button
               onClick={expandAll}
               className="flex items-center gap-2 text-sm px-4 py-2 rounded-lg bg-white hover:bg-gray-50 border border-gray-200 shadow-sm"
@@ -624,11 +819,12 @@ const ItemManagementPage: React.FC = () => {
               onSubmit={handleAdd}
               error={error}
               loading={loading}
+              taxRate={taxRate}
             />
           </div>
 
           {/* تفاصيل الصنف المحدد */}
-          <div className="lg:col-span-2">
+          <div className={`lg:col-span-2 transition-all duration-300 ${selectedItem ? 'ring-2 ring-indigo-500 ring-opacity-50 rounded-xl' : ''}`} ref={editFormRef}>
             {selectedItem ? (
               <div className="bg-white rounded-xl shadow-md overflow-hidden">
                 <div className="p-6">
@@ -659,12 +855,19 @@ const ItemManagementPage: React.FC = () => {
                     onSave={handleEditSave}
                     onCancel={() => setSelectedItem(null)}
                     loading={loading}
+                    taxRate={taxRate}
                   />
                 </div>
               </div>
             ) : (
-              <div className="bg-white rounded-xl shadow-md overflow-hidden p-8 text-center text-gray-400">
-                <p>اختر صنفاً من القائمة لعرض التفاصيل</p>
+              <div className="bg-white rounded-xl shadow-md overflow-hidden p-8 text-center">
+                <div className="text-gray-400 mb-4">
+                  <Search className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                </div>
+                <p className="text-gray-500 text-lg mb-2">اختر صنفاً من القائمة لعرض التفاصيل</p>
+                <p className="text-gray-400 text-sm">
+                  يمكنك النقر على أي صنف من الشجرة أو القائمة المسطحة لبدء التعديل
+                </p>
               </div>
             )}
           </div>
@@ -1147,6 +1350,7 @@ const ElectronicsItemsGenerator: React.FC<{
 
             const purchasePrice = generateRandomPrice(priceRange.min, priceRange.max);
             const salePrice = Math.round(purchasePrice * (1.2 + Math.random() * 0.3)); // هامش ربح 20-50%
+            const isVatIncluded = Math.random() > 0.3; // 70% احتمال أن يكون شامل الضريبة
 
             itemsToAdd.push({
               id: itemId,
@@ -1159,7 +1363,7 @@ const ElectronicsItemsGenerator: React.FC<{
               minOrder: generateRandomPrice(1, 10),
               discount: generateRandomPrice(0, 15),
               allowNegative: Math.random() > 0.7,
-              isVatIncluded: Math.random() > 0.5,
+              isVatIncluded: isVatIncluded,
               tempCodes: false,
               supplier: 'مورد إلكترونيات'
             });
@@ -1254,7 +1458,8 @@ const AddItemForm: React.FC<{
   onSubmit: (e: React.FormEvent) => void;
   error: string | null;
   loading: boolean;
-}> = ({ formData, items, suppliers, onChange, onSubmit, error, loading }) => {
+  taxRate: number;
+}> = ({ formData, items, suppliers, onChange, onSubmit, error, loading, taxRate }) => {
   const getParentOptions = () => {
     if (formData.type === 'مستوى أول') {
       return items.filter(i => i.type === 'رئيسي');
@@ -1363,6 +1568,19 @@ const AddItemForm: React.FC<{
                       min={0}
                       step="0.01"
                     />
+                    {formData.salePrice && formData.salePrice > 0 && (
+                      <div className="mt-1 text-xs text-gray-500">
+                        {formData.isVatIncluded ? (
+                          <span>بدون ضريبة: {((formData.salePrice || 0) / (1 + taxRate / 100)).toFixed(2)} ر.س</span>
+                        ) : (
+                          <span>شامل ضريبة: {((formData.salePrice || 0) * (1 + taxRate / 100)).toFixed(2)} ر.س</span>
+                        )}
+                        <br />
+                        <span className="text-xs text-gray-400">
+                          💡 عند تفعيل "شامل الضريبة" السعر يتحول إلى السعر الأساسي بدون ضريبة
+                        </span>
+                      </div>
+                    )}
                   </div>
                   
                   <div>
@@ -1439,7 +1657,7 @@ const AddItemForm: React.FC<{
                       checked={formData.isVatIncluded}
                       onChange={onChange}
                     />
-                    <span className="text-xs text-gray-700">شامل الضريبة</span>
+                    <span className="text-xs text-gray-700">شامل ضريبة {taxRate}%</span>
                   </div>
                   
                   <div className="flex items-center gap-2">
@@ -1496,7 +1714,8 @@ const ItemView: React.FC<{
   onDelete: () => void;
   suppliers: Supplier[];
   items: ItemExtended[];
-}> = ({ item, level, hasChildren, expanded, onToggleExpand, onDelete, suppliers, items }) => {
+  taxRate: number;
+}> = ({ item, level, hasChildren, expanded, onToggleExpand, onDelete, suppliers, items, taxRate }) => {
   const levelColors = [
     { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200' },
     { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-200' },
@@ -1547,7 +1766,31 @@ const ItemView: React.FC<{
         <div className={`mt-2 p-3 rounded-lg border ${levelColors[colorIndex].border} grid grid-cols-2 md:grid-cols-3 gap-3`}>
           <DetailItem label="كود الصنف" value={item.itemCode || '-'} />
           <DetailItem label="سعر الشراء" value={item.purchasePrice ? `${item.purchasePrice.toFixed(2)} ر.س` : '-'} />
-          <DetailItem label="سعر البيع" value={item.salePrice ? `${item.salePrice.toFixed(2)} ر.س` : '-'} />
+          
+          {/* عرض الأسعار مع معلومات الضريبة */}
+          {item.salePrice ? (
+            <div className="text-sm">
+              <span className="text-gray-500 text-xs">سعر البيع:</span>
+              <div className="font-medium text-gray-800 text-sm">
+                <span className="block">{item.salePrice.toFixed(2)} ر.س</span>
+                <span className="text-xs text-gray-500">
+                  {item.isVatIncluded ? 'شامل ضريبة' : 'بدون ضريبة'}
+                </span>
+                {taxRate > 0 && (
+                  <div className="text-xs text-gray-400 mt-1">
+                    {item.isVatIncluded ? (
+                      <>بدون ضريبة: {(item.salePrice / (1 + taxRate / 100)).toFixed(2)} ر.س</>
+                    ) : (
+                      <>شامل ضريبة: {(item.salePrice * (1 + taxRate / 100)).toFixed(2)} ر.س</>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <DetailItem label="سعر البيع" value="-" />
+          )}
+          
           <DetailItem label="الحد الأدنى" value={item.minOrder || '-'} />
           <DetailItem label="الخصم" value={item.discount ? `${item.discount}%` : '-'} />
           <DetailItem 
@@ -1590,7 +1833,8 @@ const EditItemForm: React.FC<{
   onSave: (updatedItem: ItemExtended) => void;
   onCancel: () => void;
   loading: boolean;
-}> = ({ item, items, suppliers, onSave, onCancel, loading }) => {
+  taxRate: number;
+}> = ({ item, items, suppliers, onSave, onCancel, loading, taxRate }) => {
   const [editData, setEditData] = useState<Omit<ItemExtended, 'docId'>>({
     id: item.id,
     name: item.name,
@@ -1609,6 +1853,35 @@ const EditItemForm: React.FC<{
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
+    
+    // معالجة خاصة لتغيير حالة الضريبة
+    if (name === 'isVatIncluded' && type === 'checkbox') {
+      const isChecked = (e.target as HTMLInputElement).checked;
+      const currentPrice = editData.salePrice || 0;
+      
+      setEditData(prev => {
+        let newPrice = currentPrice;
+        if (currentPrice > 0) {
+          if (isChecked) {
+            // تحويل من سعر شامل ضريبة إلى سعر بدون ضريبة
+            // مثال: إذا كان السعر 115 وأصبح "شامل ضريبة"، يتحول إلى 100
+            newPrice = currentPrice / (1 + taxRate / 100);
+          } else {
+            // تحويل من سعر بدون ضريبة إلى سعر شامل ضريبة
+            // مثال: إذا كان السعر 100 وأصبح "غير شامل ضريبة"، يتحول إلى 115
+            newPrice = currentPrice * (1 + taxRate / 100);
+          }
+        }
+        
+        return {
+          ...prev,
+          isVatIncluded: isChecked,
+          salePrice: Math.round(newPrice * 100) / 100 // تقريب لمنزلتين عشريتين
+        };
+      });
+      return;
+    }
+    
     setEditData(prev => ({
       ...prev,
       [name]:
@@ -1730,6 +2003,15 @@ const EditItemForm: React.FC<{
                   min={0}
                   step="0.01"
                 />
+                {editData.salePrice && editData.salePrice > 0 && (
+                  <div className="mt-1 text-xs text-gray-500">
+                    {editData.isVatIncluded ? (
+                      <span>بدون ضريبة: {((editData.salePrice || 0) / (1 + taxRate / 100)).toFixed(2)} ر.س</span>
+                    ) : (
+                      <span>شامل ضريبة: {((editData.salePrice || 0) * (1 + taxRate / 100)).toFixed(2)} ر.س</span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             
@@ -1770,7 +2052,7 @@ const EditItemForm: React.FC<{
                   checked={editData.isVatIncluded}
                   onChange={handleChange}
                 />
-                <label htmlFor="editIsVatIncluded" className="text-xs text-gray-700">شامل الضريبة</label>
+                <label htmlFor="editIsVatIncluded" className="text-xs text-gray-700">شامل ضريبة {taxRate}%</label>
               </div>
               
               <div className="flex items-center gap-2">
