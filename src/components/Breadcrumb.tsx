@@ -7,7 +7,8 @@ import {
   ApartmentOutlined, 
   RollbackOutlined, 
   CreditCardFilled, 
-  CarFilled 
+  CarFilled,
+  MoneyCollectOutlined
 } from "@ant-design/icons";
 import { motion } from "framer-motion";
 
@@ -41,7 +42,8 @@ const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => {
       "إضافة حساب جديد": <CreditCardFilled className={iconStyle} />, 
       "تعديل الحساب": <CreditCardFilled className={iconStyle} />, 
       "الصناديق النقدية": <CarFilled className={iconStyle} />, 
-      "البنوك": <CreditCardFilled className={iconStyle} />
+      "البنوك": <CreditCardFilled className={iconStyle} />,
+      "سند قبض": <MoneyCollectOutlined className={iconStyle} />
     };
     return iconMap[label] || null;
   };

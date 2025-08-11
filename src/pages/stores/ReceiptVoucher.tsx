@@ -1,523 +1,1234 @@
-import React, { useState } from 'react';
-import { 
-  Card, 
-  Form, 
-  Input, 
-  Button, 
-  Select, 
-  DatePicker, 
-  InputNumber, 
-  Table, 
-  Space, 
-  Row, 
-  Col, 
-  Typography, 
-  Divider, 
-  Modal, 
-  message,
-  Tag,
-  Tooltip,
-  Descriptions
+import { fetchCashBoxes, CashBox } from '@/services/cashBoxesService';
+import { fetchBankAccounts, BankAccount } from '@/services/bankAccountsService';
+import React, { useState, useEffect } from 'react';
+import { collection, getDocs, addDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { Table } from 'antd';
+// استيراد دالة جلب الحسابات (يفترض وجودها)
+import { getAccounts } from '@/services/accountsService';
+import { Modal } from 'antd';
+import { fetchBranches, Branch } from '@/lib/branches';
+import { useFinancialYear } from '@/hooks/useFinancialYear';
+import styles from './ReceiptVoucher.module.css';
+import {
+  Card,
+  Row,
+  Col,
+  DatePicker,
+  Input,
+  Select,
+  Button,
+  Form,
+  InputNumber,
+  Upload,
+  Space,
+  Divider,
+  Typography
 } from 'antd';
-import { 
-  PlusOutlined, 
-  DeleteOutlined, 
-  PrinterOutlined, 
-  SaveOutlined,
-  SearchOutlined,
-  UserOutlined,
-  BankOutlined,
-  CreditCardOutlined,
-  FileTextOutlined
-} from '@ant-design/icons';
-import { Receipt, ArrowRight } from 'lucide-react';
-import Breadcrumb from "@/components/Breadcrumb";
 import dayjs from 'dayjs';
+import { GiMagicBroom } from 'react-icons/gi';
+import { UploadOutlined, ReloadOutlined, MoneyCollectOutlined } from '@ant-design/icons';
+import Breadcrumb from '../../components/Breadcrumb';
+import type { UploadFile } from 'antd/es/upload/interface';
+import type { Dayjs } from 'dayjs';
+import { numberToArabicWords } from '../../utils/numberToWords';
 
-const { Title, Text } = Typography;
+const { RangePicker } = DatePicker;
 const { Option } = Select;
-const { TextArea } = Input;
+const { Title } = Typography;
 
-interface ReceiptItem {
-  key: string;
-  invoiceNumber: string;
-  invoiceDate: string;
-  originalAmount: number;
-  paidAmount: number;
-  remainingAmount: number;
-  currentPayment: number;
-}
-
-interface Customer {
-  id: string;
-  name: string;
-  code: string;
-  balance: number;
-  phone: string;
+interface ReceiptVoucherForm {
+  dateRange: [Dayjs, Dayjs] | null;
+  entryNumber: string;
+  voucherNumber: string;
+  date: Dayjs | null;
+  currency: string;
+  exchangeRate: number;
+  amount: number;
+  amountInWords: string;
+  branch: string;
+  receivedFrom: string;
+  debitAccount: string;
+  accountNumber: string;
+  accountName: string;
+  costCenter: string;
+  costCenterNumber: string;
+  collectorNumber: string;
+  collector: string;
+  paymentMethod: string;
+  bookNumber: string;
+  cashboxBank: string;
+  checkTransferNumber: string;
+  checkTransferDate: Dayjs | null;
+  bankSelection: string;
+  description: string;
 }
 
 const ReceiptVoucher: React.FC = () => {
-  const [form] = Form.useForm();
-  const [receiptItems, setReceiptItems] = useState<ReceiptItem[]>([]);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [customerModalVisible, setCustomerModalVisible] = useState(false);
-  const [loading, setLoading] = useState(false);
 
-  // بيانات وهمية للعملاء
-  const customersData: Customer[] = [
-    { id: '1', name: 'أحمد محمد علي', code: 'C001', balance: 15000, phone: '01234567890' },
-    { id: '2', name: 'فاطمة أحمد محمود', code: 'C002', balance: 8500, phone: '01234567891' },
-    { id: '3', name: 'محمد حسن إبراهيم', code: 'C003', balance: 22000, phone: '01234567892' },
-    { id: '4', name: 'سارة محمود عبدالله', code: 'C004', balance: 12300, phone: '01234567893' },
-    { id: '5', name: 'عمر خالد محمد', code: 'C005', balance: 7800, phone: '01234567894' },
-  ];
+  const [cashboxBankOptions, setCashboxBankOptions] = React.useState<{ value: string; label: string; type: 'cashbox' | 'bank' }[]>([]);
+  // State for showing modals
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [showCollectorModal, setShowCollectorModal] = useState(false);
+  const [collectorSearch, setCollectorSearch] = useState('');
+  // بيانات المحصلين من صفحة المندوبين (salesRepresentatives)
+  const [collectorAccounts, setCollectorAccounts] = useState<{ number: string; name: string; mobile?: string; id: string }[]>([]);
 
-  // بيانات وهمية للفواتير المستحقة
-  const invoicesData: ReceiptItem[] = [
-    {
-      key: '1',
-      invoiceNumber: 'INV-2024-001',
-      invoiceDate: '2024-01-15',
-      originalAmount: 5000,
-      paidAmount: 2000,
-      remainingAmount: 3000,
-      currentPayment: 0
-    },
-    {
-      key: '2',
-      invoiceNumber: 'INV-2024-015',
-      invoiceDate: '2024-02-10',
-      originalAmount: 7500,
-      paidAmount: 0,
-      remainingAmount: 7500,
-      currentPayment: 0
-    },
-    {
-      key: '3',
-      invoiceNumber: 'INV-2024-032',
-      invoiceDate: '2024-03-05',
-      originalAmount: 4500,
-      paidAmount: 1500,
-      remainingAmount: 3000,
-      currentPayment: 0
+  useEffect(() => {
+    // جلب بيانات المندوبين من قاعدة البيانات
+    const fetchCollectors = async () => {
+      try {
+        const repsSnapshot = await getDocs(collection(db, 'salesRepresentatives'));
+        const reps = repsSnapshot.docs.map((doc, idx) => {
+          const data = doc.data();
+          return {
+            id: doc.id, // معرف داخلي
+            number: (idx + 1).toString(), // رقم تسلسلي
+            name: data.name || '',
+            mobile: data.phone || ''
+          };
+        });
+        setCollectorAccounts(reps);
+      } catch (error) {
+        setCollectorAccounts([]);
+      }
+    };
+    fetchCollectors();
+  }, []);
+
+  // بيانات حسابات العملاء والموردين من دليل الحسابات (linkedToPage)
+  const [customerAccounts, setCustomerAccounts] = useState<{ code: string; nameAr: string; mobile?: string; taxNumber?: string }[]>([]);
+  const [supplierAccounts, setSupplierAccounts] = useState<{ code: string; nameAr: string; mobile?: string }[]>([]);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [supplierSearch, setSupplierSearch] = useState('');
+
+  useEffect(() => {
+    if (showCustomerModal) {
+      getAccounts()
+        .then((accounts) => {
+          // العملاء من linkedToPage === 'customers'
+          const customers = accounts.filter(acc => acc.linkedToPage === 'customers');
+          setCustomerAccounts(customers.map(acc => ({
+            code: acc.code,
+            nameAr: acc.nameAr,
+            mobile: acc.customerData?.mobile || acc.customerData?.phone || '',
+            taxNumber: acc.customerData?.taxFileNumber || ''
+          })));
+        })
+        .catch(() => setCustomerAccounts([]));
     }
-  ];
+  }, [showCustomerModal]);
 
-  const paymentMethods = [
-    { value: 'cash', label: 'نقدي', icon: <CreditCardOutlined /> },
-    { value: 'bank', label: 'تحويل بنكي', icon: <BankOutlined /> },
-    { value: 'check', label: 'شيك', icon: <FileTextOutlined /> },
-    { value: 'credit_card', label: 'بطاقة ائتمان', icon: <CreditCardOutlined /> }
-  ];
-
-  const columns = [
-    {
-      title: 'رقم الفاتورة',
-      dataIndex: 'invoiceNumber',
-      key: 'invoiceNumber',
-      render: (text: string) => <Text strong>{text}</Text>
-    },
-    {
-      title: 'تاريخ الفاتورة',
-      dataIndex: 'invoiceDate',
-      key: 'invoiceDate',
-      render: (date: string) => dayjs(date).format('DD/MM/YYYY')
-    },
-    {
-      title: 'المبلغ الأصلي',
-      dataIndex: 'originalAmount',
-      key: 'originalAmount',
-      render: (amount: number) => (
-        <Text>{amount.toLocaleString()} ج.م</Text>
-      )
-    },
-    {
-      title: 'المدفوع مسبقاً',
-      dataIndex: 'paidAmount',
-      key: 'paidAmount',
-      render: (amount: number) => (
-        <Text type="success">{amount.toLocaleString()} ج.م</Text>
-      )
-    },
-    {
-      title: 'المتبقي',
-      dataIndex: 'remainingAmount',
-      key: 'remainingAmount',
-      render: (amount: number) => (
-        <Text type="danger">{amount.toLocaleString()} ج.م</Text>
-      )
-    },
-    {
-      title: 'المبلغ المدفوع الآن',
-      dataIndex: 'currentPayment',
-      key: 'currentPayment',
-      render: (value: number, record: ReceiptItem) => (
-        <InputNumber
-          min={0}
-          max={record.remainingAmount}
-          value={value}
-          onChange={(val) => handlePaymentChange(record.key, val || 0)}
-          style={{ width: '120px' }}
-          formatter={(value) => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-          parser={(value) => Number(value!.replace(/\$\s?|(,*)/g, ''))}
-        />
-      )
-    },
-    {
-      title: 'المتبقي بعد الدفع',
-      key: 'finalRemaining',
-      render: (_, record: ReceiptItem) => {
-        const remaining = record.remainingAmount - record.currentPayment;
-        return (
-          <Text type={remaining === 0 ? "success" : "warning"}>
-            {remaining.toLocaleString()} ج.م
-          </Text>
-        );
+  useEffect(() => {
+    if (showSupplierModal) {
+      getAccounts()
+        .then((accounts: any[]) => {
+          // الموردين من linkedToPage === 'suppliers'
+          const suppliers = accounts.filter(acc => acc.linkedToPage === 'suppliers');
+          setSupplierAccounts(suppliers.map(acc => ({
+            code: acc.code,
+            nameAr: acc.nameAr,
+            mobile: acc.supplierData?.mobile || acc.supplierData?.phone || ''
+          })));
+        })
+        .catch(() => setSupplierAccounts([]));
+    }
+  }, [showSupplierModal]);
+  React.useEffect(() => {
+    async function loadCashboxBankOptions() {
+      try {
+        const [cashBoxes, bankAccounts] = await Promise.all([
+          fetchCashBoxes(),
+          fetchBankAccounts()
+        ]);
+        const cashboxOptions = cashBoxes.map(cb => ({
+          value: `cashbox-${cb.id}`,
+          label: `صندوق: ${cb.nameAr}`,
+          type: 'cashbox' as const
+        }));
+        const bankOptions = bankAccounts.map(bk => ({
+          value: `bank-${bk.id}`,
+          label: `بنك: ${bk.arabicName}`,
+          type: 'bank' as const
+        }));
+        setCashboxBankOptions([...cashboxOptions, ...bankOptions]);
+      } catch (e) {
+        // يمكن إضافة رسالة خطأ إذا لزم الأمر
       }
     }
-  ];
+    loadCashboxBankOptions();
+  }, []);
 
-  const customerColumns = [
-    {
-      title: 'كود العميل',
-      dataIndex: 'code',
-      key: 'code',
-      width: 100
-    },
-    {
-      title: 'اسم العميل',
-      dataIndex: 'name',
-      key: 'name'
-    },
-    {
-      title: 'رقم الهاتف',
-      dataIndex: 'phone',
-      key: 'phone'
-    },
-    {
-      title: 'الرصيد المستحق',
-      dataIndex: 'balance',
-      key: 'balance',
-      render: (balance: number) => (
-        <Text type="danger">{balance.toLocaleString()} ج.م</Text>
-      )
-    },
-    {
-      title: 'إجراء',
-      key: 'action',
-      width: 100,
-      render: (_: unknown, record: Customer) => (
-        <Button 
-          type="primary" 
-          size="small"
-          onClick={() => selectCustomer(record)}
-        >
-          اختيار
-        </Button>
-      )
+  const [form] = Form.useForm<ReceiptVoucherForm>();
+  // State to force re-render on payment method change
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('');
+  // توليد رقم قيد تلقائي (مثال: رقم عشوائي أو متسلسل)
+  const generateEntryNumber = () => {
+    // يمكن استبداله بمنطق أكثر تعقيداً لاحقاً
+    return `EN-${Date.now().toString().slice(-6)}`;
+  };
+  // توليد رقم سند تلقائي
+  const generateVoucherNumber = () => {
+    return `VN-${Date.now().toString().slice(-6)}`;
+  };
+  const [autoEntryNumber, setAutoEntryNumber] = useState<string>(generateEntryNumber());
+  const [autoVoucherNumber, setAutoVoucherNumber] = useState<string>(generateVoucherNumber());
+  const [fileList, setFileList] = useState<UploadFile[]>([]);
+  const [amountInWords, setAmountInWords] = useState<string>('');
+  const [selectedCurrency, setSelectedCurrency] = useState<string>('SAR');
+
+
+  // State for selected debit account
+  const [selectedDebitAccount, setSelectedDebitAccount] = useState<string>('');
+
+  // مراقبة تغيير المبلغ وتحديث المبلغ مكتوباً
+  const handleAmountChange = (value: number | null) => {
+    if (value && value > 0) {
+      const wordsText = numberToArabicWords(value, selectedCurrency);
+      setAmountInWords(wordsText);
+      form.setFieldValue('amountInWords', wordsText);
+    } else {
+      setAmountInWords('');
+      form.setFieldValue('amountInWords', '');
     }
-  ];
-
-  const handlePaymentChange = (key: string, value: number) => {
-    setReceiptItems(prev => 
-      prev.map(item => 
-        item.key === key ? { ...item, currentPayment: value } : item
-      )
-    );
   };
 
-  const selectCustomer = (customer: Customer) => {
-    setSelectedCustomer(customer);
-    setReceiptItems(invoicesData);
-    setCustomerModalVisible(false);
-    
-    // تحديث النموذج
-    form.setFieldsValue({
-      customerName: customer.name,
-      customerCode: customer.code
-    });
+  // مراقبة تغيير العملة وتحديث المبلغ مكتوباً
+  const handleCurrencyChange = (currency: string) => {
+    setSelectedCurrency(currency);
+    const currentAmount = form.getFieldValue('amount');
+    if (currentAmount && currentAmount > 0) {
+      const wordsText = numberToArabicWords(currentAmount, currency);
+      setAmountInWords(wordsText);
+      form.setFieldValue('amountInWords', wordsText);
+    }
   };
 
-  const getTotalPayment = () => {
-    return receiptItems.reduce((sum, item) => sum + item.currentPayment, 0);
+  // إضافة تأثير reset للمبلغ مكتوب عند تفريغ النموذج
+  const handleFormReset = () => {
+    form.resetFields();
+    setAmountInWords('');
+    setSelectedCurrency('EGP');
+    // إعادة توليد رقم القيد والسند عند التفريغ
+    const newEntry = generateEntryNumber();
+    const newVoucher = generateVoucherNumber();
+    setAutoEntryNumber(newEntry);
+    setAutoVoucherNumber(newVoucher);
+    form.setFieldValue('entryNumber', newEntry);
+    form.setFieldValue('voucherNumber', newVoucher);
   };
 
-  const handleSave = async () => {
-    try {
-      setLoading(true);
-      const values = await form.validateFields();
-      
-      const totalPayment = getTotalPayment();
-      if (totalPayment === 0) {
-        message.error('يجب إدخال مبلغ الدفع');
-        return;
-      }
 
-      // هنا يمكن إضافة منطق حفظ البيانات
-      console.log('Receipt Data:', {
+const handleFormSubmit = async (values: ReceiptVoucherForm) => {
+  try {
+    // تحويل الحقول من نوع Dayjs إلى نصوص أو null
+    const safeDate = values.date ? (values.date as Dayjs).toISOString() : null;
+    const safeCheckTransferDate = values.checkTransferDate ? (values.checkTransferDate as Dayjs).toISOString() : null;
+    const safeDateRange = Array.isArray(values.dateRange) && values.dateRange.length === 2
+      ? [
+          values.dateRange[0] ? (values.dateRange[0] as Dayjs).toISOString() : null,
+          values.dateRange[1] ? (values.dateRange[1] as Dayjs).toISOString() : null
+        ]
+      : null;
+    // إزالة undefined من جميع الحقول (تحويلها إلى null)
+    const cleanValues = Object.fromEntries(
+      Object.entries({
         ...values,
-        customer: selectedCustomer,
-        items: receiptItems.filter(item => item.currentPayment > 0),
-        totalAmount: totalPayment
-      });
+        date: safeDate,
+        checkTransferDate: safeCheckTransferDate,
+        dateRange: safeDateRange,
+        createdAt: new Date().toISOString(),
+        attachments: fileList.map(f => ({ name: f.name, url: f.url || '', status: f.status })),
+      }).map(([k, v]) => [k, v === undefined ? null : v])
+    );
+    const dataToSave = cleanValues;
+    // إضافة السند إلى مجموعة receiptVouchers
+    await addDoc(collection(db, 'receiptVouchers'), dataToSave);
+    // رسالة نجاح
+    Modal.success({
+      title: 'تمت الإضافة بنجاح',
+      content: 'تم حفظ سند القبض في قاعدة البيانات.',
+    });
+    handleFormReset();
+  } catch (error) {
+    Modal.error({
+      title: 'خطأ في الإضافة',
+      content: 'حدث خطأ أثناء حفظ السند. حاول مرة أخرى.',
+    });
+    console.error('Firebase add error:', error);
+  }
+};
 
-      message.success('تم حفظ سند القبض بنجاح');
-      
-      // إعادة تعيين النموذج
-      form.resetFields();
-      setSelectedCustomer(null);
-      setReceiptItems([]);
-      
-    } catch (error) {
-      message.error('خطأ في حفظ البيانات');
-    } finally {
-      setLoading(false);
+  const handleGetLastNumber = () => {
+    // Logic to get last voucher number
+    console.log('Getting last voucher number...');
+  };
+
+  const handleFileChange = ({ fileList: newFileList, file, event }: { fileList: UploadFile[]; file: unknown; event: unknown }) => {
+    console.log('=== handleFileChange CALLED ===');
+    console.log({ newFileList, file, event });
+    try {
+      setFileList(newFileList);
+    } catch (err) {
+      // طباعة الخطأ في الكونسول
+      console.error('File upload error:', err, { file, event, newFileList });
     }
   };
 
-  const handlePrint = () => {
-    message.info('سيتم إضافة وظيفة الطباعة قريباً');
+  // طباعة في الكونسول عند بداية beforeUpload
+  const handleBeforeUpload = (file: unknown, fileList: unknown) => {
+    console.log('=== beforeUpload CALLED ===');
+    console.log({ file, fileList });
+    // تجربة طباعة window وdocument للتأكد من أن الكود يعمل في المتصفح
+    if (typeof window !== 'undefined') {
+      console.log('window موجود');
+    } else {
+      console.warn('window غير موجود');
+    }
+    if (typeof document !== 'undefined') {
+      console.log('document موجود');
+    } else {
+      console.warn('document غير موجود');
+    }
+    return false;
   };
+
+  const currencyOptions = [
+    { value: 'EGP', label: 'جنيه مصري', symbol: '£', color: '#16a085' },
+    { value: 'USD', label: 'دولار أمريكي', symbol: '$', color: '#27ae60' },
+    { value: 'EUR', label: 'يورو', symbol: '€', color: '#3498db' },
+    { value: 'SAR', label: 'ريال سعودي', symbol: '﷼', color: '#8e44ad' }
+  ];
+
+  // قائمة الفروع الحقيقية
+  const [branchOptions, setBranchOptions] = useState<{ value: string; label: string }[]>([]);
+  useEffect(() => {
+    async function loadBranches() {
+      try {
+        const branches: Branch[] = await fetchBranches();
+        setBranchOptions(
+          branches.map((b) => ({ value: b.id || b.code, label: b.name }))
+        );
+      } catch (err) {
+        setBranchOptions([]);
+      }
+    }
+    loadBranches();
+  }, []);
+
+  const receivedFromOptions = [
+    { value: 'customer1', label: 'عميل 1' },
+    { value: 'customer2', label: 'عميل 2' },
+    { value: 'supplier1', label: 'مورد 1' },
+    { value: 'employee1', label: 'موظف 1' }
+  ];
+
+  const accountOptions = [
+
+    { value: 'acc3', label: 'حساب العملاء' },
+    { value: 'acc4', label: 'حساب الموردين' }
+  ];
+
+  const paymentMethodOptions = [
+    { value: 'cash', label: 'نقدي' },
+    { value: 'network', label: 'شبكة' },
+    { value: 'transfer', label: 'تحويل بنكي' }
+  ];
+
+  // خيارات البنوك من قاعدة البيانات
+  const [bankOptions, setBankOptions] = useState<{ value: string; label: string }[]>([]);
+  useEffect(() => {
+    async function loadBanks() {
+      try {
+        const banks: BankAccount[] = await fetchBankAccounts();
+        setBankOptions(
+          banks.map((b) => ({ value: b.id || b.arabicName, label: b.arabicName }))
+        );
+      } catch (err) {
+        setBankOptions([]);
+      }
+    }
+    loadBanks();
+  }, []);
+
+  // Custom style for larger and clearer controls
+  const largeControlStyle = {
+    height: 48,
+    fontSize: 18,
+    borderRadius: 8,
+    padding: '8px 16px',
+    boxShadow: '0 1px 6px rgba(0,0,0,0.07)',
+    background: '#fff',
+    border: '1.5px solid #d9d9d9',
+    transition: 'border-color 0.3s',
+  };
+
+  // Custom style for label font size
+  const labelStyle = { fontSize: 18, fontWeight: 500 };
+  // Handle debit account change
+  const handleDebitAccountChange = (value: string) => {
+    setSelectedDebitAccount(value);
+    form.setFieldValue('debitAccount', value);
+    // Clear account number and name when debit account changes
+    form.setFieldsValue({ accountNumber: '', accountName: '' });
+  };
+
+  // Handle account name button click
+  const handleAccountNameButtonClick = () => {
+    if (selectedDebitAccount === 'acc3') {
+      // حساب العملاء
+      setShowCustomerModal(true);
+    } else if (selectedDebitAccount === 'acc4') {
+      // حساب الموردين
+      setShowSupplierModal(true);
+    }
+  };
+
+  // Handle collector number button click
+  const handleCollectorNumberButtonClick = () => {
+    setShowCollectorModal(true);
+  };
+
+
+  // Get today's date using dayjs
+  const today = dayjs();
+
+  // جلب السنة المالية الحالية من السياق (ضع الاستيراد في الأعلى)
+  // import { useFinancialYear } from "@/hooks/useFinancialYear"; (تم نقله للأعلى)
+  // احسب الفترة المحاسبية بناءً على السنة المالية المختارة
+
+  const { currentFinancialYear } = useFinancialYear();
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+  useEffect(() => {
+    if (currentFinancialYear) {
+      const start = dayjs(currentFinancialYear.startDate);
+      const end = dayjs(currentFinancialYear.endDate);
+      setDateRange([start, end]);
+      form.setFieldValue('dateRange', [start, end]);
+    }
+  }, [currentFinancialYear, form]);
+  // عند تحميل الصفحة، عيّن رقم القيد والسند تلقائياً
+  useEffect(() => {
+    form.setFieldValue('entryNumber', autoEntryNumber);
+    form.setFieldValue('voucherNumber', autoVoucherNumber);
+  }, [autoEntryNumber, autoVoucherNumber, form]);
+
+  // Ensure payment method is always in sync for conditional rendering
+  useEffect(() => {
+    setSelectedPaymentMethod(form.getFieldValue('paymentMethod') || '');
+  }, [form]);
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen" dir="rtl">
-      {/* Header */}
-      <div className="bg-white p-4 rounded-lg shadow-sm mb-6">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-purple-100 rounded-lg">
-            <Receipt className="h-6 w-6 text-purple-600" />
-          </div>
-          <div>
-            <Title level={2} className="!mb-0">سند قبض</Title>
-            <Text type="secondary">تسجيل سندات القبض من العملاء</Text>
-          </div>
+    <>
+      <div style={{ padding: '24px' }}>
+      {/* Page Header */}
+      <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+        <div className="flex items-center">
+          <MoneyCollectOutlined className="text-2xl text-blue-600 ml-3" />
+          <h1 className="text-2xl font-bold text-gray-800">إضافة سند جديد</h1>
         </div>
+        <p className="text-gray-600 mt-2">قم بإضافة سند قبض جديد إلى النظام</p>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 to-blue-500"></div>
       </div>
 
+      {/* Breadcrumb Navigation */}
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "إدارة المبيعات", to: "/management/sales" },
-          { label: "سند قبض" }
+          { label: "ادراة المبيعات", to: "/management/sales" },
+          { label: "إضافة سند جديد" }
         ]}
       />
 
-      <Row gutter={[16, 16]} className="mt-6">
-        {/* معلومات السند */}
-        <Col span={24}>
-          <Card title="معلومات سند القبض" className="shadow-sm">
-            <Form form={form} layout="vertical">
-              <Row gutter={[16, 16]}>
-                <Col xs={24} sm={12} md={8}>
-                  <Form.Item
-                    label="رقم السند"
-                    name="receiptNumber"
-                    rules={[{ required: true, message: 'رقم السند مطلوب' }]}
-                  >
-                    <Input 
-                      placeholder="سيتم إنشاؤه تلقائياً"
-                      prefix={<FileTextOutlined />}
-                      disabled
-                    />
-                  </Form.Item>
-                </Col>
-                
-                <Col xs={24} sm={12} md={8}>
-                  <Form.Item
-                    label="تاريخ السند"
-                    name="receiptDate"
-                    rules={[{ required: true, message: 'تاريخ السند مطلوب' }]}
-                    initialValue={dayjs()}
-                  >
-                    <DatePicker 
-                      style={{ width: '100%' }} 
-                      format="DD/MM/YYYY"
-                    />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12} md={8}>
-                  <Form.Item
-                    label="طريقة الدفع"
-                    name="paymentMethod"
-                    rules={[{ required: true, message: 'طريقة الدفع مطلوبة' }]}
-                  >
-                    <Select placeholder="اختر طريقة الدفع">
-                      {paymentMethods.map(method => (
-                        <Option key={method.value} value={method.value}>
-                          <Space>
-                            {method.icon}
-                            {method.label}
-                          </Space>
-                        </Option>
-                      ))}
-                    </Select>
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12} md={8}>
-                  <Form.Item label="العميل" required>
-                    <Space.Compact style={{ width: '100%' }}>
-                      <Input
-                        value={selectedCustomer?.name || ''}
-                        placeholder="اختر العميل"
-                        readOnly
-                        prefix={<UserOutlined />}
-                      />
-                      <Button
-                        type="primary"
-                        icon={<SearchOutlined />}
-                        onClick={() => setCustomerModalVisible(true)}
-                      >
-                        اختيار
-                      </Button>
-                    </Space.Compact>
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12} md={8}>
-                  <Form.Item
-                    label="رقم المرجع"
-                    name="referenceNumber"
-                  >
-                    <Input placeholder="رقم مرجعي اختياري" />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12} md={8}>
-                  <Form.Item
-                    label="رقم الحساب البنكي"
-                    name="bankAccount"
-                  >
-                    <Input placeholder="رقم الحساب (في حالة التحويل البنكي)" />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24}>
-                  <Form.Item
-                    label="ملاحظات"
-                    name="notes"
-                  >
-                    <TextArea rows={3} placeholder="ملاحظات إضافية..." />
-                  </Form.Item>
-                </Col>
-              </Row>
-            </Form>
-          </Card>
-        </Col>
-
-        {/* معلومات العميل */}
-        {selectedCustomer && (
-          <Col span={24}>
-            <Card title="معلومات العميل" className="shadow-sm">
-              <Descriptions column={{ xs: 1, sm: 2, md: 4 }}>
-                <Descriptions.Item label="كود العميل">
-                  <Tag color="blue">{selectedCustomer.code}</Tag>
-                </Descriptions.Item>
-                <Descriptions.Item label="اسم العميل">
-                  {selectedCustomer.name}
-                </Descriptions.Item>
-                <Descriptions.Item label="رقم الهاتف">
-                  {selectedCustomer.phone}
-                </Descriptions.Item>
-                <Descriptions.Item label="إجمالي المستحق">
-                  <Text type="danger" strong>
-                    {selectedCustomer.balance.toLocaleString()} ج.م
-                  </Text>
-                </Descriptions.Item>
-              </Descriptions>
-            </Card>
-          </Col>
-        )}
-
-        {/* الفواتير المستحقة */}
-        {receiptItems.length > 0 && (
-          <Col span={24}>
-            <Card 
-              title="الفواتير المستحقة" 
-              className="shadow-sm"
-              extra={
-                <Tag color="orange">
-                  إجمالي المحدد: {getTotalPayment().toLocaleString()} ج.م
-                </Tag>
-              }
-            >
-              <Table
-                columns={columns}
-                dataSource={receiptItems}
-                pagination={false}
-                scroll={{ x: 800 }}
-                summary={() => (
-                  <Table.Summary.Row style={{ backgroundColor: '#f5f5f5' }}>
-                    <Table.Summary.Cell index={0} colSpan={5}>
-                      <Text strong>الإجمالي</Text>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={1}>
-                      <Text strong>{getTotalPayment().toLocaleString()} ج.م</Text>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={2}>
-                      <Text strong>
-                        {receiptItems.reduce((sum, item) => 
-                          sum + (item.remainingAmount - item.currentPayment), 0
-                        ).toLocaleString()} ج.م
-                      </Text>
-                    </Table.Summary.Cell>
-                  </Table.Summary.Row>
-                )}
-              />
-            </Card>
-          </Col>
-        )}
-
-        {/* أزرار الحفظ والطباعة */}
-        <Col span={24}>
-          <Card className="shadow-sm">
-            <div className="flex justify-end gap-4">
-              <Button size="large" onClick={() => window.history.back()}>
-                إلغاء
-              </Button>
-              <Button 
-                type="default" 
-                size="large" 
-                icon={<PrinterOutlined />}
-                onClick={handlePrint}
-                disabled={!selectedCustomer || getTotalPayment() === 0}
+      <Card style={{ width: '100%' }}>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleFormSubmit}
+          initialValues={{
+            exchangeRate: 1,
+            currency: 'SAR',
+            date: today
+          }}
+        >
+          {/* الصف الأول: الفترة المحاسبية، رقم القيد، رقم السند */}
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item
+                label={<span style={labelStyle}>الفترة المحاسبية</span>}
+                name="dateRange"
+                rules={[{ required: true, message: 'يرجى اختيار الفترة المحاسبية' }]}
               >
-                طباعة
-              </Button>
-              <Button 
-                type="primary" 
-                size="large" 
-                icon={<SaveOutlined />}
-                onClick={handleSave}
-                loading={loading}
-                disabled={!selectedCustomer || getTotalPayment() === 0}
+                <RangePicker
+                  style={{ width: '100%', ...largeControlStyle }}
+                  placeholder={['من تاريخ', 'إلى تاريخ']}
+                  size="large"
+                  value={dateRange}
+                  onChange={(range) => setDateRange(range)}
+                  disabled
+                />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item
+                label={<span style={labelStyle}>رقم القيد</span>}
+                name="entryNumber"
+                rules={[{ required: true, message: 'يرجى إدخال رقم القيد' }]}
               >
-                حفظ السند
-              </Button>
-            </div>
-          </Card>
-        </Col>
-      </Row>
+                <Input
+                  placeholder="رقم القيد"
+                  style={{ ...largeControlStyle, background: '#f3f4f6', color: '#64748b', cursor: 'not-allowed' }}
+                  size="large"
+                  readOnly
+                  value={autoEntryNumber}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={5}>
+              <Form.Item
+                label={<span style={labelStyle}>رقم السند</span>}
+                name="voucherNumber"
+                rules={[{ required: true, message: 'يرجى إدخال رقم السند' }]}
+              >
+                <Input
+                  placeholder="رقم السند"
+                  style={{ ...largeControlStyle, background: '#f3f4f6', color: '#64748b', cursor: 'not-allowed' }}
+                  size="large"
+                  readOnly
+                  value={autoVoucherNumber}
+                />
+              </Form.Item>
+            </Col>
+                        <Col span={4}>
+              <Form.Item
+                label={<span style={labelStyle}>الرقم الدفتري</span>}
+                name="bookNumber"
+              >
+                <Input placeholder="الرقم الدفتري" style={largeControlStyle} size="large" />
+              </Form.Item>
+            </Col>
+                        <Col span={1}>
+              <Form.Item label={<span style={labelStyle}> </span>}>
+                <Button 
+                  type="primary" 
+                  icon={<ReloadOutlined />}
+                  onClick={handleGetLastNumber}
+                  style={{ width: '100%', height: 48, fontSize: 18, borderRadius: 8 }}
+                  size="large"
+                >
+             
+                </Button>
+              </Form.Item>
+            </Col>
+          </Row>
 
-      {/* مودال اختيار العميل */}
-      <Modal
-        title="اختيار العميل"
-        open={customerModalVisible}
-        onCancel={() => setCustomerModalVisible(false)}
-        footer={null}
-        width={800}
+          {/* الصف الثاني: التاريخ، العملة، التعادل، المبلغ، المبلغ مكتوب، الفرع */}
+<Row gutter={16}>
+  <Col span={24}>
+    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end' }}>
+      <Form.Item
+        label={<span style={labelStyle}>التاريخ</span>}
+        name="date"
+        rules={[{ required: true, message: 'يرجى اختيار التاريخ' }]}
+        style={{ flex: 1 }}
       >
+        <DatePicker style={{ width: '100%', ...largeControlStyle }} placeholder="التاريخ" size="large" />
+      </Form.Item>
+      <Form.Item
+        label={<span style={labelStyle}>العملة</span>}
+        name="currency"
+        rules={[{ required: true, message: 'يرجى اختيار العملة' }]}
+        style={{ flex: 1 }}
+      >
+        <Select
+          placeholder="العملة"
+          style={largeControlStyle}
+          size="large"
+          dropdownStyle={{ fontSize: 18 }}
+          className={styles.noAntBorder}
+          onChange={handleCurrencyChange}
+        >
+          {currencyOptions.map(option => (
+            <Option key={option.value} value={option.value}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ 
+                  color: option.color, 
+                  fontWeight: 'bold',
+                  fontSize: 16,
+                  minWidth: 20,
+                  textAlign: 'center'
+                }}>
+                  {option.symbol}
+                </span>
+                {option.label}
+              </span>
+            </Option>
+          ))}
+        </Select>
+      </Form.Item>
+      <Form.Item
+        label={<span style={labelStyle}>التعادل</span>}
+        name="exchangeRate"
+        rules={[{ required: true, message: 'يرجى إدخال التعادل' }]}
+        style={{ flex: 1 }}
+      >
+        <InputNumber
+          style={{ width: '100%', ...largeControlStyle }}
+          placeholder="التعادل"
+          min={0}
+          step={0.01}
+          size="large"
+        />
+      </Form.Item>
+    </div>
+  </Col>
+</Row>
+<Row gutter={16} style={{ marginTop: 8 }}>
+  <Col span={24}>
+    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end' }}>
+      <Form.Item
+        label={
+          <span style={labelStyle}>
+            المبلغ
+            {selectedCurrency && (
+              <span style={{ 
+                marginRight: 8, 
+                color: currencyOptions.find(c => c.value === selectedCurrency)?.color || '#3b82f6',
+                fontSize: 16 
+              }}>
+                ({currencyOptions.find(c => c.value === selectedCurrency)?.symbol})
+              </span>
+            )}
+          </span>
+        }
+        name="amount"
+        rules={[{ required: true, message: 'يرجى إدخال المبلغ' }]}
+        style={{ flex: 1 }}
+      >
+        <InputNumber
+          style={{ 
+            width: '100%', 
+            ...largeControlStyle,
+            borderColor: amountInWords 
+              ? currencyOptions.find(c => c.value === selectedCurrency)?.color || '#4caf50' 
+              : '#d9d9d9',
+            boxShadow: amountInWords 
+              ? `0 2px 8px ${currencyOptions.find(c => c.value === selectedCurrency)?.color || '#4caf50'}33` 
+              : '0 1px 6px rgba(0,0,0,0.07)'
+          }}
+          placeholder="المبلغ"
+          min={0}
+          step={0.01}
+          size="large"
+          onChange={handleAmountChange}
+          formatter={(value) => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+          parser={(value) => Number(value!.replace(/\$\s?|(,*)/g, ''))}
+        />
+      </Form.Item>
+      <Form.Item
+        label={
+          <span style={labelStyle}>
+            المبلغ مكتوب
+            {selectedCurrency && (
+              <span style={{ 
+                marginRight: 8, 
+                color: currencyOptions.find(c => c.value === selectedCurrency)?.color || '#3b82f6',
+                fontSize: 16 
+              }}>
+                ({currencyOptions.find(c => c.value === selectedCurrency)?.symbol})
+              </span>
+            )}
+          </span>
+        }
+        name="amountInWords"
+        style={{ flex: 1 }}
+      >
+        <Input.TextArea 
+          placeholder="سيظهر المبلغ مكتوباً هنا تلقائياً عند إدخال المبلغ والعملة" 
+          readOnly 
+          value={amountInWords}
+          className={amountInWords ? styles.amountHighlight : styles.amountInWords}
+          style={{
+            backgroundColor: amountInWords ? '#f0f9ff' : '#f8f9fa',
+            color: amountInWords ? '#1e40af' : '#6b7280',
+            fontWeight: amountInWords ? 'bold' : 'normal',
+            fontSize: amountInWords ? 17 : 16,
+            minHeight: 48,
+            resize: 'none',
+            border: amountInWords 
+              ? `2px solid ${currencyOptions.find(c => c.value === selectedCurrency)?.color || '#3b82f6'}` 
+              : '2px solid #e5e7eb',
+            boxShadow: amountInWords 
+              ? `0 4px 12px ${currencyOptions.find(c => c.value === selectedCurrency)?.color || '#3b82f6'}25` 
+              : '0 2px 4px rgba(0, 0, 0, 0.05)',
+            transition: 'all 0.4s ease',
+            borderRadius: 8,
+            padding: '12px 16px',
+            fontFamily: 'Tajawal, sans-serif',
+            textAlign: 'center' as const,
+            cursor: 'default'
+          }} 
+          size="large"
+          autoSize={{ minRows: 1, maxRows: 4 }}
+        />
+      </Form.Item>
+      <Form.Item
+        label={<span style={labelStyle}>الفرع</span>}
+        name="branch"
+        rules={[{ required: true, message: 'يرجى اختيار الفرع' }]}
+        style={{ flex: 1 }}
+      >
+        <Select
+          showSearch
+          placeholder="الفرع"
+          style={largeControlStyle}
+          size="large"
+          dropdownStyle={{ fontSize: 18 }}
+          className={styles.noAntBorder}
+          optionFilterProp="label"
+          filterOption={(input, option) =>
+            (option?.label ?? '').toString().toLowerCase().includes(input.toLowerCase())
+          }
+        >
+          {branchOptions.map(option => (
+            <Option key={option.value} value={option.value} label={option.label}>
+              {option.label}
+            </Option>
+          ))}
+        </Select>
+      </Form.Item>
+    </div>
+  </Col>
+</Row>
+
+          {/* الصف الثالث: استلمنا من */}
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item
+                label={<span style={labelStyle}>استلمنا من</span>}
+                name="receivedFrom"
+                rules={[{ required: true, message: 'يرجى إدخال اسم من استلمنا منه' }]}
+              >
+                <Input
+                  placeholder="استلمنا من"
+                  style={largeControlStyle}
+                  size="large"
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* الصف الرابع: الحساب الدائن، رقم الحساب، اسم الحساب، مركز التكلفة، رقم المركز */}
+          <Row gutter={16}>
+            <Col span={5}>
+              <Form.Item
+                label={<span style={labelStyle}>الحساب الدائن</span>}
+                name="debitAccount"
+                rules={[{ required: true, message: 'يرجى اختيار الحساب الدائن' }]}
+              >
+                <Select
+                  placeholder="الحساب الدائن"
+                  showSearch
+                  style={largeControlStyle}
+                  size="large"
+                  dropdownStyle={{ fontSize: 18 }}
+                  className={styles.noAntBorder}
+                  onChange={handleDebitAccountChange}
+                  value={selectedDebitAccount || form.getFieldValue('debitAccount')}
+                >
+                  {accountOptions.map(option => (
+                    <Option key={option.value} value={option.value}>
+                      {option.label}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={4}>
+              <Form.Item
+                label={<span style={labelStyle}>رقم </span>}
+                name="accountNumber"
+              >
+                <Input
+                 placeholder="رقم الحساب" 
+                 style={largeControlStyle} 
+                 size="large"
+                                   suffix={
+                    <button
+                      type="button"
+                      style={{
+                        borderRadius: 6,
+                       
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: 32,
+                        width: 32,
+                        border: 'none',
+                        background: 'transparent'
+                      }}
+                      title="شاشة الحسابات"
+                      onClick={handleAccountNameButtonClick}
+                    >
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 4v6h6V4H4zm10 0v6h6V4h-6zM4 14v6h6v-6H4zm10 0v6h6v-6h-6z" stroke="currentColor" strokeWidth="2"/>
+                      </svg>
+                    </button>
+                  }
+                 />
+              </Form.Item>
+            </Col>
+            <Col span={5}>
+              <Form.Item
+                label={<span style={labelStyle}>اسم الحساب</span>}
+                name="accountName"
+              >
+                <Input
+                  placeholder="اسم الحساب"
+                  style={largeControlStyle}
+                  size="large"
+                  suffix={
+                    <button
+                      type="button"
+                      style={{
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: 32,
+                        width: 32,
+                        border: 'none',
+                        background: 'transparent',
+                        padding: 0
+                      }}
+                      title="بحث عميل/مورد"
+                      onClick={handleAccountNameButtonClick}
+
+                    >
+                      <GiMagicBroom size={26} color="#8e44ad" />
+                    </button>
+                  }
+                />
+              </Form.Item>
+            </Col>
+      {/* مودال بحث عميل */}
+      <Modal
+        open={showCustomerModal}
+        onCancel={() => setShowCustomerModal(false)}
+        footer={null}
+        title="بحث عن عميل"
+        width={600}
+      >
+        <Input
+          placeholder="بحث بالاسم أو رقم الحساب..."
+          value={customerSearch}
+          onChange={e => setCustomerSearch(e.target.value)}
+          style={{ marginBottom: 12, fontSize: 17, borderRadius: 8, padding: '8px 12px' }}
+          allowClear
+        />
         <Table
-          columns={customerColumns}
-          dataSource={customersData}
-          rowKey="id"
-          pagination={{ pageSize: 5 }}
+          dataSource={customerAccounts.filter(acc => {
+            const search = customerSearch.trim();
+            return (
+              acc.code.includes(search) ||
+              acc.nameAr.includes(search) ||
+              (acc.mobile && acc.mobile.includes(search)) ||
+              (acc.taxNumber && acc.taxNumber.includes(search))
+            );
+          })}
+          columns={[
+            { title: 'رقم الحساب', dataIndex: 'code', key: 'code', width: 120 },
+            { title: 'اسم الحساب', dataIndex: 'nameAr', key: 'nameAr' },
+            { title: 'جوال العميل', dataIndex: 'mobile', key: 'mobile', width: 140, render: (text: string) => text || '-' },
+            { title: 'الرقم الضريبي', dataIndex: 'taxNumber', key: 'taxNumber', width: 160, render: (text: string) => text || '-' }
+          ]}
+          rowKey="code"
+          pagination={{ pageSize: 8 }}
           size="small"
+          bordered
+          onRow={record => ({
+            onClick: () => {
+              form.setFieldsValue({ accountNumber: record.code, accountName: record.nameAr });
+              setShowCustomerModal(false);
+            },
+            style: { cursor: 'pointer' }
+          })}
         />
       </Modal>
+      {/* مودال بحث مورد */}
+      <Modal
+        open={showSupplierModal}
+        onCancel={() => setShowSupplierModal(false)}
+        footer={null}
+        title="بحث عن مورد"
+        width={600}
+      >
+        <Input
+          placeholder="بحث بالاسم أو رقم الحساب..."
+          value={supplierSearch}
+          onChange={e => setSupplierSearch(e.target.value)}
+          style={{ marginBottom: 12, fontSize: 17, borderRadius: 8, padding: '8px 12px' }}
+          allowClear
+        />
+        <Table
+          dataSource={supplierAccounts.filter(acc =>
+            acc.code.includes(supplierSearch) || acc.nameAr.includes(supplierSearch) || (acc.mobile && acc.mobile.includes(supplierSearch))
+          )}
+          columns={[
+            { title: 'رقم الحساب', dataIndex: 'code', key: 'code', width: 120 },
+            { title: 'اسم الحساب', dataIndex: 'nameAr', key: 'nameAr' },
+            { title: 'جوال المورد', dataIndex: 'mobile', key: 'mobile', width: 140, render: (text: string) => text || '-' }
+          ]}
+          rowKey="code"
+          pagination={{ pageSize: 8 }}
+          size="small"
+          bordered
+          onRow={record => ({
+            onClick: () => {
+              form.setFieldsValue({ accountNumber: record.code, accountName: record.nameAr });
+              setShowSupplierModal(false);
+            },
+            style: { cursor: 'pointer' }
+          })}
+        />
+      </Modal>
+                        <Col span={5}>
+              <Form.Item
+                label={<span style={labelStyle}>رقم </span>}
+                name="costCenterNumber"
+              >
+                <Input placeholder="رقم المركز"
+                 style={largeControlStyle} 
+                 size="large"
+                                                    suffix={
+                    <button
+                      type="button"
+                      style={{
+                        borderRadius: 6,
+                       
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: 32,
+                        width: 32,
+                        border: 'none',
+                        background: 'transparent'
+                      }}
+                      title="شاشة الحسابات"
+                    >
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 4v6h6V4H4zm10 0v6h6V4h-6zM4 14v6h6v-6H4zm10 0v6h6v-6h-6z" stroke="currentColor" strokeWidth="2"/>
+                      </svg>
+                    </button>
+                  }
+                 />
+              </Form.Item>
+            </Col>
+            <Col span={5}>
+              <Form.Item
+                label={<span style={labelStyle}>مركز التكلفة</span>}
+                name="costCenter"
+              >
+                <Input placeholder="مركز التكلفة" 
+                style={largeControlStyle} 
+                size="large"
+                                  suffix={
+                    <button
+                      type="button"
+                      style={{
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: 32,
+                        width: 32,
+                        border: 'none',
+                        background: 'transparent',
+                        padding: 0
+                      }}
+                      title="بحث ذكي (عصا سحرية)"
+                    >
+                      <GiMagicBroom size={26} color="#8e44ad" />
+                    </button>
+                  }
+                />
+              </Form.Item>
+            </Col>
+
+          </Row>
+
+          {/* الصف الخامس: رقم المحصل، المحصل، طريقة الدفع */}
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item
+                label={<span style={labelStyle}>رقم المحصل</span>}
+                name="collectorNumber"
+              >
+                <Input placeholder="رقم المحصل"
+                 style={largeControlStyle}
+                 size="large"
+                 suffix={
+                    <button
+                      type="button"
+                      style={{
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: 32,
+                        width: 32,
+                        border: 'none',
+                        background: 'transparent'
+                      }}
+                      title="بحث عن محصل"
+                      onClick={handleCollectorNumberButtonClick}
+                    >
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 4v6h6V4H4zm10 0v6h6V4h-6zM4 14v6h6v-6H4zm10 0v6h6v-6h-6z" stroke="currentColor" strokeWidth="2"/>
+                      </svg>
+                    </button>
+                  }
+                />
+              </Form.Item>
+            </Col>
+      {/* مودال بحث محصل */}
+      <Modal
+        open={showCollectorModal}
+        onCancel={() => setShowCollectorModal(false)}
+        footer={null}
+        title="بحث عن محصل"
+        width={600}
+      >
+        <Input
+          placeholder="بحث بالاسم أو رقم المحصل..."
+          value={collectorSearch}
+          onChange={e => setCollectorSearch(e.target.value)}
+          style={{ marginBottom: 12, fontSize: 17, borderRadius: 8, padding: '8px 12px' }}
+          allowClear
+        />
+        <Table
+          dataSource={collectorAccounts.filter(acc =>
+            acc.number.includes(collectorSearch) || acc.name.includes(collectorSearch) || (acc.mobile && acc.mobile.includes(collectorSearch))
+          )}
+          columns={[
+            { title: 'رقم المحصل', dataIndex: 'number', key: 'number', width: 140 },
+            { title: 'اسم المحصل', dataIndex: 'name', key: 'name' },
+            { title: 'معرف داخلي', dataIndex: 'id', key: 'id', width: 180, render: () => null, hidden: true },
+            { title: 'جوال المحصل', dataIndex: 'mobile', key: 'mobile', width: 140, render: (text: string) => text || '-' }
+          ].filter(col => !col.hidden)}
+          rowKey="id"
+          pagination={{ pageSize: 8 }}
+          size="small"
+          bordered
+          onRow={record => ({
+            onClick: () => {
+              form.setFieldsValue({ collectorNumber: record.number, collector: record.name });
+              setShowCollectorModal(false);
+            },
+            style: { cursor: 'pointer' }
+          })}
+        />
+      </Modal>
+            <Col span={8}>
+              <Form.Item
+                label={<span style={labelStyle}>المحصل</span>}
+                name="collector"
+              >
+                <Input placeholder="المحصل" 
+                style={largeControlStyle} 
+                size="large" 
+        
+                                  suffix={
+                    <button
+                      type="button"
+                      style={{
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: 32,
+                        width: 32,
+                        border: 'none',
+                        background: 'transparent',
+                        padding: 0
+                      }}
+                      title="بحث ذكي (عصا سحرية)"
+                      onClick={handleCollectorNumberButtonClick}
+
+                    >
+                      <GiMagicBroom size={26} color="#8e44ad" />
+                    </button>
+                  }
+                />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item
+                label={<span style={labelStyle}>طريقة الدفع</span>}
+                name="paymentMethod"
+                rules={[{ required: true, message: 'يرجى اختيار طريقة الدفع' }]}
+              >
+                <Select
+                  placeholder="طريقة الدفع"
+                  style={largeControlStyle}
+                  size="large"
+                  dropdownStyle={{ fontSize: 18 }}
+                  className={styles.noAntBorder}
+                  value={selectedPaymentMethod || form.getFieldValue('paymentMethod')}
+                  onChange={value => {
+                    setSelectedPaymentMethod(value);
+                    form.setFieldValue('paymentMethod', value);
+                  }}
+                >
+                  {paymentMethodOptions.map(option => (
+                    <Option key={option.value} value={option.value}>
+                      {option.label}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* الصف السادس: الرقم الدفتري، جلب آخر رقم، الصندوق/بنك */}
+          <Row gutter={16}>
+
+            <Col span={8}>
+              <Form.Item
+                label={<span style={labelStyle}>الصندوق/بنك</span>}
+                name="cashboxBank"
+              >
+                <Select
+                  showSearch
+                  placeholder="اختر الصندوق أو البنك"
+                  style={largeControlStyle}
+                  size="large"
+                  dropdownStyle={{ fontSize: 18 }}
+                  className={styles.noAntBorder}
+                  optionFilterProp="label"
+                  filterOption={(input, option) =>
+                    (option?.label ?? '').toString().toLowerCase().includes(input.toLowerCase())
+                  }
+                >
+                  {cashboxBankOptions.map(option => (
+                    <Option key={option.value} value={option.value} label={option.label}>
+                      {option.label}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+
+            <Col span={16}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                <Form.Item
+                  label={<span style={labelStyle}>عنوان المستند</span>}
+                  name="documentTitle"
+                  style={{ flex: 2, marginBottom: 0 }}
+                >
+                  <Input placeholder="عنوان المستند" style={largeControlStyle} size="large" />
+                </Form.Item>
+                <Form.Item
+                  label={<span style={labelStyle}>رفع المستند</span>}
+                  name="documentFile"
+                  valuePropName="fileList"
+                  getValueFromEvent={e => (Array.isArray(e) ? e : e && e.fileList)}
+                  style={{ flex: 1, marginBottom: 0 }}
+                >
+                  <Input
+                    type="file"
+                    style={{ width: '100%', height: 48, fontSize: 16, borderRadius: 8, border: '1.5px solid #d9d9d9', padding: '8px 12px', background: '#fff' }}
+                  />
+                </Form.Item>
+              </div>
+            </Col>
+
+          </Row>
+
+          {/* الصف السابع: رقم الشيك/تحويل، تاريخ الشيك/تحويل، اختيار البنك */}
+          {/* إظهار حقول الشيك/تحويل فقط إذا كانت طريقة الدفع تحويل بنكي */}
+          {selectedPaymentMethod === 'transfer' && (
+            <Row gutter={16}>
+              <Col span={8}>
+                <Form.Item
+                  label={<span style={labelStyle}>رقم الشيك/تحويل</span>}
+                  name="checkTransferNumber"
+                >
+                  <Input placeholder="رقم الشيك/تحويل" style={largeControlStyle} size="large" />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  label={<span style={labelStyle}>تاريخ الشيك/تحويل</span>}
+                  name="checkTransferDate"
+                >
+                  <DatePicker style={{ width: '100%', ...largeControlStyle }} placeholder="تاريخ الشيك/تحويل" size="large" />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  label={<span style={labelStyle}>اختيار البنك</span>}
+                  name="bankSelection"
+                >
+                  <Select placeholder="اختيار البنك" showSearch style={largeControlStyle} size="large" dropdownStyle={{ fontSize: 18 }} className={styles.noAntBorder} optionFilterProp="label" filterOption={(input, option) => (option?.label ?? '').toString().toLowerCase().includes(input.toLowerCase())}>
+                    {bankOptions.map(option => (
+                      <Option key={option.value} value={option.value} label={option.label}>
+                        {option.label}
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+            </Row>
+          )}
+
+          {/* البيان */}
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item
+                label={<span style={labelStyle}>البيان</span>}
+                name="description"
+              >
+                <Input.TextArea rows={3} placeholder="البيان" style={{ fontSize: 18, borderRadius: 8, padding: '12px 16px' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* أزرار الإضافة والتفريغ */}
+          <Row gutter={16} style={{ marginBottom: '24px' }}>
+            <Col span={12}>
+              <Button type="primary" htmlType="submit" style={{ width: '100%', height: 48, fontSize: 18, borderRadius: 8 }} size="large">
+                إضافة
+              </Button>
+            </Col>
+            <Col span={12}>
+              <Button 
+                type="default" 
+                htmlType="button"
+                onClick={handleFormReset}
+                style={{ width: '100%', height: 48, fontSize: 18, borderRadius: 8 }}
+                size="large"
+              >
+                تفريغ
+              </Button>
+            </Col>
+          </Row>
+        </Form>
+
+        <Divider />
+
+      
+      </Card>
     </div>
+    </>
   );
-};
+}
 
 export default ReceiptVoucher;

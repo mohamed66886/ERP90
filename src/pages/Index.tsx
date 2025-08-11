@@ -73,6 +73,7 @@ import SalesRepresentativesPage from "./management/SalesRepresentativesPageFixed
 import EditSalesInvoicePage from "./stores/edit-sales-invoice";
 import EditSalesInvoiceDetailPage from "./stores/edit-sales-invoice-detail";
 import ReceiptVoucher from "./stores/ReceiptVoucher";
+import ReceiptVouchersDirectory from "./stores/ReceiptVouchersDirectory";
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -175,6 +176,7 @@ const Index = () => {
             <Route path="/stores/edit-sales-invoice" element={<EditSalesInvoicePage />} />
             <Route path="/stores/edit-sales-invoice/:id" element={<EditSalesInvoiceDetailPage />} />
             <Route path="/stores/receipt-voucher" element={<ReceiptVoucher />} />
+            <Route path="/stores/receipt-vouchers-directory" element={<ReceiptVouchersDirectory />} />
             <Route path="/business/branches" element={<Branches />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/stores/stock" element={<Stockpage />} />

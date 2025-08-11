@@ -215,12 +215,22 @@ const SalesManagement: React.FC = () => {
       }
     },
     {
-      title: "سند قبض",
-      description: "تسجيل سندات القبض من العملاء",
-      icon: <Receipt className="h-6 w-6" />,
+      title: "إضافة سند جديد",
+      description: "تسجيل سند قبض جديد من العملاء",
+      icon: <Receipt className="h-6 w-6" />, 
       color: "bg-purple-600",
       onClick: () => {
         navigate('/stores/receipt-voucher');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "دليل سندات القبض",
+      description: "عرض جميع سندات القبض المسجلة",
+      icon: <BookOpen className="h-6 w-6" />, 
+      color: "bg-indigo-600",
+      onClick: () => {
+        navigate('/stores/receipt-vouchers-directory');
         window.scrollTo(0, 0);
       }
     },
