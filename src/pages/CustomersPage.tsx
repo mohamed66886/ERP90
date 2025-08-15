@@ -1,34 +1,49 @@
-// ...existing code...
 import * as XLSX from "xlsx";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, orderBy, addDoc, updateDoc, doc, deleteDoc } from "firebase/firestore";
-// ...existing code...
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import Sidebar from "@/components/Sidebar";
-import Header from "@/components/Header";
-import { Card } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/components/ui/use-toast";
-import { ToastAction } from "@/components/ui/toast";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Search, PlusCircle, Loader2, Edit, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { 
+  Card, 
+  Table, 
+  Button, 
+  Input, 
+  Select, 
+  Tag, 
+  Space, 
+  Popconfirm, 
+  Row, 
+  Col, 
+  Spin,
+  Empty,
+  Typography,
+  message,
+  Badge,
+  Form,
+  DatePicker,
+  Layout,
+  Upload,
+  Pagination
+} from 'antd';
+import { 
+  SearchOutlined,
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  UploadOutlined,
+  LeftOutlined,
+  RightOutlined
+} from '@ant-design/icons';
 import { format } from "date-fns";
 import { arSA } from "date-fns/locale";
+                                                                                                                                         
+const { Title, Text } = Typography;
+const { Option } = Select;
+const { Content } = Layout;
 
 // أنواع TypeScript
 interface Customer {
   id: string;
-  nameAr: string;
+  nameAr: string;    
   nameEn: string;
   branch: string;
   commercialReg: string;
@@ -54,16 +69,10 @@ interface Customer {
   docId?: string;
 }
 
-const columns = [
-  { key: "id", label: "رقم العميل", width: "w-24" },
-  { key: "nameAr", label: "الاسم بالعربي", width: "w-48" },
-  { key: "nameEn", label: "الاسم بالإنجليزي", width: "w-48" },
-  { key: "branch", label: "الفرع", width: "w-32" },
-  { key: "commercialReg", label: "السجل التجاري", width: "w-32" },
-  { key: "regDate", label: "تاريخ السجل", width: "w-32" },
-  { key: "businessType", label: "نوع العمل", width: "w-32" },
-  { key: "status", label: "الحالة", width: "w-24" },
-];
+const businessTypes = ["شركة", "مؤسسة", "فرد"];
+const activities = ["مقاولات", "تجارة تجزئة", "صناعة", "خدمات"];
+const cities = ["الرياض", "جدة", "الدمام", "مكة", "الخبر", "الطائف"];
+const statusOptions = ["نشط", "متوقف"] as const;
 
 const today = new Date();
 const todayStr = format(today, "yyyy-MM-dd");
@@ -95,29 +104,9 @@ const initialForm: Customer = {
   taxFileExpiry: ""
 };
 
-const businessTypes = ["شركة", "مؤسسة", "فرد"];
-const activities = ["مقاولات", "تجارة تجزئة", "صناعة", "خدمات"];
-  // ...
-const cities = ["الرياض", "جدة", "الدمام", "مكة", "الخبر", "الطائف"];
-const statusOptions = ["نشط", "متوقف"] as const;
-
-
 const CustomersPage = () => {
-  const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // جلب الفروع من Firestore
   const [branches, setBranches] = useState<string[]>([]);
-  useEffect(() => {
-    const fetchBranches = async () => {
-      try {
-        const snapshot = await getDocs(collection(db, "branches"));
-        setBranches(snapshot.docs.map(doc => (doc.data().name as string)));
-      } catch (err) {
-        setBranches([]);
-      }
-    };
-    fetchBranches();
-  }, []);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [form, setForm] = useState<Customer>(initialForm);
   const [isEditing, setIsEditing] = useState(false);
@@ -129,6 +118,19 @@ const CustomersPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
+  // جلب الفروع من Firestore
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, "branches"));
+        setBranches(snapshot.docs.map(doc => (doc.data().name as string)));
+      } catch (err) {
+        setBranches([]);
+      }
+    };
+    fetchBranches();
+  }, []);
+
   // توزيع العملاء عشوائياً على الفروع
   const handleDistributeBranches = async () => {
     if (customers.length === 0) return;
@@ -141,18 +143,10 @@ const CustomersPage = () => {
         }
       });
       await Promise.all(updates);
-      toast({
-        title: "تم التوزيع",
-        description: "تم توزيع العملاء عشوائياً على الفروع",
-        variant: "default",
-      });
+      message.success("تم توزيع العملاء عشوائياً على الفروع");
       fetchCustomers();
     } catch (err) {
-      toast({
-        title: "خطأ",
-        description: "حدث خطأ أثناء توزيع العملاء",
-        variant: "destructive",
-      });
+      message.error("حدث خطأ أثناء توزيع العملاء");
     } finally {
       setLoading(false);
     }
@@ -160,34 +154,6 @@ const CustomersPage = () => {
 
   // دالة استيراد العملاء من ملف Excel
   const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  // توزيع العملاء عشوائياً على الفروع
-  const handleDistributeBranches = async () => {
-    if (customers.length === 0) return;
-    setLoading(true);
-    try {
-      const updates = customers.map(async (customer) => {
-        const randomBranch = branches[Math.floor(Math.random() * branches.length)];
-        if (customer.docId) {
-          await updateDoc(doc(db, "customers", customer.docId), { branch: randomBranch });
-        }
-      });
-      await Promise.all(updates);
-      toast({
-        title: "تم التوزيع",
-        description: "تم توزيع العملاء عشوائياً على الفروع",
-        variant: "default",
-      });
-      fetchCustomers();
-    } catch (err) {
-      toast({
-        title: "خطأ",
-        description: "حدث خطأ أثناء توزيع العملاء",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
     const file = e.target.files?.[0];
     if (!file) return;
     setLoading(true);
@@ -197,7 +163,6 @@ const CustomersPage = () => {
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: "" });
 
-      // استخراج آخر رقم عميل حالي
       let maxNum = customers
         .map(c => {
           const match = /^c-(\d{4})$/.exec(c.id);
@@ -207,7 +172,6 @@ const CustomersPage = () => {
 
       let addedCount = 0;
       for (const row of rows) {
-        // تحويل رؤوس الأعمدة إلى حقول Customer
         const customer: Partial<Customer> = {
           nameAr: row["اسم العميل"] || row["اسم العميل "] || row["الاسم بالعربي"] || "",
           branch: row["الفرع"] || "",
@@ -232,12 +196,10 @@ const CustomersPage = () => {
           taxFileNumber: row["رقم الملف الضريبي"] || "",
           taxFileExpiry: row["تاريخ انتهاء الملف الضريبي"] || "",
         };
-        // الاسم بالإنجليزي تلقائي
         customer.nameEn = arabicToEnglish(customer.nameAr || "");
-        // رقم العميل تلقائي
         maxNum++;
         customer.id = `c-${maxNum.toString().padStart(4, "0")}`;
-        // إضافة العميل
+        
         await addDoc(collection(db, "customers"), {
           ...initialForm,
           ...customer,
@@ -245,25 +207,17 @@ const CustomersPage = () => {
         });
         addedCount++;
       }
-      toast({
-        title: "تم الاستيراد",
-        description: `تم استيراد ${addedCount} عميل بنجاح`,
-        variant: "default",
-      });
+      message.success(`تم استيراد ${addedCount} عميل بنجاح`);
       fetchCustomers();
     } catch (err) {
-      toast({
-        title: "خطأ",
-        description: "حدث خطأ أثناء استيراد الملف",
-        variant: "destructive",
-      });
+      message.error("حدث خطأ أثناء استيراد الملف");
     } finally {
       setLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  // جلب العملاء من Firestore مع memoization
+  // جلب العملاء من Firestore
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     try {
@@ -276,16 +230,11 @@ const CustomersPage = () => {
       setCustomers(data);
     } catch (err) {
       setError("تعذر تحميل العملاء");
-      toast({
-        title: "خطأ",
-        description: "حدث خطأ أثناء جلب بيانات العملاء",
-        variant: "destructive",
-        action: <ToastAction altText="حاول مرة أخرى" onClick={fetchCustomers}>حاول مرة أخرى</ToastAction>,
-      });
+      message.error("حدث خطأ أثناء جلب بيانات العملاء");
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
     fetchCustomers();
@@ -366,18 +315,10 @@ const CustomersPage = () => {
   const handleDelete = async (docId: string) => {
     try {
       await deleteDoc(doc(db, "customers", docId));
-      toast({
-        title: "تم الحذف",
-        description: "تم حذف العميل بنجاح",
-        variant: "default",
-      });
+      message.success("تم حذف العميل بنجاح");
       fetchCustomers();
     } catch (error) {
-      toast({
-        title: "خطأ",
-        description: "حدث خطأ أثناء حذف العميل",
-        variant: "destructive",
-      });
+      message.error("حدث خطأ أثناء حذف العميل");
     }
   };
 
@@ -387,17 +328,10 @@ const CustomersPage = () => {
     
     try {
       if (isEditing && form.docId) {
-        // استبعاد docId من التحديث
         const { docId, ...updateData } = form;
         await updateDoc(doc(db, "customers", form.docId), updateData);
-        toast({
-          title: "تم التحديث",
-          description: "تم تحديث بيانات العميل بنجاح",
-          variant: "default",
-        });
-
+        message.success("تم تحديث بيانات العميل بنجاح");
       } else {
-        // Find the max numeric part of id, ignoring non-matching ids
         const maxNum = customers
           .map(c => {
             const match = /^c-(\d{4})$/.exec(c.id);
@@ -412,21 +346,13 @@ const CustomersPage = () => {
           id: newId,
           createdAt: new Date().toISOString()
         });
-        toast({
-          title: "تم الإضافة",
-          description: "تم إضافة العميل بنجاح",
-          variant: "default",
-        });
+        message.success("تم إضافة العميل بنجاح");
       }
       
       fetchCustomers();
       resetForm();
     } catch (err) {
-      toast({
-        title: "خطأ",
-        description: "حدث خطأ أثناء حفظ البيانات",
-        variant: "destructive",
-      });
+      message.error("حدث خطأ أثناء حفظ البيانات");
     } finally {
       setLoading(false);
     }
@@ -456,460 +382,453 @@ const CustomersPage = () => {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-background rtl" dir="rtl">
-      <div className="flex">
-        <Sidebar />
-        <div className="flex-1 flex flex-col h-screen overflow-y-auto">
-          <Header
-            onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
-            isSidebarCollapsed={sidebarCollapsed}
-            onLogout={() => { /* TODO: implement logout */ }}
+  // Define table columns for Ant Design
+  const tableColumns = [
+    {
+      title: 'رقم العميل',
+      dataIndex: 'id',
+      key: 'id',
+      width: 120,
+    },
+    {
+      title: 'الاسم بالعربي',
+      dataIndex: 'nameAr',
+      key: 'nameAr',
+      render: (text: string) => <Text strong>{text}</Text>,
+    },
+    {
+      title: 'الاسم بالإنجليزي',
+      dataIndex: 'nameEn',
+      key: 'nameEn',
+      render: (text: string) => <Text type="secondary">{text}</Text>,
+    },
+    {
+      title: 'الفرع',
+      dataIndex: 'branch',
+      key: 'branch',
+    },
+    {
+      title: 'السجل التجاري',
+      dataIndex: 'commercialReg',
+      key: 'commercialReg',
+    },
+    {
+      title: 'تاريخ السجل',
+      dataIndex: 'regDate',
+      key: 'regDate',
+      render: (date: string) => formatDate(date),
+    },
+    {
+      title: 'نوع العمل',
+      dataIndex: 'businessType',
+      key: 'businessType',
+    },
+    {
+      title: 'الحالة',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status: string) => (
+        <Tag color={status === "نشط" ? "green" : "red"}>
+          {status}
+        </Tag>
+      ),
+    },
+    {
+      title: 'الإجراءات',
+      key: 'actions',
+      width: 120,
+      render: (_: unknown, record: Customer) => (
+        <Space>
+          <Button
+            type="text"
+            icon={<EditOutlined />}
+            onClick={() => handleEdit(record)}
+            title="تعديل"
           />
-          <main className="flex-1 p-6 lg:p-8">
-            <div className="mb-8">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                <h1 className="text-2xl font-bold font-arabic">إدارة العملاء</h1>
-                <div className="flex items-center gap-2 w-full md:w-auto">
-                  <Button onClick={handleDistributeBranches} variant="secondary" className="gap-2">
-                    توزيع عشوائي على الفروع
-                  </Button>
-                  <div className="relative flex-1 md:w-64">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Popconfirm
+            title="حذف العميل"
+            description="هل أنت متأكد من حذف هذا العميل؟"
+            onConfirm={() => record.docId && handleDelete(record.docId)}
+            okText="نعم"
+            cancelText="لا"
+          >
+            <Button
+              type="text"
+              icon={<DeleteOutlined />}
+              danger
+              title="حذف"
+            />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div style={{ padding: '24px' }} dir="rtl">
+      <div style={{ marginBottom: 32 }}>
+        <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
+          <Col>
+            <Title level={2}>إدارة العملاء</Title>
+          </Col>
+          <Col>
+            <Space wrap>
+              <Button onClick={handleDistributeBranches}>
+                توزيع عشوائي على الفروع
+              </Button>
+              <Input
+                placeholder="ابحث عن عميل..."
+                prefix={<SearchOutlined />}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{ width: 250 }}
+              />
+              <Button 
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => { resetForm(); setShowForm(true); }}
+              >
+                عميل جديد
+              </Button>
+              <Button 
+                icon={<UploadOutlined />}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                استيراد من Excel
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  style={{ display: 'none' }}
+                  onChange={handleImportExcel}
+                />
+              </Button>
+            </Space>
+          </Col>
+        </Row>
+
+        {/* Customer Form Card */}
+        {(showForm || isEditing) && (
+          <Card style={{ marginBottom: 24 }}>
+            <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+              <Col>
+                <Title level={4}>
+                  {isEditing ? "تعديل بيانات العميل" : "إضافة عميل جديد"}
+                </Title>
+              </Col>
+              <Col>
+                <Button onClick={resetForm}>
+                  {isEditing ? "إلغاء التعديل" : "مسح النموذج"}
+                </Button>
+              </Col>
+            </Row>
+
+            <form onSubmit={handleSubmit}>
+              <Row gutter={[16, 16]}>
+                {/* العمود الأول */}
+                <Col xs={24} sm={12} md={6}>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>رقم العميل</label>
                     <Input
-                      placeholder="ابحث عن عميل..."
-                      className="pl-10"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
+                      name="id"
+                      value={form.id}
+                      placeholder="تلقائي"
+                      disabled
                     />
                   </div>
-                  <Button onClick={() => { resetForm(); setShowForm(true); }} className="gap-2">
-                    <PlusCircle className="h-4 w-4" />
-                    <span>عميل جديد</span>
-                  </Button>
-                  <Button asChild variant="outline" className="gap-2">
-                    <label htmlFor="import-excel" className="flex items-center cursor-pointer">
-                      <input
-                        id="import-excel"
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".xlsx,.xls"
-                        style={{ display: 'none' }}
-                        onChange={handleImportExcel}
-                      />
-                      <span>استيراد من Excel</span>
-                    </label>
-                  </Button>
-                </div>
-              </div>
-
-              {/* Customer Form Card - only show if showForm or editing */}
-              {(showForm || isEditing) && (
-                <Card className="p-6 mb-6 shadow-sm">
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-semibold">
-                      {isEditing ? "تعديل بيانات العميل" : "إضافة عميل جديد"}
-                    </h2>
-                    <Button variant="outline" onClick={resetForm} size="sm">
-                      {isEditing ? "إلغاء التعديل" : "مسح النموذج"}
-                    </Button>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>الاسم بالعربي*</label>
+                    <Input 
+                      name="nameAr" 
+                      value={form.nameAr} 
+                      onChange={handleChange} 
+                      required 
+                    />
                   </div>
-
-                  <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      {/* العمود الأول */}
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium mb-1">رقم العميل</label>
-                          <Input
-                            name="id"
-                            value={form.id}
-                            placeholder="تلقائي"
-                            disabled
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">الاسم بالعربي*</label>
-                          <Input 
-                            name="nameAr" 
-                            value={form.nameAr} 
-                            onChange={handleChange} 
-                            required 
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">الاسم بالإنجليزي</label>
-                          <Input
-                            name="nameEn"
-                            value={form.nameEn}
-                            placeholder="تلقائي"
-                            disabled
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">الفرع*</label>
-                          <Select 
-                            value={form.branch} 
-                            onValueChange={(value) => handleSelectChange("branch", value)}
-                            required
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="اختر الفرع" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {branches.map(branch => (
-                                <SelectItem key={branch} value={branch}>{branch}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-
-                      {/* العمود الثاني */}
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium mb-1">السجل التجاري</label>
-                          <Input 
-                            name="commercialReg" 
-                            value={form.commercialReg} 
-                            onChange={handleChange} 
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">تاريخ السجل</label>
-                          <Input 
-                            name="regDate" 
-                            value={form.regDate} 
-                            onChange={handleChange} 
-                            type="date" 
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">جهة الإصدار</label>
-                          <Input 
-                            name="regAuthority" 
-                            value={form.regAuthority} 
-                            onChange={handleChange} 
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">نوع العمل*</label>
-                          <Select 
-                            value={form.businessType} 
-                            onValueChange={(value) => handleSelectChange("businessType", value)}
-                            required
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="اختر نوع العمل" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {businessTypes.map(type => (
-                                <SelectItem key={type} value={type}>{type}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-
-                      {/* العمود الثالث */}
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium mb-1">النشاط*</label>
-                          <Select 
-                            value={form.activity} 
-                            onValueChange={(value) => handleSelectChange("activity", value)}
-                            required
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="اختر النشاط" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {activities.map(activity => (
-                                <SelectItem key={activity} value={activity}>{activity}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">تاريخ بداية التعامل</label>
-                          <Input 
-                            name="startDate" 
-                            value={form.startDate} 
-                            onChange={handleChange} 
-                            type="date" 
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">المدينة*</label>
-                          <Select 
-                            value={form.city} 
-                            onValueChange={(value) => handleSelectChange("city", value)}
-                            required
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="اختر المدينة" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {cities.map(city => (
-                                <SelectItem key={city} value={city}>{city}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">الحد الائتماني (ر.س)</label>
-                          <Input 
-                            name="creditLimit" 
-                            value={form.creditLimit} 
-                            onChange={handleChange} 
-                            type="number" 
-                          />
-                        </div>
-                      </div>
-
-                      {/* العمود الرابع */}
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium mb-1">الحالة*</label>
-                          <Select 
-                            value={form.status} 
-                            onValueChange={(value) => handleSelectChange("status", value)}
-                            required
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="اختر الحالة" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {statusOptions.map(status => (
-                                <SelectItem key={status} value={status}>{status}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">رقم الجوال*</label>
-                          <div className="flex gap-2">
-                            <Input 
-                              name="countryCode" 
-                              value={form.countryCode} 
-                              onChange={handleChange} 
-                              className="w-20"
-                            />
-                            <Input 
-                              name="mobile" 
-                              value={form.mobile} 
-                              onChange={handleChange} 
-                              required
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">البريد الإلكتروني</label>
-                          <Input 
-                            name="email" 
-                            value={form.email} 
-                            onChange={handleChange} 
-                            type="email" 
-                          />
-                        </div>
-                        <div className="flex items-end gap-2 pt-2">
-                          <Button type="submit" className="flex-1" disabled={loading}>
-                            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            {isEditing ? "حفظ التعديلات" : "حفظ العميل"}
-                          </Button>
-                          <Button 
-                            type="button" 
-                            variant="outline" 
-                            onClick={resetForm}
-                            className="flex-1"
-                          >
-                            إلغاء
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* تفاصيل الملف الضريبي والعنوان */}
-                    <Card className="p-4 mt-4">
-                      <h3 className="font-medium mb-3">تفاصيل الملف الضريبي والعنوان</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium mb-1">رقم الملف الضريبي</label>
-                          <Input
-                            name="taxFileNumber"
-                            value={form.taxFileNumber}
-                            onChange={handleChange}
-                            placeholder="أدخل رقم الملف الضريبي"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">تاريخ انتهاء الملف الضريبي</label>
-                          <Input
-                            name="taxFileExpiry"
-                            value={form.taxFileExpiry}
-                            onChange={handleChange}
-                            type="date"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">المنطقة</label>
-                          <Input 
-                            name="region" 
-                            value={form.region} 
-                            onChange={handleChange} 
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">الحي</label>
-                          <Input 
-                            name="district" 
-                            value={form.district} 
-                            onChange={handleChange} 
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">الشارع</label>
-                          <Input 
-                            name="street" 
-                            value={form.street} 
-                            onChange={handleChange} 
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">رقم المبنى</label>
-                          <Input 
-                            name="buildingNo" 
-                            value={form.buildingNo} 
-                            onChange={handleChange} 
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">الرمز البريدي</label>
-                          <Input 
-                            name="postalCode" 
-                            value={form.postalCode} 
-                            onChange={handleChange} 
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">رقم التليفون</label>
-                          <Input 
-                            name="phone" 
-                            value={form.phone} 
-                            onChange={handleChange} 
-                          />
-                        </div>
-                      </div>
-                    </Card>
-                  </form>
-                </Card>
-              )}
-
-              {/* Customers Table */}
-              <Card className="p-0 overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {columns.map(col => (
-                        <TableHead key={col.key} className={col.width}>
-                          {col.label}
-                        </TableHead>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>الاسم بالإنجليزي</label>
+                    <Input
+                      name="nameEn"
+                      value={form.nameEn}
+                      placeholder="تلقائي"
+                      disabled
+                    />
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>الفرع*</label>
+                    <Select 
+                      value={form.branch} 
+                      onChange={(value) => handleSelectChange("branch", value)}
+                      placeholder="اختر الفرع"
+                      style={{ width: '100%' }}
+                    >
+                      {branches.map(branch => (
+                        <Option key={branch} value={branch}>{branch}</Option>
                       ))}
-                      <TableHead className="w-32">الإجراءات</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loading ? (
-                      <TableRow>
-                        <TableCell colSpan={columns.length + 1} className="text-center py-6">
-                          <div className="flex justify-center items-center gap-2">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            جاري التحميل...
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ) : error ? (
-                      <TableRow>
-                        <TableCell colSpan={columns.length + 1} className="text-center text-red-600 py-6">
-                          {error}
-                        </TableCell>
-                      </TableRow>
-                    ) : paginatedCustomers.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={columns.length + 1} className="text-center py-6">
-                          لا يوجد عملاء
-                        </TableCell>
-                      </TableRow>
-                    ) : paginatedCustomers.map((customer) => (
-                      <TableRow key={customer.id} className="hover:bg-gray-50/50">
-                        <TableCell>{customer.id}</TableCell>
-                        <TableCell className="font-medium">{customer.nameAr}</TableCell>
-                        <TableCell>{customer.nameEn}</TableCell>
-                        <TableCell>{customer.branch}</TableCell>
-                        <TableCell>{customer.commercialReg}</TableCell>
-                        <TableCell>{formatDate(customer.regDate)}</TableCell>
-                        <TableCell>{customer.businessType}</TableCell>
-                        <TableCell>
-                          <Badge variant={customer.status === "نشط" ? "default" : "destructive"}>
-                            {customer.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={() => handleEdit(customer)}
-                              className="h-8 px-2"
-                            >
-                              <Edit className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={() => customer.docId && handleDelete(customer.docId)}
-                              className="h-8 px-2 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-
-                {/* Pagination */}
-                {filteredCustomers.length > itemsPerPage && (
-                  <div className="flex items-center justify-between p-4 border-t">
-                    <div className="text-sm text-muted-foreground">
-                      عرض {Math.min((currentPage - 1) * itemsPerPage + 1, filteredCustomers.length)}-
-                      {Math.min(currentPage * itemsPerPage, filteredCustomers.length)} من {filteredCustomers.length} عميل
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-                        disabled={currentPage === 1}
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-                        disabled={currentPage === totalPages}
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    </Select>
                   </div>
-                )}
+                </Col>
+
+                {/* العمود الثاني */}
+                <Col xs={24} sm={12} md={6}>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>السجل التجاري</label>
+                    <Input 
+                      name="commercialReg" 
+                      value={form.commercialReg} 
+                      onChange={handleChange} 
+                    />
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>تاريخ السجل</label>
+                    <Input 
+                      name="regDate" 
+                      value={form.regDate} 
+                      onChange={handleChange} 
+                      type="date" 
+                    />
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>جهة الإصدار</label>
+                    <Input 
+                      name="regAuthority" 
+                      value={form.regAuthority} 
+                      onChange={handleChange} 
+                    />
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>نوع العمل*</label>
+                    <Select 
+                      value={form.businessType} 
+                      onChange={(value) => handleSelectChange("businessType", value)}
+                      placeholder="اختر نوع العمل"
+                      style={{ width: '100%' }}
+                    >
+                      {businessTypes.map(type => (
+                        <Option key={type} value={type}>{type}</Option>
+                      ))}
+                    </Select>
+                  </div>
+                </Col>
+
+                {/* العمود الثالث */}
+                <Col xs={24} sm={12} md={6}>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>النشاط*</label>
+                    <Select 
+                      value={form.activity} 
+                      onChange={(value) => handleSelectChange("activity", value)}
+                      placeholder="اختر النشاط"
+                      style={{ width: '100%' }}
+                    >
+                      {activities.map(activity => (
+                        <Option key={activity} value={activity}>{activity}</Option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>تاريخ بداية التعامل</label>
+                    <Input 
+                      name="startDate" 
+                      value={form.startDate} 
+                      onChange={handleChange} 
+                      type="date" 
+                    />
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>المدينة*</label>
+                    <Select 
+                      value={form.city} 
+                      onChange={(value) => handleSelectChange("city", value)}
+                      placeholder="اختر المدينة"
+                      style={{ width: '100%' }}
+                    >
+                      {cities.map(city => (
+                        <Option key={city} value={city}>{city}</Option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>الحد الائتماني (ر.س)</label>
+                    <Input 
+                      name="creditLimit" 
+                      value={form.creditLimit} 
+                      onChange={handleChange} 
+                      type="number" 
+                    />
+                  </div>
+                </Col>
+
+                {/* العمود الرابع */}
+                <Col xs={24} sm={12} md={6}>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>الحالة*</label>
+                    <Select 
+                      value={form.status} 
+                      onChange={(value) => handleSelectChange("status", value)}
+                      placeholder="اختر الحالة"
+                      style={{ width: '100%' }}
+                    >
+                      {statusOptions.map(status => (
+                        <Option key={status} value={status}>{status}</Option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>رقم الجوال*</label>
+                    <Input.Group compact>
+                      <Input 
+                        name="countryCode" 
+                        value={form.countryCode} 
+                        onChange={handleChange} 
+                        style={{ width: '25%' }}
+                      />
+                      <Input 
+                        name="mobile" 
+                        value={form.mobile} 
+                        onChange={handleChange} 
+                        style={{ width: '75%' }}
+                        required
+                      />
+                    </Input.Group>
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>البريد الإلكتروني</label>
+                    <Input 
+                      name="email" 
+                      value={form.email} 
+                      onChange={handleChange} 
+                      type="email" 
+                    />
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <Space>
+                      <Button 
+                        type="primary" 
+                        htmlType="submit" 
+                        loading={loading}
+                      >
+                        {isEditing ? "حفظ التعديلات" : "حفظ العميل"}
+                      </Button>
+                      <Button onClick={resetForm}>
+                        إلغاء
+                      </Button>
+                    </Space>
+                  </div>
+                </Col>
+              </Row>
+
+              {/* تفاصيل الملف الضريبي والعنوان */}
+              <Card size="small" title="تفاصيل الملف الضريبي والعنوان" style={{ marginTop: 16 }}>
+                <Row gutter={[16, 16]}>
+                  <Col xs={24} sm={12} md={6}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>رقم الملف الضريبي</label>
+                    <Input
+                      name="taxFileNumber"
+                      value={form.taxFileNumber}
+                      onChange={handleChange}
+                      placeholder="أدخل رقم الملف الضريبي"
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>تاريخ انتهاء الملف الضريبي</label>
+                    <Input
+                      name="taxFileExpiry"
+                      value={form.taxFileExpiry}
+                      onChange={handleChange}
+                      type="date"
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>المنطقة</label>
+                    <Input 
+                      name="region" 
+                      value={form.region} 
+                      onChange={handleChange} 
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>الحي</label>
+                    <Input 
+                      name="district" 
+                      value={form.district} 
+                      onChange={handleChange} 
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>الشارع</label>
+                    <Input 
+                      name="street" 
+                      value={form.street} 
+                      onChange={handleChange} 
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>رقم المبنى</label>
+                    <Input 
+                      name="buildingNo" 
+                      value={form.buildingNo} 
+                      onChange={handleChange} 
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>الرمز البريدي</label>
+                    <Input 
+                      name="postalCode" 
+                      value={form.postalCode} 
+                      onChange={handleChange} 
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <label style={{ display: 'block', marginBottom: 8 }}>رقم التليفون</label>
+                    <Input 
+                      name="phone" 
+                      value={form.phone} 
+                      onChange={handleChange} 
+                    />
+                  </Col>
+                </Row>
               </Card>
+            </form>
+          </Card>
+        )}
+
+        {/* Customers Table */}
+        <Card>
+          <Table
+            columns={tableColumns}
+            dataSource={paginatedCustomers}
+            rowKey="id"
+            loading={loading}
+            pagination={false}
+            scroll={{ x: 800 }}
+            locale={{
+              emptyText: (
+                <Empty
+                  description="لا يوجد عملاء"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                />
+              )
+            }}
+          />
+
+          {/* Pagination */}
+          {filteredCustomers.length > itemsPerPage && (
+            <div style={{ marginTop: 16, textAlign: 'center' }}>
+              <Pagination
+                current={currentPage}
+                total={filteredCustomers.length}
+                pageSize={itemsPerPage}
+                onChange={setCurrentPage}
+                showSizeChanger={false}
+                showQuickJumper
+                showTotal={(total, range) => 
+                  `عرض ${range[0]}-${range[1]} من ${total} عميل`
+                }
+              />
             </div>
-          </main>
-        </div>
+          )}
+        </Card>
       </div>
     </div>
   );

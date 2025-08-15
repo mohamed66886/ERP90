@@ -28,6 +28,14 @@ interface Branch {
 interface Warehouse {
   id: string;
   name?: string;
+  nameAr?: string;
+  nameEn?: string;
+  branch?: string; // هذا هو الحقل الصحيح المستخدم لربط المخزن بالفرع
+  documentType?: 'invoice' | 'warehouse';
+  invoiceTypes?: string[];
+  allowedUsers?: string[];
+  allowedBranches?: string[];
+  status?: 'active' | 'inactive' | 'suspended';
 }
 
 interface PaymentMethod {
@@ -324,26 +332,38 @@ const initialItem: InvoiceItem = {
 async function generateInvoiceNumberAsync(branchId: string, branches: Branch[] = []): Promise<string> {
   const date = new Date();
   const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  const dateStr = `${y}${m}${d}`;
   
   // البحث عن رقم الفرع الحقيقي من بيانات الفروع
   const branchObj = branches.find(b => b.id === branchId);
   const branchNumber = branchObj?.code || branchObj?.number || branchObj?.branchNumber || '1';
   
-  // جلب عدد الفواتير لنفس الفرع في نفس اليوم
-  const { getDocs, collection, query, where } = await import('firebase/firestore');
-  const q = query(
-    collection(db, 'sales_invoices'),
-    where('branch', '==', branchId),
-    where('date', '==', `${y}-${m}-${d}`)
-  );
-  const snapshot = await getDocs(q);
-  const count = snapshot.size + 1;
-  const serial = count;
-  
-  return `INV-${branchNumber}-${dateStr}-${serial}`;
+  try {
+    // جلب عدد الفواتير لنفس الفرع في نفس السنة - استعلام مبسط
+    const { getDocs, collection, query, where } = await import('firebase/firestore');
+    const q = query(
+      collection(db, 'sales_invoices'),
+      where('branch', '==', branchId)
+    );
+    const snapshot = await getDocs(q);
+    
+    // فلترة النتائج في الكود بدلاً من قاعدة البيانات لتجنب مشكلة الفهرس
+    const currentYearInvoices = snapshot.docs.filter(doc => {
+      const invoiceDate = doc.data().date;
+      if (!invoiceDate) return false;
+      const invoiceYear = new Date(invoiceDate).getFullYear();
+      return invoiceYear === y;
+    });
+    
+    const count = currentYearInvoices.length + 1;
+    const serial = count;
+    
+    return `INV-${branchNumber}-${y}-${serial}`;
+  } catch (error) {
+    console.error('خطأ في توليد رقم الفاتورة:', error);
+    // في حالة الخطأ، استخدم رقم عشوائي
+    const randomSerial = Math.floor(Math.random() * 1000) + 1;
+    return `INV-${branchNumber}-${y}-${randomSerial}`;
+  }
 }
 
 function getTodayString(): string {
@@ -958,6 +978,47 @@ interface CompanyData {
     */
   };
   const { user } = useAuth();
+
+  // دالة فلترة المخازن بناءً على الشروط المطلوبة
+  const filterWarehousesForSales = (warehouses: Warehouse[], selectedBranch: string = '') => {
+    return warehouses.filter(warehouse => {
+      // التحقق من حالة المخزن (يجب أن يكون نشط)
+      if (warehouse.status && warehouse.status !== 'active') {
+        return false;
+      }
+
+      // التحقق من نوع الاستخدام (يجب أن يكون فاتورة أو غير محدد)
+      if (warehouse.documentType && warehouse.documentType !== 'invoice') {
+        return false;
+      }
+
+      // التحقق من أنواع الفواتير (يجب أن تحتوي على مبيعات أو الكل أو غير محددة)
+      if (warehouse.invoiceTypes && warehouse.invoiceTypes.length > 0) {
+        const hasValidInvoiceType = warehouse.invoiceTypes.includes('sales') || 
+                                  warehouse.invoiceTypes.includes('all');
+        if (!hasValidInvoiceType) {
+          return false;
+        }
+      }
+
+      // التحقق من المستخدمين المسموح لهم
+      if (warehouse.allowedUsers && warehouse.allowedUsers.length > 0 && user?.uid) {
+        if (!warehouse.allowedUsers.includes(user.uid)) {
+          return false;
+        }
+      }
+
+      // التحقق من الفروع المسموح بها (إذا تم تحديد فرع)
+      if (selectedBranch && warehouse.allowedBranches && warehouse.allowedBranches.length > 0) {
+        if (!warehouse.allowedBranches.includes(selectedBranch)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  };
+
   const [invoiceType, setInvoiceType] = useState<'ضريبة مبسطة' | 'ضريبة'>('ضريبة مبسطة');
   const [warehouseMode, setWarehouseMode] = useState<'single' | 'multiple'>('single');
   const [multiplePaymentMode, setMultiplePaymentMode] = useState<boolean>(false);
@@ -1375,6 +1436,14 @@ interface SavedInvoice {
     setItem(prev => ({ ...prev, taxPercent: taxRate }));
   }, [taxRate]);
 
+  // تشخيص بيانات الفروع
+  useEffect(() => {
+    console.log('تشخيص الفروع:');
+    console.log('عدد الفروع المحملة:', branches.length);
+    console.log('بيانات الفروع:', branches.map(b => ({ id: b.id, name: b.name })));
+    console.log('الفرع المحدد حالياً:', invoiceData.branch);
+  }, [branches, invoiceData.branch]);
+
   const handleInvoiceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInvoiceData({ ...invoiceData, [e.target.name]: e.target.value });
   };
@@ -1697,7 +1766,7 @@ interface SavedInvoice {
         const warehouseId = record.warehouseId || invoiceData.warehouse;
         if (!warehouseId) return '';
         const warehouse = warehouses.find(w => w.id === warehouseId);
-        return warehouse ? warehouse.name || warehouse.id : warehouseId;
+        return warehouse ? warehouse.nameAr || warehouse.name || warehouse.id : warehouseId;
       }
     },
     { 
@@ -2030,7 +2099,7 @@ interface SavedInvoice {
     ,
       render: (warehouseId: string) => {
         const warehouse = warehouses.find(w => w.id === warehouseId);
-        return warehouse ? (warehouse.name || warehouse.id) : warehouseId;
+        return warehouse ? (warehouse.nameAr || warehouse.name || warehouse.id) : warehouseId;
       }
     },
     {
@@ -2557,7 +2626,7 @@ const handlePrint = () => {
                 const net = afterDiscount + taxValue;
                 const warehouseId = it.warehouseId || invoice.warehouse;
                 const warehouseObj = Array.isArray(warehouses) ? warehouses.find(w => w.id === warehouseId) : null;
-                const warehouseName = warehouseObj ? (warehouseObj.name || warehouseObj.id) : (warehouseId || '');
+                const warehouseName = warehouseObj ? (warehouseObj.nameAr || warehouseObj.name || warehouseObj.id) : (warehouseId || '');
                 return `<tr>
                   <td>${idx + 1}</td>
                   <td>${it.itemNumber || ''}</td>
@@ -2862,6 +2931,17 @@ const handlePrint = () => {
   });
 
   const handleAddItem = async () => {
+    // التحقق من وجود مخازن متاحة للمبيعات
+    const availableWarehouses = filterWarehousesForSales(warehouses, invoiceData.branch);
+    if (availableWarehouses.length === 0) {
+      if (typeof message !== 'undefined' && message.warning) {
+        message.warning('لا توجد مخازن متاحة للمبيعات. يرجى التحقق من صلاحيات المخازن.');
+      } else {
+        alert('لا توجد مخازن متاحة للمبيعات');
+      }
+      return;
+    }
+
     // لا تضف إذا لم يتم اختيار اسم صنف
     if (!item.itemName) {
       if (typeof message !== 'undefined' && message.info) {
@@ -3330,13 +3410,44 @@ const handlePrint = () => {
                   showSearch
                   value={invoiceData.branch}
                   onChange={async (value) => {
-                    setBranchCode('');
-                    const invoiceNumber = await generateInvoiceNumberAsync(value, branches);
-                    setInvoiceData(prev => ({
-                      ...prev,
-                      branch: value,
-                      invoiceNumber
-                    }));
+                    try {
+                      setBranchCode('');
+                      const invoiceNumber = await generateInvoiceNumberAsync(value, branches);
+                      
+                      // البحث عن المخزن المرتبط بالفرع المحدد من المخازن المفلترة
+                      const filteredWarehouses = filterWarehousesForSales(warehouses, value);
+                      const linkedWarehouse = filteredWarehouses.find(warehouse => warehouse.branch === value);
+                      const selectedWarehouse = linkedWarehouse ? linkedWarehouse.id : '';
+                      
+                      // رسالة تشخيصية للمطور
+                      console.log('الفرع المحدد:', value);
+                      console.log('المخازن المفلترة:', filteredWarehouses.map(w => ({ id: w.id, name: w.nameAr || w.name, branch: w.branch })));
+                      console.log('المخزن المرتبط:', linkedWarehouse);
+                      console.log('معرف المخزن المحدد:', selectedWarehouse);
+                      
+                      setInvoiceData(prev => ({
+                        ...prev,
+                        branch: value,
+                        warehouse: selectedWarehouse,
+                        invoiceNumber
+                      }));
+                      
+                      // إعادة تعيين المخزن في الـ item أيضاً في حالة المخازن المتعددة
+                      setItem(prev => ({
+                        ...prev,
+                        warehouseId: selectedWarehouse
+                      }));
+                      
+                      // إظهار رسالة إعلامية إذا تم اختيار مخزن تلقائياً
+                      if (linkedWarehouse) {
+                        message.info(`تم اختيار المخزن "${linkedWarehouse.nameAr || linkedWarehouse.name}" المرتبط بالفرع تلقائياً`);
+                      } else {
+                        message.warning('لا يوجد مخزن مرتبط بهذا الفرع، يرجى اختيار المخزن يدوياً');
+                      }
+                    } catch (error) {
+                      console.error('خطأ في اختيار الفرع:', error);
+                      message.error('حدث خطأ أثناء اختيار الفرع');
+                    }
                   }}
                   disabled={branches.length === 0}
                   placeholder="اختر الفرع"
@@ -3344,10 +3455,11 @@ const handlePrint = () => {
                   filterOption={(input, option) =>
                     String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                   }
-                  options={branches.map(branch => ({ 
+                  options={branches.filter(branch => branch && branch.id).map(branch => ({ 
                     label: branch.name || branch.id, 
                     value: branch.id 
                   }))}
+                  notFoundContent={branches.length === 0 ? "جاري تحميل الفروع..." : "لا توجد فروع متاحة"}
                 />
               </Form.Item>
             </Col>
@@ -3358,17 +3470,67 @@ const handlePrint = () => {
                     showSearch
                     value={invoiceData.warehouse}
                     onChange={(value) => setInvoiceData({...invoiceData, warehouse: value})}
-                    disabled={warehouses.length === 0}
+                    disabled={filterWarehousesForSales(warehouses, invoiceData.branch).length === 0}
                     placeholder="اختر المخزن"
                     style={{ fontFamily: 'Cairo, sans-serif' }}
                     filterOption={(input, option) =>
                       String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                     }
-                    options={warehouses.map(warehouse => ({ 
-                      label: warehouse.name || warehouse.id, 
-                      value: warehouse.id 
-                    }))}
+                    options={filterWarehousesForSales(warehouses, invoiceData.branch)
+                      .sort((a, b) => {
+                        // ترتيب المخازن: المرتبطة بالفرع أولاً
+                        const aLinked = a.branch === invoiceData.branch;
+                        const bLinked = b.branch === invoiceData.branch;
+                        if (aLinked && !bLinked) return -1;
+                        if (!aLinked && bLinked) return 1;
+                        return 0;
+                      })
+                      .map(warehouse => {
+                        const isLinkedToBranch = warehouse.branch === invoiceData.branch;
+                        return {
+                          label: (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ 
+                                color: isLinkedToBranch ? '#52c41a' : '#666',
+                                fontWeight: isLinkedToBranch ? 'bold' : 'normal'
+                              }}>
+                                {warehouse.nameAr || warehouse.name || warehouse.id}
+                              </span>
+                              {isLinkedToBranch && (
+                                <span style={{ 
+                                  color: '#52c41a', 
+                                  fontSize: '12px',
+                                  fontWeight: 'bold',
+                                  marginRight: '8px'
+                                }}>
+                                  ✓ مرتبط
+                                </span>
+                              )}
+                            </div>
+                          ),
+                          value: warehouse.id
+                        };
+                      })}
                   />
+                  {/* رسالة إعلامية عند عدم وجود مخازن متاحة */}
+                  {filterWarehousesForSales(warehouses, invoiceData.branch).length === 0 && warehouses.length > 0 && (
+                    <div style={{ 
+                      marginTop: 8, 
+                      padding: 8, 
+                      backgroundColor: '#fff2e8', 
+                      border: '1px solid #ffcc02', 
+                      borderRadius: 4,
+                      fontSize: '12px',
+                      color: '#d46b08'
+                    }}>
+                      لا توجد مخازن متاحة للمبيعات. قد يكون السبب:
+                      <ul style={{ margin: '4px 0', paddingRight: 16 }}>
+                        <li>عدم وجود صلاحية للمستخدم الحالي</li>
+                        <li>المخزن غير مخصص لفواتير المبيعات</li>
+                        <li>المخزن غير مرتبط بالفرع المحدد</li>
+                      </ul>
+                    </div>
+                  )}
                 </Form.Item>
               </Col>
             )}
@@ -3875,7 +4037,7 @@ const handlePrint = () => {
     } 
   }}
   style={{ top: 60 }}
-  destroyOnClose
+  destroyOnHidden
 >
   <div style={{ marginBottom: 16 }}>
     <div style={{ 
@@ -4145,15 +4307,60 @@ const handlePrint = () => {
                       await fetchSingleItemStock(item.itemName, value);
                     }
                   }}
-                  options={warehouses.map(warehouse => ({
-                    label: warehouse.name || warehouse.id,
-                    value: warehouse.id
-                  }))}
+                  options={filterWarehousesForSales(warehouses, invoiceData.branch)
+                    .sort((a, b) => {
+                      // ترتيب المخازن: المرتبطة بالفرع أولاً
+                      const aLinked = a.branch === invoiceData.branch;
+                      const bLinked = b.branch === invoiceData.branch;
+                      if (aLinked && !bLinked) return -1;
+                      if (!aLinked && bLinked) return 1;
+                      return 0;
+                    })
+                    .map(warehouse => {
+                      const isLinkedToBranch = warehouse.branch === invoiceData.branch;
+                      return {
+                        label: (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ 
+                              color: isLinkedToBranch ? '#52c41a' : '#666',
+                              fontWeight: isLinkedToBranch ? 'bold' : 'normal'
+                            }}>
+                              {warehouse.nameAr || warehouse.name || warehouse.id}
+                            </span>
+                            {isLinkedToBranch && (
+                              <span style={{ 
+                                color: '#52c41a', 
+                                fontSize: '12px',
+                                fontWeight: 'bold',
+                                marginRight: '8px'
+                              }}>
+                                ✓ مرتبط
+                              </span>
+                            )}
+                          </div>
+                        ),
+                        value: warehouse.id
+                      };
+                    })}
                   filterOption={(input, option) =>
                     String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                   }
                   allowClear
                 />
+                {/* رسالة إعلامية عند عدم وجود مخازن متاحة في وضع المخازن المتعددة */}
+                {filterWarehousesForSales(warehouses, invoiceData.branch).length === 0 && warehouses.length > 0 && (
+                  <div style={{ 
+                    marginTop: 4, 
+                    padding: 6, 
+                    backgroundColor: '#fff2e8', 
+                    border: '1px solid #ffcc02', 
+                    borderRadius: 4,
+                    fontSize: '11px',
+                    color: '#d46b08'
+                  }}>
+                    لا توجد مخازن متاحة للمبيعات
+                  </div>
+                )}
               </Col>
             )}
             <Col xs={24} sm={12} md={2}>
@@ -4251,7 +4458,8 @@ const handlePrint = () => {
                 disabled={
                   !invoiceData.branch ||
                   (warehouseMode !== 'multiple' && !invoiceData.warehouse) ||
-                  !invoiceData.customerName
+                  !invoiceData.customerName ||
+                  filterWarehousesForSales(warehouses, invoiceData.branch).length === 0
                 }
                 style={{
                   backgroundColor: editingItemIndex !== null ? '#52c41a' : '#1890ff',
@@ -4342,7 +4550,7 @@ const handlePrint = () => {
               columns={itemColumns} 
               dataSource={items} 
               pagination={false} 
-              rowKey={(record, index) => `${record.itemNumber}-${record.itemName}-${index}`}
+              rowKey={(record) => `${record.itemNumber}-${record.itemName}-${record.quantity}-${record.price}`}
               bordered
               scroll={{ x: true }}
               size="middle"
@@ -4382,87 +4590,127 @@ const handlePrint = () => {
           </Row>
 
           {/* معلومات الدفع */}
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 16 }}>
-            معلومات الدفع
-          </Divider>
-          <Row gutter={16} className="mb-4">
-            <Col xs={24} sm={12} md={6}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ minWidth: 80, fontWeight: 500 }}>طريقة الدفع:</span>
-                <Select
-                  showSearch
-                  value={invoiceData.paymentMethod}
-                  onChange={(value) => {
-                    const isMultiple = value === 'متعدد';
-                    setMultiplePaymentMode(isMultiple);
-                    setInvoiceData({
-                      ...invoiceData, 
-                      paymentMethod: value,
-                      cashBox: value === 'نقدي' ? invoiceData.cashBox : '',
-                      multiplePayment: isMultiple ? invoiceData.multiplePayment : {}
-                    });
-                  }}
-                  disabled={paymentMethods.length === 0}
-                  placeholder="اختر طريقة الدفع"
-                  style={{ fontFamily: 'Cairo, sans-serif', flex: 1 }}
-                  filterOption={(input, option) =>
-                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  options={[
-                    ...paymentMethods.map(method => ({
-                      label: method.name || method.id,
-                      value: method.name || method.id
-                    })),
-                  ]}
-                />
+          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 24, fontSize: '16px', fontWeight: 600 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                backgroundColor: '#1f2937',
+                borderRadius: '8px',
+                padding: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+                  <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/>
+                </svg>
               </div>
-            </Col>
-            {invoiceData.paymentMethod === 'نقدي' && (
-              <Col xs={24} sm={12} md={6}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ minWidth: 100, fontWeight: 500 }}>الصندوق النقدي:</span>
+              <span style={{ color: '#1f2937', fontWeight: 600, fontSize: '16px' }}>معلومات الدفع</span>
+            </div>
+          </Divider>
+          
+          {/* بطاقة طريقة الدفع الرئيسية */}
+          <Card 
+            style={{ 
+              marginBottom: 24,
+              border: '1px solid #e5e7eb',
+              borderRadius: '12px',
+              boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)'
+            }}
+          >
+            <div style={{ 
+              padding: '16px 20px',
+              borderBottom: '1px solid #f3f4f6',
+              marginBottom: '20px'
+            }}>
+              <div style={{ 
+                fontSize: '14px', 
+                fontWeight: 600, 
+                color: '#374151',
+                fontFamily: 'Cairo, sans-serif',
+                marginBottom: '4px'
+              }}>
+                اختيار طريقة الدفع
+              </div>
+              <div style={{ 
+                fontSize: '12px', 
+                color: '#6b7280',
+                fontFamily: 'Cairo, sans-serif'
+              }}>
+                يرجى تحديد الطريقة المناسبة لدفع قيمة الفاتورة
+              </div>
+            </div>
+            
+            <Row gutter={[24, 16]} align="middle">
+              <Col xs={24} sm={12} md={8}>
+                <div style={{ marginBottom: '8px' }}>
+                  <label style={{ 
+                    fontSize: '13px', 
+                    fontWeight: 500, 
+                    color: '#374151',
+                    fontFamily: 'Cairo, sans-serif',
+                    display: 'block',
+                    marginBottom: '6px'
+                  }}>
+                    طريقة الدفع *
+                  </label>
                   <Select
                     showSearch
-                    value={invoiceData.cashBox}
-                    onChange={(value) => setInvoiceData({...invoiceData, cashBox: value})}
-                    disabled={cashBoxes.length === 0}
-                    placeholder="اختر الصندوق النقدي"
-                    style={{ fontFamily: 'Cairo, sans-serif', flex: 1 }}
+                    value={invoiceData.paymentMethod}
+                    onChange={(value) => {
+                      const isMultiple = value === 'متعدد';
+                      setMultiplePaymentMode(isMultiple);
+                      setInvoiceData({
+                        ...invoiceData, 
+                        paymentMethod: value,
+                        cashBox: value === 'نقدي' ? invoiceData.cashBox : '',
+                        multiplePayment: isMultiple ? invoiceData.multiplePayment : {}
+                      });
+                    }}
+                    disabled={paymentMethods.length === 0}
+                    placeholder="اختر طريقة الدفع"
+                    style={{ 
+                      width: '100%',
+                      fontFamily: 'Cairo, sans-serif'
+                    }}
+                    size="large"
                     filterOption={(input, option) =>
                       String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                     }
-                    options={cashBoxes
-                      .filter(cashBox => !invoiceData.branch || cashBox.branch === invoiceData.branch)
-                      .map(cashBox => ({
-                        label: cashBox.nameAr,
-                        value: cashBox.id || cashBox.nameAr
-                      }))}
+                    options={[
+                      ...paymentMethods.map(method => ({
+                        label: method.name || method.id,
+                        value: method.name || method.id
+                      })),
+                    ]}
                   />
                 </div>
               </Col>
-            )}
-            {multiplePaymentMode && (
-              <>
-                <Col xs={24} sm={12} md={5}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ minWidth: 100, fontWeight: 500 }}>الصندوق النقدي:</span>
+              
+              {/* عرض الصندوق النقدي للدفع النقدي */}
+              {invoiceData.paymentMethod === 'نقدي' && (
+                <Col xs={24} sm={12} md={8}>
+                  <div style={{ marginBottom: '8px' }}>
+                    <label style={{ 
+                      fontSize: '13px', 
+                      fontWeight: 500, 
+                      color: '#374151',
+                      fontFamily: 'Cairo, sans-serif',
+                      display: 'block',
+                      marginBottom: '6px'
+                    }}>
+                      الصندوق النقدي *
+                    </label>
                     <Select
                       showSearch
-                      value={invoiceData.multiplePayment.cash?.cashBoxId || ''}
-                      onChange={(value) => setInvoiceData({
-                        ...invoiceData, 
-                        multiplePayment: {
-                          ...invoiceData.multiplePayment,
-                          cash: {
-                            ...invoiceData.multiplePayment.cash,
-                            cashBoxId: value,
-                            amount: invoiceData.multiplePayment.cash?.amount || ''
-                          }
-                        }
-                      })}
+                      value={invoiceData.cashBox}
+                      onChange={(value) => setInvoiceData({...invoiceData, cashBox: value})}
                       disabled={cashBoxes.length === 0}
                       placeholder="اختر الصندوق النقدي"
-                      style={{ fontFamily: 'Cairo, sans-serif', flex: 1 }}
+                      style={{ 
+                        width: '100%',
+                        fontFamily: 'Cairo, sans-serif'
+                      }}
+                      size="large"
                       filterOption={(input, option) =>
                         String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                       }
@@ -4472,263 +4720,658 @@ const handlePrint = () => {
                           label: cashBox.nameAr,
                           value: cashBox.id || cashBox.nameAr
                         }))}
-                      allowClear
                     />
                   </div>
                 </Col>
-                <Col xs={24} sm={12} md={4}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ minWidth: 70, fontWeight: 500 }}>المبلغ نقدي:</span>
-                    <Input
-                      value={invoiceData.multiplePayment.cash?.amount || ''}
-                      onChange={(e) => setInvoiceData({
-                        ...invoiceData, 
-                        multiplePayment: {
-                          ...invoiceData.multiplePayment,
-                          cash: {
-                            ...invoiceData.multiplePayment.cash,
-                            cashBoxId: invoiceData.multiplePayment.cash?.cashBoxId || '',
-                            amount: e.target.value
-                          }
-                        }
-                      })}
-                      onFocus={(e) => {
-                        // تعبئة تلقائية للمبلغ المتبقي إذا كان الحقل فارغ
-                        if (!e.target.value) {
-                          const currentTotal = parseFloat(invoiceData.multiplePayment.bank?.amount || '0') + 
-                                              parseFloat(invoiceData.multiplePayment.card?.amount || '0');
-                          const remaining = totals.afterTax - currentTotal;
-                          if (remaining > 0) {
-                            setInvoiceData({
+              )}
+              
+              {/* عرض إجمالي المبلغ للطرق العادية */}
+              {invoiceData.paymentMethod && invoiceData.paymentMethod !== 'متعدد' && (
+                <Col xs={24} sm={12} md={8}>
+                  <div style={{ 
+                    backgroundColor: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ 
+                      fontSize: '12px', 
+                      color: '#64748b',
+                      fontWeight: 500,
+                      marginBottom: '4px',
+                      fontFamily: 'Cairo, sans-serif'
+                    }}>
+                      إجمالي المبلغ
+                    </div>
+                    <div style={{ 
+                      fontSize: '20px', 
+                      fontWeight: 700,
+                      color: '#1e293b',
+                      fontFamily: 'Cairo, sans-serif'
+                    }}>
+                      {totals.afterTax.toFixed(2)} ر.س
+                    </div>
+                  </div>
+                </Col>
+              )}
+            </Row>
+          </Card>
+
+          
+          {/* قسم الدفع المتعدد */}
+          {multiplePaymentMode && (
+            <Card 
+              style={{ 
+                marginBottom: 24,
+                border: '2px solid #f59e0b',
+                borderRadius: '12px',
+                overflow: 'hidden'
+              }}
+            >
+              {/* عنوان القسم */}
+              <div style={{ 
+                backgroundColor: '#f59e0b',
+                margin: '-1px -1px 20px -1px',
+                padding: '16px 20px',
+                color: 'white'
+              }}>
+                <Row align="middle" justify="space-between">
+                  <Col>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{
+                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        padding: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                          <path d="M3 3h18v4H3V3zm0 6h18v2H3V9zm0 4h18v2H3v-2zm0 4h18v4H3v-4z"/>
+                        </svg>
+                      </div>
+                      <div>
+                        <div style={{ 
+                          fontSize: '16px', 
+                          fontWeight: 700,
+                          fontFamily: 'Cairo, sans-serif'
+                        }}>
+                          الدفع المتعدد
+                        </div>
+                        <div style={{ 
+                          fontSize: '12px', 
+                          opacity: 0.9,
+                          fontFamily: 'Cairo, sans-serif'
+                        }}>
+                          توزيع المبلغ على عدة طرق دفع
+                        </div>
+                      </div>
+                    </div>
+                  </Col>
+                  <Col>
+                    <div style={{ 
+                      backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      textAlign: 'center'
+                    }}>
+                      <div style={{ fontSize: '11px', opacity: 0.9, marginBottom: '2px' }}>المبلغ الإجمالي</div>
+                      <div style={{ fontSize: '16px', fontWeight: 700 }}>
+                        {totals.afterTax.toFixed(2)} ر.س
+                      </div>
+                    </div>
+                  </Col>
+                </Row>
+              </div>
+
+              {/* جدول طرق الدفع */}
+              <div style={{ padding: '0 20px 20px 20px' }}>
+                <Row gutter={[20, 20]}>
+                  {/* النقدي */}
+                  <Col xs={24} lg={8}>
+                    <div style={{
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        backgroundColor: '#f9fafb',
+                        padding: '12px 16px',
+                        borderBottom: '1px solid #e5e7eb'
+                      }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: 10
+                        }}>
+                          <div style={{
+                            backgroundColor: '#059669',
+                            borderRadius: '6px',
+                            padding: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+                              <path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/>
+                            </svg>
+                          </div>
+                          <span style={{ 
+                            fontWeight: 600, 
+                            color: '#374151',
+                            fontFamily: 'Cairo, sans-serif',
+                            fontSize: '14px'
+                          }}>
+                            الدفع النقدي
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div style={{ padding: '16px' }}>
+                        <div style={{ marginBottom: '12px' }}>
+                          <label style={{ 
+                            fontSize: '12px', 
+                            color: '#6b7280',
+                            fontWeight: 500,
+                            display: 'block',
+                            marginBottom: '6px',
+                            fontFamily: 'Cairo, sans-serif'
+                          }}>
+                            الصندوق النقدي
+                          </label>
+                          <Select
+                            showSearch
+                            value={invoiceData.multiplePayment.cash?.cashBoxId || ''}
+                            onChange={(value) => setInvoiceData({
+                              ...invoiceData, 
+                              multiplePayment: {
+                                ...invoiceData.multiplePayment,
+                                cash: {
+                                  ...invoiceData.multiplePayment.cash,
+                                  cashBoxId: value,
+                                  amount: invoiceData.multiplePayment.cash?.amount || ''
+                                }
+                              }
+                            })}
+                            disabled={cashBoxes.length === 0}
+                            placeholder="اختر الصندوق"
+                            style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
+                            filterOption={(input, option) =>
+                              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                            }
+                            options={cashBoxes
+                              .filter(cashBox => !invoiceData.branch || cashBox.branch === invoiceData.branch)
+                              .map(cashBox => ({
+                                label: cashBox.nameAr,
+                                value: cashBox.id || cashBox.nameAr
+                              }))}
+                            allowClear
+                          />
+                        </div>
+                        
+                        <div>
+                          <label style={{ 
+                            fontSize: '12px', 
+                            color: '#6b7280',
+                            fontWeight: 500,
+                            display: 'block',
+                            marginBottom: '6px',
+                            fontFamily: 'Cairo, sans-serif'
+                          }}>
+                            المبلغ النقدي (ر.س)
+                          </label>
+                          <Input
+                            value={invoiceData.multiplePayment.cash?.amount || ''}
+                            onChange={(e) => setInvoiceData({
                               ...invoiceData, 
                               multiplePayment: {
                                 ...invoiceData.multiplePayment,
                                 cash: {
                                   ...invoiceData.multiplePayment.cash,
                                   cashBoxId: invoiceData.multiplePayment.cash?.cashBoxId || '',
-                                  amount: remaining.toFixed(2)
+                                  amount: e.target.value
                                 }
                               }
-                            });
-                          }
-                        }
-                      }}
-                      placeholder="المبلغ"
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      disabled={!invoiceData.multiplePayment.cash?.cashBoxId}
-                      style={{ flex: 1 }}
-                    />
-                  </div>
-                </Col>
-                <Col xs={24} sm={12} md={5}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ minWidth: 50, fontWeight: 500 }}>البنك:</span>
-                    <Select
-                      showSearch
-                      value={invoiceData.multiplePayment.bank?.bankId || ''}
-                      onChange={(value) => setInvoiceData({
-                        ...invoiceData, 
-                        multiplePayment: {
-                          ...invoiceData.multiplePayment,
-                          bank: {
-                            ...invoiceData.multiplePayment.bank,
-                            bankId: value,
-                            amount: invoiceData.multiplePayment.bank?.amount || ''
-                          }
-                        }
-                      })}
-                      disabled={banks.length === 0}
-                      placeholder="اختر البنك"
-                      style={{ fontFamily: 'Cairo, sans-serif', flex: 1 }}
-                      filterOption={(input, option) =>
-                        String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                      }
-                      options={banks.map(bank => ({
-                        label: bank.arabicName,
-                        value: bank.id || bank.arabicName
-                      }))}
-                      allowClear
-                    />
-                  </div>
-                </Col>
-                <Col xs={24} sm={12} md={4}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ minWidth: 70, fontWeight: 500 }}>المبلغ بنكي:</span>
-                    <Input
-                      value={invoiceData.multiplePayment.bank?.amount || ''}
-                      onChange={(e) => setInvoiceData({
-                        ...invoiceData, 
-                        multiplePayment: {
-                          ...invoiceData.multiplePayment,
-                          bank: {
-                            ...invoiceData.multiplePayment.bank,
-                            bankId: invoiceData.multiplePayment.bank?.bankId || '',
-                            amount: e.target.value
-                          }
-                        }
-                      })}
-                      onFocus={(e) => {
-                        // تعبئة تلقائية للمبلغ المتبقي إذا كان الحقل فارغ
-                        if (!e.target.value) {
-                          const currentTotal = parseFloat(invoiceData.multiplePayment.cash?.amount || '0') + 
-                                              parseFloat(invoiceData.multiplePayment.card?.amount || '0');
-                          const remaining = totals.afterTax - currentTotal;
-                          if (remaining > 0) {
-                            setInvoiceData({
+                            })}
+                            onFocus={(e) => {
+                              if (!e.target.value) {
+                                const currentTotal = parseFloat(invoiceData.multiplePayment.bank?.amount || '0') + 
+                                                    parseFloat(invoiceData.multiplePayment.card?.amount || '0');
+                                const remaining = totals.afterTax - currentTotal;
+                                if (remaining > 0) {
+                                  setInvoiceData({
+                                    ...invoiceData, 
+                                    multiplePayment: {
+                                      ...invoiceData.multiplePayment,
+                                      cash: {
+                                        ...invoiceData.multiplePayment.cash,
+                                        cashBoxId: invoiceData.multiplePayment.cash?.cashBoxId || '',
+                                        amount: remaining.toFixed(2)
+                                      }
+                                    }
+                                  });
+                                }
+                              }
+                            }}
+                            placeholder="0.00"
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            disabled={!invoiceData.multiplePayment.cash?.cashBoxId}
+                            style={{ textAlign: 'center', fontWeight: 600 }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </Col>
+
+                  {/* البنك */}
+                  <Col xs={24} lg={8}>
+                    <div style={{
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        backgroundColor: '#f9fafb',
+                        padding: '12px 16px',
+                        borderBottom: '1px solid #e5e7eb'
+                      }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: 10
+                        }}>
+                          <div style={{
+                            backgroundColor: '#2563eb',
+                            borderRadius: '6px',
+                            padding: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+                              <path d="M5 7h14c.55 0 1-.45 1-1s-.45-1-1-1H5c-.55 0-1 .45-1 1s.45 1 1 1zM6 10h12c.55 0 1-.45 1-1s-.45-1-1-1H6c-.55 0-1 .45-1 1s.45 1 1 1zM3 13h18c.55 0 1-.45 1-1s-.45-1-1-1H3c-.55 0-1 .45-1 1s.45 1 1 1zM4 16h16c.55 0 1-.45 1-1s-.45-1-1-1H4c-.55 0-1 .45-1 1s.45 1 1 1zM5 19h14c.55 0 1-.45 1-1s-.45-1-1-1H5c-.55 0-1 .45-1 1s.45 1 1 1z"/>
+                            </svg>
+                          </div>
+                          <span style={{ 
+                            fontWeight: 600, 
+                            color: '#374151',
+                            fontFamily: 'Cairo, sans-serif',
+                            fontSize: '14px'
+                          }}>
+                            التحويل البنكي
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div style={{ padding: '16px' }}>
+                        <div style={{ marginBottom: '12px' }}>
+                          <label style={{ 
+                            fontSize: '12px', 
+                            color: '#6b7280',
+                            fontWeight: 500,
+                            display: 'block',
+                            marginBottom: '6px',
+                            fontFamily: 'Cairo, sans-serif'
+                          }}>
+                            البنك
+                          </label>
+                          <Select
+                            showSearch
+                            value={invoiceData.multiplePayment.bank?.bankId || ''}
+                            onChange={(value) => setInvoiceData({
+                              ...invoiceData, 
+                              multiplePayment: {
+                                ...invoiceData.multiplePayment,
+                                bank: {
+                                  ...invoiceData.multiplePayment.bank,
+                                  bankId: value,
+                                  amount: invoiceData.multiplePayment.bank?.amount || ''
+                                }
+                              }
+                            })}
+                            disabled={banks.length === 0}
+                            placeholder="اختر البنك"
+                            style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
+                            filterOption={(input, option) =>
+                              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                            }
+                            options={banks.map(bank => ({
+                              label: bank.arabicName,
+                              value: bank.id || bank.arabicName
+                            }))}
+                            allowClear
+                          />
+                        </div>
+                        
+                        <div>
+                          <label style={{ 
+                            fontSize: '12px', 
+                            color: '#6b7280',
+                            fontWeight: 500,
+                            display: 'block',
+                            marginBottom: '6px',
+                            fontFamily: 'Cairo, sans-serif'
+                          }}>
+                            المبلغ البنكي (ر.س)
+                          </label>
+                          <Input
+                            value={invoiceData.multiplePayment.bank?.amount || ''}
+                            onChange={(e) => setInvoiceData({
                               ...invoiceData, 
                               multiplePayment: {
                                 ...invoiceData.multiplePayment,
                                 bank: {
                                   ...invoiceData.multiplePayment.bank,
                                   bankId: invoiceData.multiplePayment.bank?.bankId || '',
-                                  amount: remaining.toFixed(2)
+                                  amount: e.target.value
                                 }
                               }
-                            });
-                          }
-                        }
-                      }}
-                      placeholder="المبلغ"
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      disabled={!invoiceData.multiplePayment.bank?.bankId}
-                      style={{ flex: 1 }}
-                    />
-                  </div>
-                </Col>
-              </>
-            )}
-          </Row>
-
-          {multiplePaymentMode && (
-            <Row gutter={16} className="mb-4">
-              <Col xs={24} sm={12} md={6}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ minWidth: 50, fontWeight: 500 }}>شبكة:</span>
-                  <Select
-                    showSearch
-                    value={invoiceData.multiplePayment.card?.bankId || ''}
-                    onChange={(value) => setInvoiceData({
-                      ...invoiceData, 
-                      multiplePayment: {
-                        ...invoiceData.multiplePayment,
-                        card: {
-                          ...invoiceData.multiplePayment.card,
-                          bankId: value,
-                          amount: invoiceData.multiplePayment.card?.amount || ''
-                        }
-                      }
-                    })}
-                    disabled={banks.length === 0}
-                    placeholder="اختر بنك"
-                    style={{ fontFamily: 'Cairo, sans-serif', flex: 1 }}
-                    filterOption={(input, option) =>
-                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                    }
-                    options={banks.map(bank => ({
-                      label: bank.arabicName,
-                      value: bank.id || bank.arabicName
-                    }))}
-                    allowClear
-                  />
-                </div>
-              </Col>
-              <Col xs={24} sm={12} md={4}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ minWidth: 70, fontWeight: 500 }}>المبلغ شبكة:</span>
-                  <Input
-                    value={invoiceData.multiplePayment.card?.amount || ''}
-                    onChange={(e) => setInvoiceData({
-                      ...invoiceData, 
-                      multiplePayment: {
-                        ...invoiceData.multiplePayment,
-                        card: {
-                          ...invoiceData.multiplePayment.card,
-                          bankId: invoiceData.multiplePayment.card?.bankId || '',
-                          amount: e.target.value
-                        }
-                      }
-                    })}
-                    onFocus={(e) => {
-                      // تعبئة تلقائية للمبلغ المتبقي إذا كان الحقل فارغ
-                      if (!e.target.value) {
-                        const currentTotal = parseFloat(invoiceData.multiplePayment.cash?.amount || '0') + 
-                                            parseFloat(invoiceData.multiplePayment.bank?.amount || '0');
-                        const remaining = totals.afterTax - currentTotal;
-                        if (remaining > 0) {
-                          setInvoiceData({
-                            ...invoiceData, 
-                            multiplePayment: {
-                              ...invoiceData.multiplePayment,
-                              card: {
-                                ...invoiceData.multiplePayment.card,
-                                bankId: invoiceData.multiplePayment.card?.bankId || '',
-                                amount: remaining.toFixed(2)
+                            })}
+                            onFocus={(e) => {
+                              if (!e.target.value) {
+                                const currentTotal = parseFloat(invoiceData.multiplePayment.cash?.amount || '0') + 
+                                                    parseFloat(invoiceData.multiplePayment.card?.amount || '0');
+                                const remaining = totals.afterTax - currentTotal;
+                                if (remaining > 0) {
+                                  setInvoiceData({
+                                    ...invoiceData, 
+                                    multiplePayment: {
+                                      ...invoiceData.multiplePayment,
+                                      bank: {
+                                        ...invoiceData.multiplePayment.bank,
+                                        bankId: invoiceData.multiplePayment.bank?.bankId || '',
+                                        amount: remaining.toFixed(2)
+                                      }
+                                    }
+                                  });
+                                }
                               }
-                            }
-                          });
-                        }
-                      }
-                    }}
-                    placeholder="المبلغ"
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    disabled={!invoiceData.multiplePayment.card?.bankId}
-                    style={{ flex: 1 }}
-                  />
-                </div>
-              </Col>
-            </Row>
-          )}
-
-          {multiplePaymentMode && (
-            <Row gutter={16} className="mb-4">
-              <Col xs={24}>
-                <Card size="small" style={{ backgroundColor: '#f8f9fa' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', gap: 16 }}>
-                      <span style={{ fontWeight: 600 }}>
-                        نقدي: {invoiceData.multiplePayment.cash?.amount || '0'}
-                      </span>
-                      <span style={{ fontWeight: 600 }}>
-                        بنكي: {invoiceData.multiplePayment.bank?.amount || '0'}
-                      </span>
-                      <span style={{ fontWeight: 600 }}>
-                        شبكه: {invoiceData.multiplePayment.card?.amount || '0'}
-                      </span>
+                            }}
+                            placeholder="0.00"
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            disabled={!invoiceData.multiplePayment.bank?.bankId}
+                            style={{ textAlign: 'center', fontWeight: 600 }}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 16 }}>
-                      <span style={{ fontWeight: 600 }}>
-                        المجموع: {(
-                          parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                          parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                          parseFloat(invoiceData.multiplePayment.card?.amount || '0')
-                        ).toFixed(2)}
-                      </span>
-                      <span style={{ 
-                        fontWeight: 600,
-                        color: Math.abs(
+                  </Col>
+
+                  {/* الشبكة */}
+                  <Col xs={24} lg={8}>
+                    <div style={{
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        backgroundColor: '#f9fafb',
+                        padding: '12px 16px',
+                        borderBottom: '1px solid #e5e7eb'
+                      }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: 10
+                        }}>
+                          <div style={{
+                            backgroundColor: '#dc2626',
+                            borderRadius: '6px',
+                            padding: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+                              <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/>
+                            </svg>
+                          </div>
+                          <span style={{ 
+                            fontWeight: 600, 
+                            color: '#374151',
+                            fontFamily: 'Cairo, sans-serif',
+                            fontSize: '14px'
+                          }}>
+                            بطاقة الشبكة
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div style={{ padding: '16px' }}>
+                        <div style={{ marginBottom: '12px' }}>
+                          <label style={{ 
+                            fontSize: '12px', 
+                            color: '#6b7280',
+                            fontWeight: 500,
+                            display: 'block',
+                            marginBottom: '6px',
+                            fontFamily: 'Cairo, sans-serif'
+                          }}>
+                            بنك الشبكة
+                          </label>
+                          <Select
+                            showSearch
+                            value={invoiceData.multiplePayment.card?.bankId || ''}
+                            onChange={(value) => setInvoiceData({
+                              ...invoiceData, 
+                              multiplePayment: {
+                                ...invoiceData.multiplePayment,
+                                card: {
+                                  ...invoiceData.multiplePayment.card,
+                                  bankId: value,
+                                  amount: invoiceData.multiplePayment.card?.amount || ''
+                                }
+                              }
+                            })}
+                            disabled={banks.length === 0}
+                            placeholder="اختر البنك"
+                            style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
+                            filterOption={(input, option) =>
+                              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                            }
+                            options={banks.map(bank => ({
+                              label: bank.arabicName,
+                              value: bank.id || bank.arabicName
+                            }))}
+                            allowClear
+                          />
+                        </div>
+                        
+                        <div>
+                          <label style={{ 
+                            fontSize: '12px', 
+                            color: '#6b7280',
+                            fontWeight: 500,
+                            display: 'block',
+                            marginBottom: '6px',
+                            fontFamily: 'Cairo, sans-serif'
+                          }}>
+                            مبلغ الشبكة (ر.س)
+                          </label>
+                          <Input
+                            value={invoiceData.multiplePayment.card?.amount || ''}
+                            onChange={(e) => setInvoiceData({
+                              ...invoiceData, 
+                              multiplePayment: {
+                                ...invoiceData.multiplePayment,
+                                card: {
+                                  ...invoiceData.multiplePayment.card,
+                                  bankId: invoiceData.multiplePayment.card?.bankId || '',
+                                  amount: e.target.value
+                                }
+                              }
+                            })}
+                            onFocus={(e) => {
+                              if (!e.target.value) {
+                                const currentTotal = parseFloat(invoiceData.multiplePayment.cash?.amount || '0') + 
+                                                    parseFloat(invoiceData.multiplePayment.bank?.amount || '0');
+                                const remaining = totals.afterTax - currentTotal;
+                                if (remaining > 0) {
+                                  setInvoiceData({
+                                    ...invoiceData, 
+                                    multiplePayment: {
+                                      ...invoiceData.multiplePayment,
+                                      card: {
+                                        ...invoiceData.multiplePayment.card,
+                                        bankId: invoiceData.multiplePayment.card?.bankId || '',
+                                        amount: remaining.toFixed(2)
+                                      }
+                                    }
+                                  });
+                                }
+                              }
+                            }}
+                            placeholder="0.00"
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            disabled={!invoiceData.multiplePayment.card?.bankId}
+                            style={{ textAlign: 'center', fontWeight: 600 }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </Col>
+                </Row>
+
+                {/* ملخص الدفع المتعدد */}
+                <div style={{ 
+                  marginTop: '24px',
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  padding: '20px'
+                }}>
+                  <Row gutter={[16, 16]} align="middle">
+                    <Col xs={24} sm={8}>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ 
+                          fontSize: '12px', 
+                          color: '#6b7280',
+                          fontWeight: 500,
+                          marginBottom: '4px',
+                          fontFamily: 'Cairo, sans-serif'
+                        }}>
+                          إجمالي المدفوع
+                        </div>
+                        <div style={{ 
+                          fontSize: '18px', 
+                          fontWeight: 700,
+                          color: '#1f2937',
+                          fontFamily: 'Cairo, sans-serif'
+                        }}>
+                          {(
+                            parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                            parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                            parseFloat(invoiceData.multiplePayment.card?.amount || '0')
+                          ).toFixed(2)} ر.س
+                        </div>
+                      </div>
+                    </Col>
+                    <Col xs={24} sm={8}>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ 
+                          fontSize: '12px', 
+                          color: '#6b7280',
+                          fontWeight: 500,
+                          marginBottom: '4px',
+                          fontFamily: 'Cairo, sans-serif'
+                        }}>
+                          المبلغ المتبقي
+                        </div>
+                        <div style={{ 
+                          fontSize: '18px', 
+                          fontWeight: 700,
+                          color: (totals.afterTax - (
+                            parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                            parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                            parseFloat(invoiceData.multiplePayment.card?.amount || '0')
+                          )) > 0.01 ? '#dc2626' : '#059669',
+                          fontFamily: 'Cairo, sans-serif'
+                        }}>
+                          {(totals.afterTax - (
+                            parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                            parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                            parseFloat(invoiceData.multiplePayment.card?.amount || '0')
+                          )).toFixed(2)} ر.س
+                        </div>
+                      </div>
+                    </Col>
+                    <Col xs={24} sm={8}>
+                      <div style={{ 
+                        textAlign: 'center',
+                        padding: '12px 16px',
+                        borderRadius: '6px',
+                        backgroundColor: Math.abs(
                           (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
                            parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
                            parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                        ) > 0.01 ? '#dc2626' : '#059669'
+                        ) <= 0.01 ? '#dcfce7' : '#fef2f2',
+                        border: Math.abs(
+                          (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                           parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                           parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
+                        ) <= 0.01 ? '1px solid #16a34a' : '1px solid #dc2626'
                       }}>
-                        المتبقي: {(totals.afterTax - (
-                          parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                          parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                          parseFloat(invoiceData.multiplePayment.card?.amount || '0')
-                        )).toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                </Card>
-              </Col>
-            </Row>
+                        <div style={{ 
+                          fontSize: '13px', 
+                          fontWeight: 600,
+                          color: Math.abs(
+                            (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                             parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                             parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
+                          ) <= 0.01 ? '#15803d' : '#dc2626',
+                          fontFamily: 'Cairo, sans-serif',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6
+                        }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            {Math.abs(
+                              (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                               parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                               parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
+                            ) <= 0.01 ? (
+                              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                            ) : (
+                              <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
+                            )}
+                          </svg>
+                          {Math.abs(
+                            (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                             parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                             parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
+                          ) <= 0.01 ? 'الدفع مكتمل' : 'الدفع غير مكتمل'}
+                        </div>
+                        {Math.abs(
+                          (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
+                           parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
+                           parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
+                        ) > 0.01 && (
+                          <div style={{ 
+                            fontSize: '11px', 
+                            color: '#dc2626',
+                            marginTop: '4px',
+                            fontFamily: 'Cairo, sans-serif'
+                          }}>
+                            يجب أن يكون المتبقي 0.00 لحفظ الفاتورة
+                          </div>
+                        )}
+                      </div>
+                    </Col>
+                  </Row>
+                </div>
+              </div>
+            </Card>
           )}
+
+
 
           {/* Save Button */}
           <Row justify="center" gutter={12}>
@@ -4800,7 +5443,7 @@ const handlePrint = () => {
                     invoiceNumber: newInvoiceNumber
                   }));
                 }}
-                style={{ width: 150 }}
+                style={{ width: 150, backgroundColor: '#60a5fa', borderColor: '#60a5fa', color: '#fff' }}
                 loading={loading}
                 disabled={items.length === 0}
               >
@@ -4820,7 +5463,7 @@ const handlePrint = () => {
                 }
                 onClick={handlePrint}
                 disabled={loading || !lastSavedInvoice}
-                style={{ width: 150 }}
+                style={{ width: 150, backgroundColor: '#60a5fa', borderColor: '#60a5fa', color: '#fff' }}
               >
                 طباعة الفاتورة
               </Button>
@@ -4836,7 +5479,7 @@ const handlePrint = () => {
                 }
                 onClick={() => {/* TODO: implement print entry logic */}}
                 disabled={loading}
-                style={{ width: 150 }}
+                style={{ width: 150, backgroundColor: '#60a5fa', borderColor: '#60a5fa', color: '#fff' }}
               >
                 طباعة القيد
               </Button>

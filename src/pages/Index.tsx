@@ -23,14 +23,14 @@ import EditReturnPage from "./edit/edit-return";
 import Stockpage from "./stores/stock";
 import InvoiceProfitsReport from "./reports/invoice-profits";
 import Footer from "@/components/Footer";
-
-
 import InvoicePreferred from "./reports/invoice-preferred";
+import CustomersPage from "./CustomersPage";
 import Invoice from "./reports/invoice";
 import SettingsPage from "./SettingsPage";
 import ItemCardPage from "./stores/item";
 import SalesPage from "./stores/sales";
 import WarehouseManagementOld from "./stores/manage";
+import AdvancedWarehouseManagement from "./stores/AdvancedWarehouseManagement";
 import SalesReturnPage from "./stores/sales-return";
 import Branches from "./business/branches";
 import PaymentMethodsPage from "./business/payment-methods";
@@ -48,9 +48,9 @@ import {
   ProjectManagement,
   SalesManagement,
   PurchaseManagement,
-  // ContractManagement,
   EquipmentManagement
 } from "../pages/management";
+import { Player } from '@lottiefiles/react-lottie-player';
 
 // Accounting Pages
 import AccountsSettlementPage from "./accounting/AccountsSettlementPage";
@@ -60,6 +60,7 @@ import ChartOfAccountsPage from "./accounting/ChartOfAccountsPage";
 import FinancialYearsPage from "./accounting/FinancialYearsPage";
 import BankAccountsPage from "./accounting/BankAccountsPage";
 import CashBoxesPage from "./management/CashBoxesPage";
+import CostCentersPage from "./accounting/CostCentersPage";
 
 // Customer Management Pages
 import AddCustomerPage from "./customers/AddCustomerPage";
@@ -74,6 +75,7 @@ import EditSalesInvoicePage from "./stores/edit-sales-invoice";
 import EditSalesInvoiceDetailPage from "./stores/edit-sales-invoice-detail";
 import ReceiptVoucher from "./stores/ReceiptVoucher";
 import ReceiptVouchersDirectory from "./stores/ReceiptVouchersDirectory";
+
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -89,7 +91,6 @@ const Index = () => {
   const [companyData, setCompanyData] = useState<CompanyData | null>(null);
   const [companyLoading, setCompanyLoading] = useState(true);
 
-  // عند أول تحميل الصفحة، جلب بيانات الشركة من قاعدة البيانات
   useEffect(() => {
     const fetchCompany = async () => {
       setCompanyLoading(true);
@@ -104,7 +105,6 @@ const Index = () => {
     fetchCompany();
   }, []);
 
-
   const handleLogin = () => {
     if (companyData) {
       setAppState("dashboard");
@@ -113,7 +113,6 @@ const Index = () => {
     }
   };
 
-  // استقبل بيانات الشركة من DataCompletionPage
   const handleDataCompletion = (data?: CompanyData) => {
     if (data) setCompanyData(data);
     setAppState("dashboard");
@@ -123,27 +122,49 @@ const Index = () => {
     try {
       await signOut(auth);
     } catch (error) {
-      // يمكن عرض رسالة خطأ إذا رغبت
+      console.error("Error signing out:", error);
     }
     setAppState("login");
     setSidebarCollapsed(false);
     setCompanyData(null);
   };
 
-
   if (loading || companyLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-purple-700 via-indigo-600 to-blue-500">
+      <div className="flex items-center justify-center min-h-screen bg-white">
         <div className="flex flex-col items-center space-y-6">
-          <div className="animate-spin rounded-full border-8 border-t-8 border-t-white border-white/30 h-24 w-24 mb-4" />
-          <h2 className="text-2xl font-bold text-white drop-shadow-lg">جاري تحميل بياناتك...</h2>
-          <p className="text-white/80">يرجى الانتظار قليلاً حتى يتم تجهيز النظام</p>
+          {/* رسمة تحميل محاسبية */}
+          <div className="relative">
+            <Player
+              autoplay
+              loop
+              src="https://assets9.lottiefiles.com/packages/lf20_myejiggj.json"
+              style={{ height: '200px', width: '200px' }}
+              className="drop-shadow-lg"
+            />
+            {/* بديل CSS في حالة عدم عمل Lottie */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin opacity-50"></div>
+            </div>
+          </div>
+          
+          <h2 className="text-2xl font-bold text-gray-800 drop-shadow-lg">
+            جاري تحميل النظام المحاسبي...
+          </h2>
+          <p className="text-gray-600 max-w-md text-center">
+            يتم الآن تحميل البيانات المالية وتجهيز التقارير
+          </p>
+          <div className="w-64 bg-gray-300 rounded-full h-2 mt-4">
+            <div 
+              className="bg-blue-500 h-2 rounded-full animate-pulse" 
+              style={{ width: '70%' }}
+            />
+          </div>
         </div>
       </div>
     );
   }
 
-  // إذا لم يوجد مستخدم، اعرض صفحة تسجيل الدخول
   if (!user) {
     return <LoginPage onLogin={handleLogin} />;
   }
@@ -152,89 +173,87 @@ const Index = () => {
     return <DataCompletionPage onComplete={data => handleDataCompletion(data)} />;
   }
 
-  // بعد تسجيل الدخول وإتمام البيانات، استخدم الراوتر
   return (
     <div className="bg-background rtl" dir="rtl">
-      {/* الهيدر بعرض الشاشة بالكامل */}
       <Header
         onLogout={handleLogout}
         onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
         isSidebarCollapsed={sidebarCollapsed}
         companyName={companyData?.arabicName}
       />
-      {/* صف فيه السايدبار بجانب المحتوى الرئيسي */}
-    <div className="flex">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-y-auto min-h-screen">
-        <main className="flex-1">
-          <Routes>
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/stores/item" element={<ItemCardPage />} />
-            <Route path="/stores/sales" element={<SalesPage />} />
-            <Route path="/stores/manage" element={<WarehouseManagementOld />} />
-            <Route path="/stores/sales-return" element={<SalesReturnPage />} />
-            <Route path="/stores/edit-sales-invoice" element={<EditSalesInvoicePage />} />
-            <Route path="/stores/edit-sales-invoice/:id" element={<EditSalesInvoiceDetailPage />} />
-            <Route path="/stores/receipt-voucher" element={<ReceiptVoucher />} />
-            <Route path="/stores/receipt-vouchers-directory" element={<ReceiptVouchersDirectory />} />
-            <Route path="/business/branches" element={<Branches />} />
-            <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/stores/stock" element={<Stockpage />} />
-            <Route path="/stores/purchases" element={<PurchasesPage />} />
-            <Route path="/reports/invoice-profits" element={<InvoiceProfitsReport />} />
-            <Route path="/reports/invoice-preferred" element={<InvoicePreferred />} />
-            <Route path="/stores/purchases-return" element={<PurchasesReturnPage />} />
-            <Route path="/edit/editsales" element={<EditSalesPage />} />
-            <Route path="/edit/edit-return/:id" element={<EditReturnPage />} />
-            <Route path="/help" element={<HelpPage />} />
-            <Route path="/admin/admins" element={<Managers />} />
-            <Route path="/business/payment-methods" element={<PaymentMethodsPage />} />
-            <Route path="/reports/daily-sales" element={<DailySales />} />
-           <Route path="/reports/invoice" element={<Invoice />} />
-           {/* Management Routes */}
-            <Route path="/management/financial" element={<FinancialManagement />} />
-            <Route path="/management/hr" element={<HumanResources />} />
-            <Route path="/management/warehouse" element={<WarehouseManagement />} />
-            <Route path="/management/projects" element={<ProjectManagement />} />
-            <Route path="/management/sales" element={<SalesManagement />} />
-            <Route path="/management/sales-representatives" element={<SalesRepresentativesPage />} />
-            <Route path="/management/sales-targets" element={<SalesTargetsPage />} />
-            <Route path="/management/sales-commissions" element={<SalesCommissionsPage />} />
-            <Route path="/management/performance-evaluation" element={<PerformanceEvaluationPage />} />
-            <Route path="/management/purchase" element={<PurchaseManagement />} />
-            {/* <Route path="/management/contracts" element={<ContractManagement />} /> */}
-            <Route path="/management/equipment" element={<EquipmentManagement />} />
-            
-            {/* Financial Management Sub-Routes */}
-            <Route path="/accounting/accounts-settlement" element={<AccountsSettlementPage />} />
-            <Route path="/accounting/add-account" element={<AddAccountPage />} />
-            <Route path="/accounting/edit-account/:id" element={<EditAccountPage />} />
-            <Route path="/accounting/chart-of-accounts" element={<ChartOfAccountsPage />} />
-            <Route path="/accounting/financial-years" element={<FinancialYearsPage />} />
-            <Route path="/accounting/bank-accounts" element={<BankAccountsPage />} />
-            <Route path="/accounting/cash-boxes" element={<CashBoxesPage />} />
-            
-            {/* Customer Management Routes */}
-            <Route path="/customers/add" element={<AddCustomerPage />} />
-            <Route path="/customers/directory" element={<CustomersDirectoryPage />} />
-            <Route path="/customers/edit/:customerId" element={<EditCustomerPage />} />
-            <Route path="/customers/view/:customerId" element={<ViewCustomerPage />} />
-            <Route path="/customers/status" element={<CustomerStatusPage />} />
-            <Route path="/customers/classification" element={<CustomerClassificationPage />} />
-            <Route path="/customers/follow-up" element={<CustomerFollowUpPage />} />
-            
-            <Route path="/suppliers" element={<Suppliers />} />
-            <Route path="/" element={<Dashboard />} />
+      <div className="flex">
+        <Sidebar />
+        <div className="flex-1 flex flex-col overflow-y-auto min-h-screen">
+          <main className="flex-1">
+            <Routes>
+            <Route path="/customers" element={<CustomersPage />} />
 
-          {/* Catch-all route for 404 */}
-          <Route path="*" element={<NotFound />} />
-
-          </Routes>
-        </main>
-        <Footer />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/stores/item" element={<ItemCardPage />} />
+              <Route path="/stores/sales" element={<SalesPage />} />
+              <Route path="/stores/manage" element={<WarehouseManagementOld />} />
+              <Route path="/stores/advanced-warehouse" element={<AdvancedWarehouseManagement />} />
+              <Route path="/stores/sales-return" element={<SalesReturnPage />} />
+              <Route path="/stores/edit-sales-invoice" element={<EditSalesInvoicePage />} />
+              <Route path="/stores/edit-sales-invoice/:id" element={<EditSalesInvoiceDetailPage />} />
+              <Route path="/stores/receipt-voucher" element={<ReceiptVoucher />} />
+              <Route path="/stores/receipt-vouchers-directory" element={<ReceiptVouchersDirectory />} />
+              <Route path="/business/branches" element={<Branches />} />
+              <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/stores/stock" element={<Stockpage />} />
+              <Route path="/stores/purchases" element={<PurchasesPage />} />
+              <Route path="/reports/invoice-profits" element={<InvoiceProfitsReport />} />
+              <Route path="/reports/invoice-preferred" element={<InvoicePreferred />} />
+              <Route path="/stores/purchases-return" element={<PurchasesReturnPage />} />
+              <Route path="/edit/editsales" element={<EditSalesPage />} />
+              <Route path="/edit/edit-return/:id" element={<EditReturnPage />} />
+              <Route path="/help" element={<HelpPage />} />
+              <Route path="/admin/admins" element={<Managers />} />
+              <Route path="/business/payment-methods" element={<PaymentMethodsPage />} />
+              <Route path="/reports/daily-sales" element={<DailySales />} />
+              <Route path="/reports/invoice" element={<Invoice />} />
+              
+              {/* Management Routes */}
+              <Route path="/management/financial" element={<FinancialManagement />} />
+              <Route path="/management/hr" element={<HumanResources />} />
+              <Route path="/management/warehouse" element={<WarehouseManagement />} />
+              <Route path="/management/projects" element={<ProjectManagement />} />
+              <Route path="/management/sales" element={<SalesManagement />} />
+              <Route path="/management/sales-representatives" element={<SalesRepresentativesPage />} />
+              <Route path="/management/sales-targets" element={<SalesTargetsPage />} />
+              <Route path="/management/sales-commissions" element={<SalesCommissionsPage />} />
+              <Route path="/management/performance-evaluation" element={<PerformanceEvaluationPage />} />
+              <Route path="/management/purchase" element={<PurchaseManagement />} />
+              <Route path="/management/equipment" element={<EquipmentManagement />} />
+              
+              {/* Financial Management Sub-Routes */}
+              <Route path="/accounting/accounts-settlement" element={<AccountsSettlementPage />} />
+              <Route path="/accounting/add-account" element={<AddAccountPage />} />
+              <Route path="/accounting/edit-account/:id" element={<EditAccountPage />} />
+              <Route path="/accounting/chart-of-accounts" element={<ChartOfAccountsPage />} />
+              <Route path="/accounting/financial-years" element={<FinancialYearsPage />} />
+              <Route path="/accounting/bank-accounts" element={<BankAccountsPage />} />
+              <Route path="/accounting/cash-boxes" element={<CashBoxesPage />} />
+              <Route path="/accounting/cost-centers" element={<CostCentersPage />} />
+              
+              {/* Customer Management Routes */}
+              <Route path="/customers/add" element={<AddCustomerPage />} />
+              <Route path="/customers/directory" element={<CustomersDirectoryPage />} />
+              <Route path="/customers/edit/:customerId" element={<EditCustomerPage />} />
+              <Route path="/customers/view/:customerId" element={<ViewCustomerPage />} />
+              <Route path="/customers/status" element={<CustomerStatusPage />} />
+              <Route path="/customers/classification" element={<CustomerClassificationPage />} />
+              <Route path="/customers/follow-up" element={<CustomerFollowUpPage />} />
+              
+              <Route path="/suppliers" element={<Suppliers />} />
+              <Route path="/" element={<Dashboard />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </main>
+          <Footer />
+        </div>
       </div>
     </div>
-  </div>
   );
 };
 

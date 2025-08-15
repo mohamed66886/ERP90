@@ -1,32 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { 
-  FileText,
-  X,
-  Edit,
-  Trash2,
-  Loader2,
-  Search,
-  Plus,
-  Download,
-  RotateCcw
-} from 'lucide-react';
-import { toast } from 'sonner';
+  Card, 
+  Table, 
+  Button, 
+  Input, 
+  Select, 
+  Tag, 
+  Space, 
+  Popconfirm, 
+  Row, 
+  Col, 
+  Spin,
+  Empty,
+  Typography,
+  message,
+  Badge
+} from 'antd';
+import { 
+  FileTextOutlined,
+  SearchOutlined,
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
+  ReloadOutlined,
+  ClearOutlined
+} from '@ant-design/icons';
 import { getAccounts, addAccount, deleteAccount, type Account } from '@/services/accountsService';
 import Breadcrumb from '@/components/Breadcrumb';
+
+const { Title, Text } = Typography;
+const { Option } = Select;
 
 
 interface AccountsSettlementPageProps {
@@ -64,13 +69,13 @@ const AccountsSettlementPage: React.FC<AccountsSettlementPageProps> = ({
       console.log('Accounts loaded:', firebaseAccounts);
       setAccounts(firebaseAccounts);
       if (firebaseAccounts.length === 0) {
-        toast.info('لا توجد حسابات في قاعدة البيانات. يمكنك إضافة حسابات جديدة.');
+        message.info('لا توجد حسابات في قاعدة البيانات. يمكنك إضافة حسابات جديدة.');
       } else {
-        toast.success(`تم تحميل ${firebaseAccounts.length} حساب من قاعدة البيانات`);
+        message.success(`تم تحميل ${firebaseAccounts.length} حساب من قاعدة البيانات`);
       }
     } catch (error) {
       console.error('Error loading accounts:', error);
-      toast.error(`فشل في تحميل الحسابات: ${error.message || 'خطأ غير معروف'}`);
+      message.error(`فشل في تحميل الحسابات: ${error.message || 'خطأ غير معروف'}`);
       setAccounts([]);
     } finally {
       setIsLoading(false);
@@ -119,36 +124,34 @@ const AccountsSettlementPage: React.FC<AccountsSettlementPageProps> = ({
     const subAccountsCount = accounts.filter(acc => acc.parentId === id).length;
     
     if (subAccountsCount > 0) {
-      toast.error(`لا يمكن حذف الحساب "${accountToDelete?.nameAr}" لأنه يحتوي على ${subAccountsCount} حساب فرعي. يجب حذف الحسابات الفرعية أولاً.`);
+      message.error(`لا يمكن حذف الحساب "${accountToDelete?.nameAr}" لأنه يحتوي على ${subAccountsCount} حساب فرعي. يجب حذف الحسابات الفرعية أولاً.`);
       return;
     }
     
-    if (window.confirm(`هل أنت متأكد من حذف الحساب "${accountToDelete?.nameAr}"؟ هذا الإجراء لا يمكن التراجع عنه.`)) {
-      try {
-        setIsLoading(true);
-        console.log('Deleting account with ID:', id);
-        
-        // Always use Firebase delete function
-        await deleteAccount(id);
-        console.log('Account deleted successfully');
-        
-        toast.success(`تم حذف الحساب "${accountToDelete?.nameAr}" بنجاح`);
-        
-        // Reload accounts from Firebase to reflect changes
-        await loadAccounts();
-        
-      } catch (error) {
-        console.error('Error deleting account:', error);
-        toast.error(`فشل في حذف الحساب: ${error.message || 'خطأ غير معروف'}`);
-      } finally {
-        setIsLoading(false);
-      }
+    try {
+      setIsLoading(true);
+      console.log('Deleting account with ID:', id);
+      
+      // Always use Firebase delete function
+      await deleteAccount(id);
+      console.log('Account deleted successfully');
+      
+      message.success(`تم حذف الحساب "${accountToDelete?.nameAr}" بنجاح`);
+      
+      // Reload accounts from Firebase to reflect changes
+      await loadAccounts();
+      
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      message.error(`فشل في حذف الحساب: ${error.message || 'خطأ غير معروف'}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleEditClick = (account: Account) => {
     console.log('Editing account:', account);
-    toast.info(`جاري تحميل بيانات الحساب: ${account.nameAr}`);
+    message.info(`جاري تحميل بيانات الحساب: ${account.nameAr}`);
     if (onNavigateToEdit) {
       onNavigateToEdit(account);
     } else {
@@ -195,132 +198,209 @@ const AccountsSettlementPage: React.FC<AccountsSettlementPageProps> = ({
     link.click();
   };
 
+  // Define table columns
+  const columns = [
+    {
+      title: '#',
+      key: 'index',
+      width: 60,
+      render: (_: unknown, __: unknown, index: number) => index + 1,
+    },
+    {
+      title: 'كود الحساب',
+      dataIndex: 'code',
+      key: 'code',
+      render: (code: string) => (
+        <Tag color="blue" style={{ fontFamily: 'monospace', fontSize: '13px' }}>
+          {code}
+        </Tag>
+      ),
+    },
+    {
+      title: 'اسم الحساب (عربي)',
+      dataIndex: 'nameAr',
+      key: 'nameAr',
+      render: (text: string) => <Text strong>{text}</Text>,
+    },
+    {
+      title: 'اسم الحساب (انجليزي)',
+      dataIndex: 'nameEn',
+      key: 'nameEn',
+      render: (text: string) => <Text type="secondary">{text}</Text>,
+    },
+    {
+      title: 'الحسابات الفرعية',
+      key: 'subAccounts',
+      render: (_: unknown, record: Account) => {
+        const subAccountsCount = accounts.filter(acc => acc.parentId === record.id).length;
+        return (
+          <Tag color={subAccountsCount > 0 ? 'blue' : 'default'}>
+            {subAccountsCount} حساب فرعي
+          </Tag>
+        );
+      },
+    },
+    {
+      title: 'طبيعة الحساب',
+      dataIndex: 'nature',
+      key: 'nature',
+      render: (nature: string) => (
+        <Tag color={nature === 'مدينة' ? 'green' : 'red'}>
+          {nature}
+        </Tag>
+      ),
+    },
+    {
+      title: 'الرصيد',
+      dataIndex: 'balance',
+      key: 'balance',
+      align: 'left' as const,
+      render: (balance: number) => (
+        <Text 
+          strong 
+          style={{ 
+            color: balance > 0 ? '#52c41a' : balance < 0 ? '#ff4d4f' : '#8c8c8c',
+            fontFamily: 'monospace'
+          }}
+        >
+          {balance.toLocaleString('ar-SA')} ريال
+        </Text>
+      ),
+    },
+    {
+      title: 'الإجراءات',
+      key: 'actions',
+      width: 120,
+      render: (_: unknown, record: Account) => {
+        const subAccountsCount = accounts.filter(acc => acc.parentId === record.id).length;
+        return (
+          <Space>
+            <Button
+              type="text"
+              icon={<EditOutlined />}
+              onClick={() => handleEditClick(record)}
+              title="تعديل الحساب"
+              style={{ color: '#1890ff' }}
+            />
+            <Popconfirm
+              title="حذف الحساب"
+              description={`هل أنت متأكد من حذف الحساب "${record.nameAr}"؟ هذا الإجراء لا يمكن التراجع عنه.`}
+              onConfirm={() => handleDeleteAccount(record.id)}
+              okText="نعم"
+              cancelText="لا"
+              disabled={subAccountsCount > 0}
+            >
+              <Button
+                type="text"
+                icon={<DeleteOutlined />}
+                disabled={subAccountsCount > 0}
+                title={
+                  subAccountsCount > 0 
+                    ? `لا يمكن حذف هذا الحساب لأنه يحتوي على ${subAccountsCount} حساب فرعي`
+                    : "حذف الحساب"
+                }
+                style={{ 
+                  color: subAccountsCount > 0 ? '#d9d9d9' : '#ff4d4f'
+                }}
+              />
+            </Popconfirm>
+          </Space>
+        );
+      },
+    },
+  ];
+
   return (
     <div className="w-full p-6 space-y-6 min-h-screen" dir="rtl">
       {/* Header */}
-      <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
-        <div className="flex items-center">
-          <FileText className="h-8 w-8 text-blue-600 ml-3" />
-          <h1 className="text-2xl font-bold text-gray-800">تصنيف الحسابات</h1>
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+          <FileTextOutlined style={{ fontSize: 32, color: '#1890ff', marginLeft: 12 }} />
+          <Title level={2} style={{ margin: 0, color: '#262626' }}>تصنيف الحسابات</Title>
         </div>
-        <p className="text-gray-600 mt-2">إدارة وتصنيف الحسابات المالية</p>
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
-      </div>
-                         <Breadcrumb
+        <Text type="secondary">إدارة وتصنيف الحسابات المالية</Text>
+        <div style={{ 
+          position: 'absolute', 
+          bottom: 0, 
+          left: 0, 
+          width: '100%', 
+          height: 4, 
+          background: 'linear-gradient(to right, #40a9ff, #9254de)' 
+        }}></div>
+      </Card>
+
+      <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
           { label: "الادارة الماليه", to: "/management/financial" }, 
           { label: "تصنيف الحسابات" },
         ]}
       />
+
       <Card>
-        <CardHeader>
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <CardTitle className="text-xl font-semibold">قائمة الحسابات</CardTitle>
-              <div className="flex flex-wrap gap-4 mt-2 text-sm text-gray-500">
+        <div style={{ marginBottom: 24 }}>
+          <Row justify="space-between" align="middle" gutter={[16, 16]}>
+            <Col>
+              <Title level={4} style={{ margin: 0 }}>قائمة الحسابات</Title>
+              <Space wrap style={{ marginTop: 8 }}>
                 {isLoading ? (
-                  <span>جاري التحميل...</span>
+                  <Text type="secondary">جاري التحميل...</Text>
                 ) : (
                   <>
-                    <span>إجمالي: {accounts.filter(a => a.level === 1).length} حساب رئيسي</span>
-                    <span>•</span>
-                    <span>المعروض: {filteredAccounts.length} نتيجة</span>
-                    <span>•</span>
-                    <span className="text-blue-600">حسابات المستوى الأول فقط</span>
+                    <Text type="secondary">إجمالي: {accounts.filter(a => a.level === 1).length} حساب رئيسي</Text>
+                    <Text type="secondary">•</Text>
+                    <Text type="secondary">المعروض: {filteredAccounts.length} نتيجة</Text>
+                    <Text type="secondary">•</Text>
+                    <Text style={{ color: '#1890ff' }}>حسابات المستوى الأول فقط</Text>
                   </>
                 )}
-              </div>
-            </div>
+              </Space>
+            </Col>
             
-            <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
-              {/* Search Input */}
-              <div className="relative" style={{ minWidth: 280 }}>
-                <div className="relative">
-                  <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  <Input
-                    placeholder="البحث بالكود أو الاسم..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 h-11 transition-all duration-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 border-gray-300 hover:border-blue-400"
-                    style={{
-                      fontFamily: 'Cairo, Tajawal, sans-serif',
-                      fontSize: 14,
-                      borderRadius: 8,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                    }}
-                  />
-                </div>
-              </div>
+            <Col>
+              <Space wrap>
+                {/* Search Input */}
+                <Input
+                  placeholder="البحث بالكود أو الاسم..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  prefix={<SearchOutlined />}
+                  style={{ width: 280 }}
+                />
 
-              {/* Filters */}
-              <div className="flex gap-2">
+                {/* Filters */}
                 <Select
                   value={filterType}
-                  onValueChange={(value) => setFilterType(value)}
+                  onChange={(value) => setFilterType(value)}
+                  placeholder="النوع"
+                  style={{ width: 130 }}
                 >
-                  <SelectTrigger 
-                    className="h-11 w-32 transition-all duration-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 border-gray-300 hover:border-blue-400"
-                    style={{
-                      fontFamily: 'Cairo, Tajawal, sans-serif',
-                      fontSize: 14,
-                      borderRadius: 8,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                    }}
-                  >
-                    <SelectValue placeholder="النوع" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">كل الأنواع</SelectItem>
-                    {getLevel1AccountNames().map((accountName) => (
-                      <SelectItem key={accountName} value={accountName}>
-                        {accountName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+                  <Option value="all">كل الأنواع</Option>
+                  {getLevel1AccountNames().map((accountName) => (
+                    <Option key={accountName} value={accountName}>
+                      {accountName}
+                    </Option>
+                  ))}
                 </Select>
 
                 <Select
                   value={filterBalance}
-                  onValueChange={(value) => setFilterBalance(value as 'all' | 'positive' | 'zero' | 'negative')}
+                  onChange={(value) => setFilterBalance(value as 'all' | 'positive' | 'zero' | 'negative')}
+                  placeholder="الرصيد"
+                  style={{ width: 130 }}
                 >
-                  <SelectTrigger 
-                    className="h-11 w-32 transition-all duration-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 border-gray-300 hover:border-blue-400"
-                    style={{
-                      fontFamily: 'Cairo, Tajawal, sans-serif',
-                      fontSize: 14,
-                      borderRadius: 8,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                    }}
-                  >
-                    <SelectValue placeholder="الرصيد" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">كل الأرصدة</SelectItem>
-                    <SelectItem value="positive">موجب</SelectItem>
-                    <SelectItem value="zero">صفر</SelectItem>
-                    <SelectItem value="negative">سالب</SelectItem>
-                  </SelectContent>
+                  <Option value="all">كل الأرصدة</Option>
+                  <Option value="positive">موجب</Option>
+                  <Option value="zero">صفر</Option>
+                  <Option value="negative">سالب</Option>
                 </Select>
-              </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-2">
+                {/* Action Buttons */}
                 <Button 
                   onClick={loadAccounts} 
-                  disabled={isLoading}
-                  variant="outline"
-                  className="h-11 px-4 flex items-center gap-2 font-medium transition-all duration-200"
-                  style={{
-                    fontFamily: 'Cairo, Tajawal, sans-serif',
-                    borderColor: '#3b82f6',
-                    color: '#3b82f6',
-                    backgroundColor: '#fff',
-                    borderRadius: 8,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                  }}
+                  loading={isLoading}
+                  icon={<ReloadOutlined />}
                 >
-                  <RotateCcw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
                   {isLoading ? 'جاري التحميل...' : 'إعادة تحميل'}
                 </Button>
                 
@@ -331,211 +411,94 @@ const AccountsSettlementPage: React.FC<AccountsSettlementPageProps> = ({
                       setFilterType('all');
                       setFilterBalance('all');
                     }}
-                    variant="outline"
-                    className="h-11 px-4 flex items-center gap-2 font-medium transition-all duration-200"
-                    style={{
-                      fontFamily: 'Cairo, Tajawal, sans-serif',
-                      borderColor: '#6b7280',
-                      color: '#6b7280',
-                      backgroundColor: '#fff',
-                      borderRadius: 8,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                    }}
+                    icon={<ClearOutlined />}
                   >
-                    <X className="h-4 w-4" />
                     إعادة تعيين
                   </Button>
                 )}
                 
-                {/* تم حذف زر إضافة حساب رئيسي "الأصول" */}
-                
                 <Button 
                   onClick={exportToCSV}
-                  variant="outline"
-                  className="h-11 px-4 flex items-center gap-2 font-medium transition-all duration-200"
-                  style={{
-                    fontFamily: 'Cairo, Tajawal, sans-serif',
-                    borderColor: '#8b5cf6',
-                    color: '#8b5cf6',
-                    backgroundColor: '#fff',
-                    borderRadius: 8,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                  }}
+                  icon={<DownloadOutlined />}
                 >
-                  <Download className="h-4 w-4" />
                   تصدير
                 </Button>
                 
                 <Button 
+                  type="primary"
                   onClick={handleAddClick}
-                  className="h-11 px-4 flex items-center gap-2 font-medium transition-all duration-200"
+                  icon={<PlusOutlined />}
                   style={{
-                    fontFamily: 'Cairo, Tajawal, sans-serif',
-                    fontWeight: 700,
-                    background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                    border: 'none',
-                    borderRadius: 8,
-                    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4)',
-                    color: '#fff'
+                    background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+                    border: 'none'
                   }}
                 >
-                  <Plus className="h-4 w-4" />
                   إضافة حساب
                 </Button>
-              </div>
-            </div>
-          </div>
-        </CardHeader>
+              </Space>
+            </Col>
+          </Row>
+        </div>
 
         {/* Active Filters Display */}
         {(searchTerm || filterType !== 'all' || filterBalance !== 'all') && (
-          <div className="px-6 pb-4">
-            <div className="flex flex-wrap gap-2">
-              <span className="text-sm text-gray-600">الفلاتر النشطة:</span>
+          <div style={{ marginBottom: 16 }}>
+            <Space wrap>
+              <Text type="secondary">الفلاتر النشطة:</Text>
               {searchTerm && (
-                <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                  البحث: {searchTerm}
-                </Badge>
+                <Tag color="blue">البحث: {searchTerm}</Tag>
               )}
               {filterType !== 'all' && (
-                <Badge variant="secondary" className="bg-green-100 text-green-800">
-                  النوع: {filterType}
-                </Badge>
+                <Tag color="green">النوع: {filterType}</Tag>
               )}
               {filterBalance !== 'all' && (
-                <Badge variant="secondary" className="bg-purple-100 text-purple-800">
+                <Tag color="purple">
                   الرصيد: {filterBalance === 'positive' ? 'موجب' : filterBalance === 'zero' ? 'صفر' : 'سالب'}
-                </Badge>
+                </Tag>
               )}
-            </div>
+            </Space>
           </div>
         )}
 
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-right w-16">#</TableHead>
-                  <TableHead className="text-right">كود الحساب</TableHead>
-                  <TableHead className="text-right">اسم الحساب (عربي)</TableHead>
-                  <TableHead className="text-right">اسم الحساب (انجليزي)</TableHead>
-                  <TableHead className="text-right">الحسابات الفرعية</TableHead>
-                  <TableHead className="text-right">طبيعة الحساب</TableHead>
-                  <TableHead className="text-right">الرصيد</TableHead>
-                  <TableHead className="text-right">الإجراءات</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
-                      <div className="flex flex-col items-center gap-2">
-                        <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
-                        <p className="text-gray-500">جاري تحميل الحسابات...</p>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : filteredAccounts.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
-                      <div className="flex flex-col items-center gap-4">
-                        <FileText className="h-12 w-12 text-gray-400" />
-                        <div className="text-center">
-                          <p className="text-gray-500 text-lg font-medium">لا توجد حسابات رئيسية متاحة</p>
-                          <p className="text-gray-400 text-sm mt-1">
-                            {accounts.filter(a => a.level === 1).length === 0 
-                              ? 'لم يتم العثور على أي حسابات رئيسية (مستوى 1) في قاعدة البيانات'
-                              : 'لا توجد نتائج تطابق البحث الحالي'
-                            }
-                          </p>
-                          <p className="text-blue-600 text-xs mt-2">
-                            💡 هذه الصفحة تعرض الحسابات الرئيسية (المستوى الأول) فقط
-                          </p>
-                          {/* لا تعرض زر إضافة حسابات تجريبية */}
-                        </div>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredAccounts.map((account, index) => {
-                    // عد الحسابات الفرعية
-                    const subAccountsCount = accounts.filter(acc => acc.parentId === account.id).length;
-                    
-                    return (
-                      <TableRow key={account.id}>
-                        <TableCell className="text-gray-500 font-medium">{index + 1}</TableCell>
-                        <TableCell className="font-medium font-mono text-blue-600 bg-blue-50 rounded px-2 py-1">
-                          {account.code}
-                        </TableCell>
-                        <TableCell className="font-medium">{account.nameAr}</TableCell>
-                        <TableCell className="text-gray-600">{account.nameEn}</TableCell>
-                        <TableCell>
-                          <Badge 
-                            variant={subAccountsCount > 0 ? 'default' : 'secondary'}
-                            className={
-                              subAccountsCount > 0 
-                                ? 'bg-blue-100 text-blue-700' 
-                                : 'bg-gray-100 text-gray-600'
-                            }
-                          >
-                            {subAccountsCount} حساب فرعي
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge 
-                            variant={account.nature === 'مدينة' ? 'default' : 'secondary'}
-                            className={
-                              account.nature === 'مدينة' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                            }
-                          >
-                            {account.nature}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-mono text-left" dir="ltr">
-                          <span className={`font-medium ${account.balance > 0 ? 'text-green-600' : account.balance < 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                            {account.balance.toLocaleString('ar-SA')} ريال
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditClick(account)}
-                              className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                              title="تعديل الحساب"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteAccount(account.id)}
-                              disabled={isLoading || subAccountsCount > 0}
-                              className={`h-8 w-8 p-0 ${
-                                subAccountsCount > 0 
-                                  ? 'text-gray-400 cursor-not-allowed' 
-                                  : 'text-red-600 hover:text-red-700 hover:bg-red-50'
-                              }`}
-                              title={
-                                subAccountsCount > 0 
-                                  ? `لا يمكن حذف هذا الحساب لأنه يحتوي على ${subAccountsCount} حساب فرعي`
-                                  : "حذف الحساب"
-                              }
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
+        <Table
+          columns={columns}
+          dataSource={filteredAccounts}
+          rowKey="id"
+          loading={isLoading}
+          pagination={{
+            total: filteredAccounts.length,
+            pageSize: 10,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total, range) => `${range[0]}-${range[1]} من ${total} عنصر`,
+          }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  <div style={{ textAlign: 'center' }}>
+                    <Text type="secondary" style={{ fontSize: 16, fontWeight: 500 }}>
+                      لا توجد حسابات رئيسية متاحة
+                    </Text>
+                    <br />
+                    <Text type="secondary" style={{ fontSize: 14 }}>
+                      {accounts.filter(a => a.level === 1).length === 0 
+                        ? 'لم يتم العثور على أي حسابات رئيسية (مستوى 1) في قاعدة البيانات'
+                        : 'لا توجد نتائج تطابق البحث الحالي'
+                      }
+                    </Text>
+                    <br />
+                    <Text style={{ color: '#1890ff', fontSize: 12 }}>
+                      💡 هذه الصفحة تعرض الحسابات الرئيسية (المستوى الأول) فقط
+                    </Text>
+                  </div>
+                }
+              />
+            )
+          }}
+          scroll={{ x: 800 }}
+        />
       </Card>
     </div>
   );

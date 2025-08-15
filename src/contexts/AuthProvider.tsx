@@ -81,10 +81,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
         } else {
           // إنشاء وثيقة جديدة للمستخدم في Firestore
+          // تجنب استخدام Facebook URLs التي تسبب خطأ 403
+          let avatarUrl = "";
+          if (firebaseUser.photoURL && !firebaseUser.photoURL.includes('fbcdn.net') && !firebaseUser.photoURL.includes('facebook.com')) {
+            avatarUrl = firebaseUser.photoURL;
+          }
+          
           const newUser = {
             name: firebaseUser.displayName || "مستخدم جديد",
             email: firebaseUser.email || "",
-            avatar: firebaseUser.photoURL || "",
+            avatar: avatarUrl,
             jobTitle: "",
             role: "user"
           };

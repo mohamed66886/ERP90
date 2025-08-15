@@ -76,7 +76,8 @@ const FinancialManagement: React.FC = () => {
       title: "مراكز التكلفة",
       description: "إدارة مراكز التكلفة والأقسام",
       icon: <Target className="h-6 w-6" />,
-      color: "bg-red-500"
+      color: "bg-red-500",
+      onClick: () => navigate('/accounting/cost-centers')
     },
     {
       title: "الحسابات البنكية",

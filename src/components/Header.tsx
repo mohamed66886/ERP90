@@ -1,5 +1,6 @@
 import { LogOut, Menu, X, Calendar, Search, Bell, User, Settings, HelpCircle, Sun, Moon, PieChart } from "lucide-react";
 import MobileSidebar from "./MobileSidebar";
+import SafeAvatar from "./SafeAvatar";
 import { BiSolidBadgeCheck } from "react-icons/bi";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -319,15 +320,11 @@ const Header = ({
                         variant="ghost"
                         className="h-10 w-10 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
                       >
-                        <Avatar className="h-9 w-9">
-                          <AvatarImage src={userData?.avatar} alt="صورة المستخدم" />
-                          <AvatarFallback className="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300">
-                            {userData?.name
-                              ?.split(" ")
-                              .map((n) => n[0])
-                              .join("")}
-                          </AvatarFallback>
-                        </Avatar>
+                        <SafeAvatar 
+                          src={userData?.avatar} 
+                          alt="صورة المستخدم"
+                          name={userData?.name}
+                        />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="w-56" align="end">
@@ -486,7 +483,9 @@ const Header = ({
                             value={fiscalYear}
                             onChange={handleFiscalYearChange}
                             style={{ width: 100, background: 'transparent' }}
-                            popupClassName="text-right"
+                            classNames={{
+                              popup: 'text-right'
+                            }}
                             size="small"
                             variant="borderless"
                             placeholder="السنة المالية"
@@ -549,12 +548,11 @@ const Header = ({
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <div className="flex items-center cursor-pointer relative">
-                          <Avatar className="h-9 w-9">
-                            <AvatarImage src={userData?.avatar} alt="صورة المستخدم" />
-                            <AvatarFallback className="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300">
-                              {userData?.name?.split(" ").map((n) => n[0]).join("")}
-                            </AvatarFallback>
-                          </Avatar>
+                          <SafeAvatar 
+                            src={userData?.avatar} 
+                            alt="صورة المستخدم"
+                            name={userData?.name}
+                          />
                           {/* Badge for notifications */}
                           {unreadNotifications > 0 && (
                             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[18px] flex items-center justify-center border-2 border-white dark:border-gray-900">

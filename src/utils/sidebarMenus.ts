@@ -173,6 +173,7 @@ export const getSidebarMenus = (section: SectionType): MenuItem[] => {
           hasSubmenu: true,
           submenu: [
             { label: "المخازن", icon: React.createElement(FaWarehouse), path: "/warehouse/stores" },
+            { label: "إدارة المخازن المتقدمة", icon: React.createElement(FaWarehouse), path: "/stores/advanced-warehouse" },
             { label: "الأصناف", icon: React.createElement(FaBoxes), path: "/warehouse/items" },
             { label: "المخزون", icon: React.createElement(FaCubes), path: "/warehouse/inventory" },
             { label: "حركة المخزون", icon: React.createElement(FaExchangeAlt), path: "/warehouse/movements" }
@@ -466,7 +467,7 @@ export const getSidebarMenus = (section: SectionType): MenuItem[] => {
           icon: React.createElement(FaWarehouse, { className: "text-orange-500" }), 
           hasSubmenu: true,
           submenu: [
-            { label: "ادارة المخازن", icon: React.createElement(FaWarehouse), path: "/stores/manage" },
+            { label: "ادارة المخازن", icon: React.createElement(FaWarehouse), path: "/stores/advanced-warehouse" },
             { label: "ادارة الاصناف", icon: React.createElement(FaBoxes), path: "/stores/item" },
             { label: "المخزون", icon: React.createElement(FaCubes), path: "/stores/stock" }
           ]

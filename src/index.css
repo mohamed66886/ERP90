@@ -203,3 +203,24 @@ All colors MUST be HSL. Arabic fonts and RTL layout optimized.
     transform: scale(1);
   }
 }
+
+/* Handle broken images gracefully */
+img {
+  image-rendering: auto;
+}
+
+img[src*="fbcdn.net"],
+img[src*="facebook.com"] {
+  display: none !important;
+}
+
+/* Fallback for broken avatar images */
+.avatar-fallback {
+  background: linear-gradient(135deg, hsl(215 85% 25%), hsl(215 85% 35%));
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.875rem;
+}

@@ -9,7 +9,6 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 // import FloatingAvatarButton from "./components/FloatingAvatarButton";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
-import CustomersPage from "./pages/CustomersPage";
 import FirebaseTestPage from "./pages/accounting/FirebaseTestPage";
 import FirebaseDirectTest from "./pages/accounting/FirebaseDirectTest";
 
@@ -27,7 +26,6 @@ const App = () => (
             <SidebarProvider>
               <Routes>
                 <Route path="/*" element={<Index />} />
-                <Route path="/customers" element={<CustomersPage />} />
                 <Route path="/firebase-test" element={<FirebaseTestPage />} />
                 <Route path="/firebase-direct" element={<FirebaseDirectTest />} />
                 
