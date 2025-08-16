@@ -1,15 +1,26 @@
 
 import React, { useEffect, useState } from 'react';
+import * as XLSX from 'xlsx';
+import { useNavigate } from 'react-router-dom';
 import { SearchOutlined as SearchIcon } from '@ant-design/icons';
 import { Card, Row, Col, Input, Button, DatePicker, Select, Table, Space, message, Modal } from 'antd';
+import { PrinterOutlined } from '@ant-design/icons';
 import './ReceiptVouchersDirectory.css';
-import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
+import { SearchOutlined, ReloadOutlined, FileTextOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import isBetween from 'dayjs/plugin/isBetween';
 dayjs.extend(isBetween);
+import Breadcrumb from '../../components/Breadcrumb';
+
 // استيراد firebase
-import { collection, getDocs, query, where, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { collection, getDocs } from 'firebase/firestore';
+import { getAccounts } from '@/lib/accountsService';
+import { GiMagicBroom } from 'react-icons/gi';
+import { fetchCashBoxes } from '@/services/cashBoxesService';
+import { fetchBankAccounts } from '@/services/bankAccountsService';
+import { fetchBranches } from '@/lib/branches';
+import styles from './ReceiptVoucher.module.css';
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
@@ -45,15 +56,122 @@ interface ReceiptVoucher {
 }
 
 const ReceiptVouchersDirectory: React.FC = () => {
-  // قائمة البنوك من قاعدة البيانات (لعمود البنك)
+  // دالة طباعة الجدول
+  const handlePrint = () => {
+    window.print();
+  };
+  // دالة تصدير البيانات إلى Excel
+  const handleExport = () => {
+    // تصدير بنفس تنسيق صفحة مبيعات الفروع باستخدام exceljs من CDN
+    (async () => {
+      // تحميل exceljs من CDN إذا لم يكن موجوداً في window
+      let ExcelJS = (window as any).ExcelJS;
+      if (!ExcelJS) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+        ExcelJS = (window as any).ExcelJS;
+      }
+
+      const exportData = data.map(row => [
+        row.entryNumber,
+        row.voucherNumber,
+        row.date,
+        branchOptions.find(opt => opt.value === row.branch)?.label || row.branch,
+        row.amount,
+        row.debitAccount,
+        row.accountName,
+        paymentMethodOptions.find(opt => opt.value === row.paymentMethod)?.label || row.paymentMethod,
+        cashboxBankOptions.find(opt => opt.value === row.cashboxBank)?.label || row.cashboxBank,
+        row.description,
+        row.createdAt
+      ]);
+
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('سندات القبض');
+
+      // إعداد الأعمدة
+      sheet.columns = [
+        { header: 'رقم القيد', key: 'entryNumber', width: 15 },
+        { header: 'رقم السند', key: 'voucherNumber', width: 15 },
+        { header: 'التاريخ', key: 'date', width: 15 },
+        { header: 'الفرع', key: 'branch', width: 18 },
+        { header: 'المبلغ', key: 'amount', width: 15 },
+        { header: 'اسم الحساب', key: 'accountName', width: 18 },
+        { header: 'طريقة الدفع', key: 'paymentMethod', width: 15 },
+        { header: 'الصندوق/بنك', key: 'cashboxBank', width: 18 },
+        { header: 'تاريخ الإنشاء', key: 'createdAt', width: 18 }
+      ];
+
+      // إضافة البيانات
+      sheet.addRows(exportData);
+
+      // تنسيق رأس الجدول
+      sheet.getRow(1).eachCell(cell => {
+        cell.font = { bold: true, color: { argb: 'FF305496' } };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFDDEBF7' }
+        };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFAAAAAA' } },
+          bottom: { style: 'thin', color: { argb: 'FFAAAAAA' } },
+          left: { style: 'thin', color: { argb: 'FFAAAAAA' } },
+          right: { style: 'thin', color: { argb: 'FFAAAAAA' } },
+        };
+      });
+
+      // تنسيق بقية الصفوف
+      for (let i = 2; i <= sheet.rowCount; i++) {
+        const row = sheet.getRow(i);
+        row.eachCell(cell => {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFDDDDDD' } },
+            bottom: { style: 'thin', color: { argb: 'FFDDDDDD' } },
+            left: { style: 'thin', color: { argb: 'FFDDDDDD' } },
+            right: { style: 'thin', color: { argb: 'FFDDDDDD' } },
+          };
+        });
+      }
+
+      // Freeze header row
+      sheet.views = [{ state: 'frozen', ySplit: 1 }];
+      sheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: sheet.columnCount }
+      };
+
+      // إنشاء ملف وحفظه
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `سندات_القبض_${dayjs().format('YYYYMMDD_HHmmss')}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      }, 100);
+    })();
+  };
+  // قائمة البنوك من قاعدة البيانات الحقيقية (لعمود البنك)
   const [bankOptions, setBankOptions] = useState<{ value: string; label: string }[]>([]);
   useEffect(() => {
     const fetchBanks = async () => {
       try {
-        const bankSnapshot = await getDocs(collection(db, 'bankAccounts'));
-        const banks = bankSnapshot.docs.map(doc => ({
-          value: doc.id,
-          label: doc.data().arabicName || doc.data().name || doc.id
+        const bankAccounts = await fetchBankAccounts();
+        const banks = bankAccounts.map(bank => ({
+          value: bank.id || '',
+          label: bank.arabicName || bank.englishName || ''
         }));
         setBankOptions(banks);
       } catch (err) {
@@ -62,24 +180,28 @@ const ReceiptVouchersDirectory: React.FC = () => {
     };
     fetchBanks();
   }, []);
-  // قائمة أسماء الصناديق والبنوك من قاعدة البيانات
+  // قائمة أسماء الصناديق والبنوك من قاعدة البيانات الحقيقية
   const [cashboxBankOptions, setCashboxBankOptions] = useState<{ value: string; label: string }[]>([]);
   useEffect(() => {
     const fetchCashboxesAndBanks = async () => {
       try {
-        // جلب الصناديق
-        const cashboxSnapshot = await getDocs(collection(db, 'cashBoxes'));
-        const cashboxes = cashboxSnapshot.docs.map(doc => ({
-          value: `cashbox-${doc.id}`,
-          label: doc.data().nameAr || doc.data().name || doc.id
+        // جلب الصناديق والبنوك من الخدمات الحقيقية
+        const [cashBoxes, bankAccounts] = await Promise.all([
+          fetchCashBoxes(),
+          fetchBankAccounts()
+        ]);
+        
+        const cashboxOptions = cashBoxes.map(cb => ({
+          value: `cashbox-${cb.id}`,
+          label: `صندوق: ${cb.nameAr}`
         }));
-        // جلب البنوك
-        const bankSnapshot = await getDocs(collection(db, 'bankAccounts'));
-        const banks = bankSnapshot.docs.map(doc => ({
-          value: `bank-${doc.id}`,
-          label: doc.data().arabicName || doc.data().name || doc.id
+        
+        const bankOptions = bankAccounts.map(bk => ({
+          value: `bank-${bk.id}`,
+          label: `بنك: ${bk.arabicName}`
         }));
-        setCashboxBankOptions([...cashboxes, ...banks]);
+        
+        setCashboxBankOptions([...cashboxOptions, ...bankOptions]);
       } catch (err) {
         setCashboxBankOptions([]);
       }
@@ -102,19 +224,68 @@ const ReceiptVouchersDirectory: React.FC = () => {
   const [customerSearch, setCustomerSearch] = useState('');
   const [supplierSearch, setSupplierSearch] = useState('');
   const [collectorSearch, setCollectorSearch] = useState('');
-  // Dummy data for modals (replace with real data if needed)
-  const customerAccounts = [
-    { code: '1001', nameAr: 'عميل 1', mobile: '01000000001', taxNumber: '123456' },
-    { code: '1002', nameAr: 'عميل 2', mobile: '01000000002', taxNumber: '654321' },
-  ];
-  const supplierAccounts = [
-    { code: '2001', nameAr: 'مورد 1', mobile: '01100000001' },
-    { code: '2002', nameAr: 'مورد 2', mobile: '01100000002' },
-  ];
-  const collectorAccounts = [
-    { number: '1', name: 'محصل 1', mobile: '01200000001', id: 'c1' },
-    { number: '2', name: 'محصل 2', mobile: '01200000002', id: 'c2' },
-  ];
+  
+  // بيانات حقيقية للحسابات والمحصلين
+  const [customerAccounts, setCustomerAccounts] = useState<{ code: string; nameAr: string; mobile?: string; taxNumber?: string }[]>([]);
+  const [supplierAccounts, setSupplierAccounts] = useState<{ code: string; nameAr: string; mobile?: string }[]>([]);
+  const [collectorAccounts, setCollectorAccounts] = useState<{ number: string; name: string; mobile?: string; id: string }[]>([]);
+
+  // جلب بيانات العملاء الحقيقية
+  useEffect(() => {
+    if (showCustomerModal) {
+      getAccounts()
+        .then((accounts) => {
+          const customers = accounts.filter(acc => acc.linkedToPage === 'customers');
+          setCustomerAccounts(customers.map(acc => ({
+            code: acc.code,
+            nameAr: acc.nameAr,
+            mobile: acc.customerData?.mobile || acc.customerData?.phone || '',
+            taxNumber: acc.customerData?.taxFileNumber || ''
+          })));
+        })
+        .catch(() => setCustomerAccounts([]));
+    }
+  }, [showCustomerModal]);
+
+  // جلب بيانات الموردين الحقيقية
+  useEffect(() => {
+    if (showSupplierModal) {
+      getAccounts()
+        .then((accounts) => {
+          const suppliers = accounts.filter(acc => acc.linkedToPage === 'suppliers');
+          setSupplierAccounts(suppliers.map(acc => ({
+            code: acc.code,
+            nameAr: acc.nameAr,
+            mobile: acc.supplierData?.phone || ''
+          })));
+        })
+        .catch(() => setSupplierAccounts([]));
+    }
+  }, [showSupplierModal]);
+
+  // جلب بيانات المحصلين الحقيقية
+  useEffect(() => {
+    if (showCollectorModal) {
+      const fetchCollectors = async () => {
+        try {
+          const repsSnapshot = await getDocs(collection(db, 'salesRepresentatives'));
+          const reps = repsSnapshot.docs.map((doc, idx) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              number: (idx + 1).toString(),
+              name: data.name || '',
+              mobile: data.phone || ''
+            };
+          });
+          setCollectorAccounts(reps);
+        } catch (error) {
+          setCollectorAccounts([]);
+        }
+      };
+      fetchCollectors();
+    }
+  }, [showCollectorModal]);
   const [searchPaymentMethod, setSearchPaymentMethod] = useState('');
   const [searchCashboxBank, setSearchCashboxBank] = useState('');
   const [searchCreatedAtRange, setSearchCreatedAtRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
@@ -128,25 +299,21 @@ const ReceiptVouchersDirectory: React.FC = () => {
   const [branchOptions, setBranchOptions] = useState<{ value: string; label: string }[]>([
     { value: '', label: 'كل الفروع' }
   ]);
-  // جلب الفروع من قاعدة البيانات
+  // جلب الفروع من قاعدة البيانات الحقيقية
   useEffect(() => {
-    const fetchBranches = async () => {
+    const loadBranches = async () => {
       try {
-        const q = collection(db, 'branches');
-        const snapshot = await getDocs(q);
-        const branches = snapshot.docs.map(doc => {
-          const d = doc.data();
-          return {
-            value: doc.id,
-            label: d.name || doc.id
-          };
-        });
-        setBranchOptions([{ value: '', label: 'كل الفروع' }, ...branches]);
+        const branches = await fetchBranches();
+        const branchOptions = branches.map(branch => ({
+          value: branch.id || branch.code,
+          label: branch.name
+        }));
+        setBranchOptions([{ value: '', label: 'كل الفروع' }, ...branchOptions]);
       } catch (err) {
-        // يمكن تجاهل الخطأ أو إظهاره
+        setBranchOptions([{ value: '', label: 'كل الفروع' }]);
       }
     };
-    fetchBranches();
+    loadBranches();
   }, []);
   const paymentMethodOptions = [
     { value: '', label: 'كل الطرق' },
@@ -378,8 +545,35 @@ const ReceiptVouchersDirectory: React.FC = () => {
 
   const labelStyle = { fontSize: 18, fontWeight: 500, marginBottom: 2, display: 'block' };
 
+  const navigate = useNavigate();
   return (
     <div style={{ padding: 24 }}>
+      <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <FileTextOutlined className="text-2xl text-blue-600 ml-3" />
+            <h1 className="text-2xl font-bold text-gray-800">دليل سندات القبض</h1>
+          </div>
+          <Button
+            type="primary"
+            style={{ height: 44, fontSize: 17, borderRadius: 8, background: 'linear-gradient(90deg,#22c55e,#2563eb)', border: 'none', fontWeight: 500 }}
+            icon={<FileTextOutlined />}
+            onClick={() => navigate('/stores/receipt-voucher')}
+          >
+            إضافة سند قبض
+          </Button>
+        </div>
+        <p className="text-gray-600 mt-2">متابعة وإدارة سندات القبض</p>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 to-blue-500"></div>
+      </div>
+            <Breadcrumb
+              items={[
+                { label: "الرئيسية", to: "/" },
+                { label: "ادراة المبيعات", to: "/management/sales" },
+                { label: "دليل سندات القبض"},
+
+              ]}
+            />
       <Card style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <Row gutter={12} align="middle">
@@ -397,25 +591,49 @@ const ReceiptVouchersDirectory: React.FC = () => {
             </Col>
             <Col span={5}>
               <span style={labelStyle}>الفرع</span>
-              <Select placeholder="الفرع" value={searchBranch} onChange={v => setSearchBranch(v)} style={{ width: '100%', ...largeControlStyle }} size="large">
+              <Select
+                showSearch
+                placeholder="الفرع"
+                value={searchBranch}
+                onChange={v => setSearchBranch(v)}
+                style={{ width: '100%', ...largeControlStyle }}
+                size="large"
+                dropdownStyle={{ fontSize: 18 }}
+                className={styles.noAntBorder}
+                optionFilterProp="label"
+                filterOption={(input, option) =>
+                  (option?.label ?? '').toString().toLowerCase().includes(input.toLowerCase())
+                }
+              >
                 {branchOptions.map(opt => (
-                  <Option key={opt.value} value={opt.value}>{opt.label}</Option>
+                  <Option key={opt.value} value={opt.value} label={opt.label}>{opt.label}</Option>
                 ))}
               </Select>
             </Col>
             <Col span={4}>
               <span style={labelStyle}>الحساب الدائن</span>
               <Select
+                showSearch
                 placeholder="الحساب الدائن"
                 value={searchDebitAccount}
-                onChange={v => setSearchDebitAccount(v)}
+                onChange={(v) => {
+                  setSearchDebitAccount(v);
+                  setSearchAccountNumber('');
+                  setSearchAccountName('');
+                }}
                 allowClear
                 style={{ width: '100%', ...largeControlStyle }}
                 size="large"
+                dropdownStyle={{ fontSize: 18 }}
+                className={styles.noAntBorder}
+                optionFilterProp="label"
+                filterOption={(input, option) =>
+                  (option?.children ?? '').toString().toLowerCase().includes(input.toLowerCase())
+                }
               >
-                <Option value="">كل الحسابات</Option>
-                <Option value="acc3">حساب العملاء</Option>
-                <Option value="acc4">حساب الموردين</Option>
+                <Option value="" label="كل الحسابات">كل الحسابات</Option>
+                <Option value="acc3" label="حساب العملاء">حساب العملاء</Option>
+                <Option value="acc4" label="حساب الموردين">حساب الموردين</Option>
               </Select>
             </Col>
           </Row>
@@ -430,7 +648,34 @@ const ReceiptVouchersDirectory: React.FC = () => {
                 style={largeControlStyle}
                 size="large"
                 suffix={
-                  <SearchIcon style={{ color: '#1677ff', cursor: 'pointer' }} onClick={() => setShowCustomerModal(true)} />
+                   <button
+                      type="button"
+                      style={{
+                        borderRadius: 6,
+                       
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: 32,
+                        width: 32,
+                        border: 'none',
+                        background: 'transparent'
+                      }}
+                      title={searchDebitAccount === 'acc3' ? "بحث عميل" : searchDebitAccount === 'acc4' ? "بحث مورد" : "اختر الحساب الدائن أولاً"}
+                     onClick={() => {
+                       if (searchDebitAccount === 'acc3') {
+                         setShowCustomerModal(true);
+                       } else if (searchDebitAccount === 'acc4') {
+                         setShowSupplierModal(true);
+                       }
+                     }}
+                     disabled={!searchDebitAccount}
+                    >
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 4v6h6V4H4zm10 0v6h6V4h-6zM4 14v6h6v-6H4zm10 0v6h6v-6h-6z" stroke={searchDebitAccount ? "currentColor" : "#d1d5db"} strokeWidth="2"/>
+                      </svg>
+                    </button>
                 }
               />
             </Col>
@@ -444,8 +689,32 @@ const ReceiptVouchersDirectory: React.FC = () => {
                 style={largeControlStyle}
                 size="large"
                 suffix={
-                  <SearchIcon style={{ color: '#1677ff', cursor: 'pointer' }} onClick={() => setShowSupplierModal(true)} />
-                
+                <button
+                                      type="button"
+                                      style={{
+                                        borderRadius: 6,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        height: 32,
+                                        width: 32,
+                                        border: 'none',
+                                        background: 'transparent',
+                                        padding: 0
+                                      }}
+                                      title={searchDebitAccount === 'acc3' ? "بحث عميل" : searchDebitAccount === 'acc4' ? "بحث مورد" : "اختر الحساب الدائن أولاً"}
+                                      onClick={() => {
+                                        if (searchDebitAccount === 'acc3') {
+                                          setShowCustomerModal(true);
+                                        } else if (searchDebitAccount === 'acc4') {
+                                          setShowSupplierModal(true);
+                                        }
+                                      }}
+                                      disabled={!searchDebitAccount}              
+                                    >
+                                      <GiMagicBroom size={26} color={searchDebitAccount ? "#8e44ad" : "#d1d5db"} />
+                                    </button>
                 }
               />
             </Col>
@@ -459,7 +728,25 @@ const ReceiptVouchersDirectory: React.FC = () => {
                 style={largeControlStyle}
                 size="large"
                 suffix={
-                  <SearchIcon style={{ color: '#1677ff', cursor: 'pointer' }} onClick={() => setShowCollectorModal(true)} />
+                
+                                <button
+                                      type="button"
+                                      style={{
+                                        borderRadius: 6,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        height: 32,
+                                        width: 32,
+                                        border: 'none',
+                                        background: 'transparent',
+                                        padding: 0
+                                      }}
+                                      title="بحث عميل/مورد"
+onClick={() => setShowCollectorModal(true)}                                    >
+                                      <GiMagicBroom size={26} color="#8e44ad" />
+                                    </button>
                 }
               />
             </Col>
@@ -585,9 +872,22 @@ const ReceiptVouchersDirectory: React.FC = () => {
       </Modal>
             <Col span={5}>
               <span style={labelStyle}>طريقة الدفع</span>
-              <Select placeholder="طريقة الدفع" value={searchPaymentMethod} onChange={v => setSearchPaymentMethod(v)} style={{ width: '100%', ...largeControlStyle }} size="large">
+              <Select
+                showSearch
+                placeholder="طريقة الدفع"
+                value={searchPaymentMethod}
+                onChange={v => setSearchPaymentMethod(v)}
+                style={{ width: '100%', ...largeControlStyle }}
+                size="large"
+                dropdownStyle={{ fontSize: 18 }}
+                className={styles.noAntBorder}
+                optionFilterProp="label"
+                filterOption={(input, option) =>
+                  (option?.label ?? '').toString().toLowerCase().includes(input.toLowerCase())
+                }
+              >
                 {paymentMethodOptions.map(opt => (
-                  <Option key={opt.value} value={opt.value}>{opt.label}</Option>
+                  <Option key={opt.value} value={opt.value} label={opt.label}>{opt.label}</Option>
                 ))}
               </Select>
             </Col>
@@ -609,6 +909,40 @@ const ReceiptVouchersDirectory: React.FC = () => {
               <Space>
                 <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch} style={{ height: 48, fontSize: 18, borderRadius: 8 }} size="large" />
                 <Button icon={<ReloadOutlined />} onClick={handleReset} style={{ height: 48, fontSize: 18, borderRadius: 8 }} size="large" />
+                <Button
+                  type="default"
+                  style={{
+                    height: 48,
+                    fontSize: 18,
+                    borderRadius: 8,
+                    fontWeight: 500,
+                    boxShadow: '0 1px 6px rgba(0,0,0,0.07)',
+                    background: 'linear-gradient(90deg,#22c55e,#16a34a)',
+                    color: '#fff',
+                    border: 'none'
+                  }}
+                  icon={<FileTextOutlined />}
+                  onClick={handleExport}
+                >
+                  تصدير Excel
+                </Button>
+                <Button
+                  type="default"
+                  style={{
+                    height: 48,
+                    fontSize: 18,
+                    borderRadius: 8,
+                    fontWeight: 500,
+                    boxShadow: '0 1px 6px rgba(0,0,0,0.07)',
+                    background: 'linear-gradient(90deg,#60a5fa,#3b82f6)',
+                    color: '#fff',
+                    border: 'none'
+                  }}
+                  icon={<PrinterOutlined />}
+                  onClick={handlePrint}
+                >
+                  طباعة
+                </Button>
               </Space>
             </Col>
           </Row>

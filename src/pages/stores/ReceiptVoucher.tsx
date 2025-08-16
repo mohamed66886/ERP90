@@ -1,6 +1,7 @@
 import { fetchCashBoxes, CashBox } from '@/services/cashBoxesService';
 import { fetchBankAccounts, BankAccount } from '@/services/bankAccountsService';
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Table } from 'antd';
@@ -34,7 +35,7 @@ import type { Dayjs } from 'dayjs';
 import { numberToArabicWords } from '../../utils/numberToWords';
 
 const { RangePicker } = DatePicker;
-const { Option } = Select;
+const { Option, OptGroup } = Select;
 const { Title } = Typography;
 
 interface ReceiptVoucherForm {
@@ -123,13 +124,13 @@ const ReceiptVoucher: React.FC = () => {
   useEffect(() => {
     if (showSupplierModal) {
       getAccounts()
-        .then((accounts: any[]) => {
+        .then((accounts) => {
           // الموردين من linkedToPage === 'suppliers'
           const suppliers = accounts.filter(acc => acc.linkedToPage === 'suppliers');
           setSupplierAccounts(suppliers.map(acc => ({
             code: acc.code,
             nameAr: acc.nameAr,
-            mobile: acc.supplierData?.mobile || acc.supplierData?.phone || ''
+            mobile: acc.supplierData?.phone || ''
           })));
         })
         .catch(() => setSupplierAccounts([]));
@@ -249,7 +250,16 @@ const handleFormSubmit = async (values: ReceiptVoucherForm) => {
     Modal.success({
       title: 'تمت الإضافة بنجاح',
       content: 'تم حفظ سند القبض في قاعدة البيانات.',
+      onOk: () => {
+        navigate('/stores/receipt-vouchers-directory');
+        setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+      }
     });
+    // Navigate also after modal closes, for accessibility
+    setTimeout(() => {
+      navigate('/stores/receipt-vouchers-directory');
+      setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+    }, 1200);
     handleFormReset();
   } catch (error) {
     Modal.error({
@@ -336,21 +346,65 @@ const handleFormSubmit = async (values: ReceiptVoucherForm) => {
     { value: 'transfer', label: 'تحويل بنكي' }
   ];
 
-  // خيارات البنوك من قاعدة البيانات
-  const [bankOptions, setBankOptions] = useState<{ value: string; label: string }[]>([]);
+  // خيارات البنوك من قاعدة البيانات - تم إزالتها والاعتماد على البنوك المخصصة فقط
+  const [customBanks, setCustomBanks] = useState<{ value: string; label: string; accountNumber?: string; branchName?: string }[]>([]);
+  
   useEffect(() => {
-    async function loadBanks() {
+    async function loadCustomBanks() {
       try {
-        const banks: BankAccount[] = await fetchBankAccounts();
-        setBankOptions(
-          banks.map((b) => ({ value: b.id || b.arabicName, label: b.arabicName }))
-        );
+        // جلب البنوك المحفوظة من localStorage فقط
+        const savedBanks = localStorage.getItem('customBanks');
+        if (savedBanks) {
+          const parsedBanks = JSON.parse(savedBanks);
+          setCustomBanks(parsedBanks);
+        }
       } catch (err) {
-        setBankOptions([]);
+        setCustomBanks([]);
       }
     }
-    loadBanks();
+    loadCustomBanks();
   }, []);
+
+  // دالة لحفظ بنك جديد
+  const saveCustomBank = (bankName: string) => {
+    if (!bankName.trim()) return;
+    
+    const newBankValue = `custom-${Date.now()}`;
+    const newBank = {
+      value: newBankValue,
+      label: bankName.trim(),
+      accountNumber: '',
+      branchName: ''
+    };
+    
+    // التحقق من عدم وجود البنك مسبقاً في البنوك المخصصة
+    const existsInCustomBanks = customBanks.some(bank => bank.label.toLowerCase() === bankName.toLowerCase());
+    
+    if (!existsInCustomBanks) {
+      const updatedCustomBanks = [...customBanks, newBank];
+      setCustomBanks(updatedCustomBanks);
+      localStorage.setItem('customBanks', JSON.stringify(updatedCustomBanks));
+      
+      // تعيين البنك الجديد كمختار تلقائياً
+      form.setFieldValue('bankSelection', newBankValue);
+      
+      // إظهار رسالة نجاح
+      Modal.success({
+        title: 'تم إضافة البنك بنجاح',
+        content: `تم إضافة "${bankName}" إلى قائمة البنوك وتم اختياره تلقائياً.`
+      });
+      
+      return newBankValue;
+    }
+    return null;
+  };
+
+  // دالة لحذف بنك مخصص
+  const deleteCustomBank = (bankValue: string) => {
+    const updatedCustomBanks = customBanks.filter(bank => bank.value !== bankValue);
+    setCustomBanks(updatedCustomBanks);
+    localStorage.setItem('customBanks', JSON.stringify(updatedCustomBanks));
+  };
 
   // Custom style for larger and clearer controls
   const largeControlStyle = {
@@ -419,6 +473,12 @@ const handleFormSubmit = async (values: ReceiptVoucherForm) => {
     setSelectedPaymentMethod(form.getFieldValue('paymentMethod') || '');
   }, [form]);
 
+  const navigate = useNavigate();
+
+  // ...existing code...
+
+  // ...existing code...
+
   return (
     <>
       <div style={{ padding: '24px' }}>
@@ -437,6 +497,7 @@ const handleFormSubmit = async (values: ReceiptVoucherForm) => {
         items={[
           { label: "الرئيسية", to: "/" },
           { label: "ادراة المبيعات", to: "/management/sales" },
+          { label: "دليل سندات القبض", to: "/stores/receipt-vouchers-directory" },
           { label: "إضافة سند جديد" }
         ]}
       />
@@ -1177,12 +1238,84 @@ const handleFormSubmit = async (values: ReceiptVoucherForm) => {
                   label={<span style={labelStyle}>اختيار البنك</span>}
                   name="bankSelection"
                 >
-                  <Select placeholder="اختيار البنك" showSearch style={largeControlStyle} size="large" dropdownStyle={{ fontSize: 18 }} className={styles.noAntBorder} optionFilterProp="label" filterOption={(input, option) => (option?.label ?? '').toString().toLowerCase().includes(input.toLowerCase())}>
-                    {bankOptions.map(option => (
-                      <Option key={option.value} value={option.value} label={option.label}>
-                        {option.label}
+                  <Select 
+                    placeholder="اختيار البنك" 
+                    showSearch 
+                    style={largeControlStyle} 
+                    size="large" 
+                    dropdownStyle={{ fontSize: 18 }} 
+                    className={styles.noAntBorder} 
+                    optionFilterProp="label" 
+                    filterOption={(input, option) => (option?.label ?? '').toString().toLowerCase().includes(input.toLowerCase())}
+                    dropdownRender={(menu) => (
+                      <>
+                        {menu}
+                        <div style={{ padding: '8px', borderTop: '1px solid #e9e9e9' }}>
+                          <Input
+                            placeholder="أدخل اسم البنك الجديد"
+                            onPressEnter={(e) => {
+                              const target = e.target as HTMLInputElement;
+                              const value = target.value.trim();
+                              if (value) {
+                                const newBankValue = saveCustomBank(value);
+                                if (newBankValue) {
+                                  target.value = '';
+                                }
+                              }
+                            }}
+                            style={{ fontSize: 16, borderRadius: 6, padding: '6px 12px' }}
+                          />
+                          <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                            اضغط Enter لإضافة البنك الجديد
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  >
+                    {/* البنوك المحفوظة مسبقاً فقط */}
+                    {customBanks.length > 0 ? (
+                      customBanks.map(option => (
+                        <Option key={option.value} value={option.value} label={option.label}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ color: '#52c41a' }}>✓</span>
+                              <span>{option.label}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                Modal.confirm({
+                                  title: 'حذف البنك',
+                                  content: `هل تريد حذف "${option.label}" من القائمة؟`,
+                                  okText: 'حذف',
+                                  cancelText: 'إلغاء',
+                                  okType: 'danger',
+                                  onOk: () => deleteCustomBank(option.value)
+                                });
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#ff4d4f',
+                                cursor: 'pointer',
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                fontSize: 12
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </Option>
+                      ))
+                    ) : (
+                      <Option key="no-banks" value="" disabled>
+                        <div style={{ textAlign: 'center', color: '#999', padding: '8px' }}>
+                          لا توجد بنوك محفوظة. اكتب اسم البنك واضغط Enter لإضافته.
+                        </div>
                       </Option>
-                    ))}
+                    )}
                   </Select>
                 </Form.Item>
               </Col>

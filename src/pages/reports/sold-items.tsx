@@ -1024,49 +1024,6 @@ const SoldItems: React.FC = () => {
               </ResponsiveContainer>
             </div>
 
-            {/* Pie Chart */}
-<div className="bg-gray-50 p-4 rounded-lg">
-  <h3 className="text-lg font-semibold text-gray-700 mb-4 text-center">
-    توزيع المبيعات (حسب المبلغ)
-  </h3>
-  <ResponsiveContainer width="100%" height={350}>
-    <PieChart>
-      <Pie
-        data={chartData}
-        cx="50%"
-        cy="50%"
-        labelLine={false}
-        label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
-        outerRadius={100}
-        fill="#8884d8"
-        dataKey="totalAmount"
-      >
-        {chartData.map((entry, index) => (
-          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-        ))}
-      </Pie>
-      <Tooltip
-        formatter={(value, name, props) => [
-          `${Number(value).toFixed(2)} ريال`,
-          props.payload.itemName
-        ]}
-        labelFormatter={() => ""}
-      />
-      <Legend
-        layout="vertical"
-        align="right"
-        verticalAlign="middle"
-        formatter={(value) => value}
-        payload={chartData.map((item, index) => ({
-          id: item.itemName,
-          type: "square",
-          value: item.itemName,
-          color: COLORS[index % COLORS.length]
-        }))}
-      />
-    </PieChart>
-  </ResponsiveContainer>
-</div>
 
           </div>
         </motion.div>

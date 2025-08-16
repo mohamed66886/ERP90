@@ -216,16 +216,7 @@ const SalesManagement: React.FC = () => {
         window.scrollTo(0, 0);
       }
     },
-    {
-      title: "إضافة سند جديد",
-      description: "تسجيل سند قبض جديد من العملاء",
-      icon: <Receipt className="h-6 w-6" />, 
-      color: "bg-purple-600",
-      onClick: () => {
-        navigate('/stores/receipt-voucher');
-        window.scrollTo(0, 0);
-      }
-    },
+ 
     {
       title: "دليل سندات القبض",
       description: "عرض جميع سندات القبض المسجلة",
@@ -314,6 +305,26 @@ const SalesManagement: React.FC = () => {
       color: "bg-cyan-700",
       onClick: () => {
         navigate('/reports/branch-sales');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تقرير مبيعات بائع",
+      description: "تقرير مفصل عن مبيعات كل مندوب خلال فترة محددة",
+      icon: <UserCog className="h-6 w-6" />,
+      color: "bg-pink-700",
+      onClick: () => {
+        navigate('/reports/sales-representative-sales');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تقرير أسعار الأصناف",
+      description: "تقرير مفصل بأسعار جميع الأصناف",
+      icon: <Tag className="h-6 w-6" />,
+      color: "bg-lime-700",
+      onClick: () => {
+        navigate('/reports/item-prices');
         window.scrollTo(0, 0);
       }
     },

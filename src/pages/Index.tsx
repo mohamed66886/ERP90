@@ -77,6 +77,7 @@ import ReceiptVoucher from "./stores/ReceiptVoucher";
 import ReceiptVouchersDirectory from "./stores/ReceiptVouchersDirectory";
 import SoldItems from "./reports/sold-items";
 import BranchSales from "./reports/branch-sales";
+import SalesRepresentativeSales from "./reports/sales-representative-sales";
 
 type AppState = "login" | "data-completion" | "dashboard";
 
@@ -216,6 +217,7 @@ const Index = () => {
               <Route path="/reports/invoice" element={<Invoice />} />
               <Route path="/reports/sold-items" element={<SoldItems />} />
               <Route path="/reports/branch-sales" element={<BranchSales />} />
+              <Route path="/reports/sales-representative-sales" element={<SalesRepresentativeSales />} />
               
               {/* Management Routes */}
               <Route path="/management/financial" element={<FinancialManagement />} />
