@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Breadcrumb from "@/components/Breadcrumb";
+import { Helmet } from "react-helmet";
+
 import { 
   Settings, 
   FileText, 
@@ -294,7 +296,27 @@ const SalesManagement: React.FC = () => {
         navigate('/reports/invoice-preferred');
         window.scrollTo(0, 0);
       }
-    }
+    },
+    {
+      title: "تقرير الأصناف المباعة",
+      description: "تقرير مفصل عن الأصناف المباعة خلال فترة محددة",
+      icon: <Package className="h-6 w-6" />, 
+      color: "bg-orange-700",
+      onClick: () => {
+        navigate('/reports/sold-items');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "مبيعات الفروع",
+      description: "تقرير مبيعات الفروع خلال فترة محددة",
+      icon: <Building className="h-6 w-6" />, 
+      color: "bg-cyan-700",
+      onClick: () => {
+        navigate('/reports/branch-sales');
+        window.scrollTo(0, 0);
+      }
+    },
   ];
 
   const customerManagementCards = [
@@ -431,6 +453,11 @@ const SalesManagement: React.FC = () => {
   return (
     <div className="w-full p-6 space-y-8 min-h-screen" dir="rtl">
       {/* Header */}
+           <Helmet>
+              <title>إدارة المبيعات | ERP90 Dashboard</title>
+              <meta name="description" content="إدارة المبيعات والعملاء وفريق المبيعات ERP90 Dashboard" />
+              <meta name="keywords" content="ERP, فواتير, مبيعات, تقرير, عملاء, ضريبة, طباعة, Sales, Invoice, Report, Tax, Customer" />
+            </Helmet>
       <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
         <div className="flex items-center">
           <ShoppingBag className="h-8 w-8 text-blue-600 ml-3" />

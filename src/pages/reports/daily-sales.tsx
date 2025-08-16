@@ -563,34 +563,26 @@ const DailySales: React.FC = () => {
         className="min-h-screen bg-gray-100 flex flex-col items-center py-4 px-2 md:py-8 md:px-4"
       >
         <div className="w-full max-w-full">
-          <div className="p-4 font-['Tajawal'] bg-white rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] mb-4 relative overflow-hidden">
-            <div className="flex items-center">
-              <h1 className="text-xl md:text-2xl font-bold text-blue-800">تقارير المبيعات اليومية</h1>
-              <span className="animate-[wave_2s_infinite] text-2xl md:text-3xl mr-3">👋</span>
-            </div>
-            <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]"></div>
-          </div>
 
-          <style>{`
-            @keyframes bounce {
-              0%, 100% { transform: translateY(0); }
-              50% { transform: translateY(-5px); }
-            }
-            @keyframes wave {
-              0%, 100% { transform: rotate(0deg); }
-              25% { transform: rotate(20deg); }
-              75% { transform: rotate(-20deg); }
-            }
-            @keyframes pulse {
-              0%, 100% { opacity: 1; }
-              50% { opacity: 0.5; }
-            }
-          `}</style>
+                <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+        <div className="flex items-center">
+          {/* Invoice Icon */}
+          <svg className="h-8 w-8 text-green-600 ml-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" strokeWidth="2" fill="none" />
+            <line x1="8" y1="8" x2="16" y2="8" stroke="currentColor" strokeWidth="2" />
+            <line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" strokeWidth="2" />
+            <line x1="8" y1="16" x2="12" y2="16" stroke="currentColor" strokeWidth="2" />
+          </svg>
+          <h1 className="text-2xl font-bold text-gray-800">تقارير المبيعات اليومية</h1>
+        </div>
+        <p className="text-gray-600 mt-2">مبيعات اليوم والفترة الحالية </p>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 to-blue-500"></div>
+      </div>
 
           <Breadcrumb
             items={[
               { label: "الرئيسية", to: "/" },
-              { label: "التقارير" },
+          { label: "إدارة المبيعات", to: "/management/sales" },
               { label: "تقارير المبيعات اليومية" }
             ]}
           />
