@@ -31,6 +31,7 @@ interface InvoiceRecord {
   key: string;
   id?: string;
   invoiceNumber: string;
+  entryNumber?: string;
   date: string;
   branch: string;
   itemNumber: string;
@@ -229,6 +230,7 @@ const Invoice: React.FC = () => {
       snapshot.forEach(doc => {
         const data = doc.data();
         const invoiceNumber = data.invoiceNumber || '';
+        const entryNumber = data.entryNumber || '';
         const date = data.date || '';
         const branch = data.branch || '';
         const customer = data.customerName || data.customer || '';
@@ -272,6 +274,7 @@ const Invoice: React.FC = () => {
           salesRecords.push({
             key: doc.id + '-' + idx,
             invoiceNumber,
+            entryNumber,
             date,
             branch,
             itemNumber: item.itemNumber || '',
@@ -318,6 +321,7 @@ const Invoice: React.FC = () => {
         // استخدم رقم المرتجع بدلاً من رقم الفاتورة في المرتجع
         const referenceNumber = data.referenceNumber || '';
         const invoiceNumber = referenceNumber || data.invoiceNumber || '';
+        const entryNumber = data.entryNumber || '';
         const date = data.date || '';
         const branch = typeof doc.data().branch === 'string' ? doc.data().branch : '';
         const customer = data.customerName || data.customer || '';
@@ -365,6 +369,7 @@ const Invoice: React.FC = () => {
             key: 'return-' + doc.id + '-' + idx,
             id: doc.id, // إضافة معرف المرتجع
             invoiceNumber, // سيحمل رقم المرتجع في حالة المرتجع
+            entryNumber,
             date,
             branch,
             itemNumber: item.itemNumber || '',
@@ -1665,7 +1670,15 @@ const Invoice: React.FC = () => {
               ),
             },
             {
-              title: 'تاريخ الفاتورة',
+              title: 'رقم القيد',
+              dataIndex: 'entryNumber',
+              key: 'entryNumber',
+              width: 120,
+              render: (text: string, record: any) => record.entryNumber || record.id || '-',
+              sorter: (a: any, b: any) => (a.entryNumber || a.id || '').localeCompare(b.entryNumber || b.id || ''),
+            },
+            {
+              title: 'التاريخ',
               dataIndex: 'date',
               key: 'date',
               width: 120,
@@ -1673,18 +1686,11 @@ const Invoice: React.FC = () => {
               render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '',
             },
             {
-              title: 'نوع الفاتورة',
-              dataIndex: 'invoiceType',
-              key: 'invoiceType',
-              width: 140,
-              sorter: (a: any, b: any) => a.invoiceType.localeCompare(b.invoiceType),
-              render: (type: string) => (
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  type === 'مرتجع' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-                }`}>
-                  {type}
-                </span>
-              ),
+              title: 'رقم العميل',
+              dataIndex: 'customerPhone',
+              key: 'customerPhone',
+              width: 120,
+              render: (phone: string) => phone && phone.trim() !== '' ? phone : 'غير متوفر',
             },
             {
               title: 'اسم العميل',
@@ -1692,13 +1698,6 @@ const Invoice: React.FC = () => {
               key: 'customer',
               width: 180,
               sorter: (a: any, b: any) => (a.customer || '').localeCompare(b.customer || ''),
-            },
-            {
-              title: 'رقم العميل',
-              dataIndex: 'customerPhone',
-              key: 'customerPhone',
-              width: 120,
-              render: (phone: string) => phone && phone.trim() !== '' ? phone : 'غير متوفر',
             },
             {
               title: 'الفرع',
@@ -1709,10 +1708,131 @@ const Invoice: React.FC = () => {
               render: (branch: string) => getBranchName(branch),
             },
             {
+              title: 'الإجمالي',
+              key: 'amount',
+              width: 120,
+              render: (record: any) => {
+                // حساب الإجمالي للفاتورة قبل الضريبة والخصم
+                const invoiceRows = getFilteredRows().filter(
+                  (row: any) => row.invoiceNumber === record.invoiceNumber && row.invoiceType === record.invoiceType
+                );
+                const totalAmount = invoiceRows.reduce((sum: number, row: any) => {
+                  return sum + ((Number(row.price) || 0) * (Number(row.quantity) || 0));
+                }, 0);
+                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                return `${(sign * totalAmount).toLocaleString()} ر.س`;
+              },
+              sorter: (a: any, b: any) => {
+                // حساب الإجمالي للمقارنة في الترتيب
+                const getInvoiceTotal = (record: any) => {
+                  const invoiceRows = getFilteredRows().filter(
+                    (row: any) => row.invoiceNumber === record.invoiceNumber && row.invoiceType === record.invoiceType
+                  );
+                  return invoiceRows.reduce((sum: number, row: any) => {
+                    return sum + ((Number(row.price) || 0) * (Number(row.quantity) || 0));
+                  }, 0);
+                };
+                return getInvoiceTotal(a) - getInvoiceTotal(b);
+              },
+            },
+            {
+              title: 'الخصم',
+              dataIndex: 'discountValue',
+              key: 'discountValue',
+              width: 100,
+              render: (discount: number, record: any) => {
+                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                return `${(sign * (discount || 0)).toLocaleString()} ر.س`;
+              },
+              sorter: (a: any, b: any) => (a.discountValue || 0) - (b.discountValue || 0),
+            },
+            {
+              title: 'الإجمالي بعد الخصم',
+              key: 'totalAfterDiscount',
+              width: 170,
+              render: (record: any) => {
+                const invoiceRows = getFilteredRows().filter(
+                  (row: any) => row.invoiceNumber === record.invoiceNumber && row.invoiceType === record.invoiceType
+                );
+                const totalAmount = invoiceRows.reduce((sum: number, row: any) => {
+                  return sum + ((Number(row.price) || 0) * (Number(row.quantity) || 0));
+                }, 0);
+                const totalDiscount = invoiceRows.reduce((sum: number, row: any) => {
+                  return sum + (Number(row.discountValue) || 0);
+                }, 0);
+                const afterDiscount = totalAmount - totalDiscount;
+                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                return `${(sign * afterDiscount).toLocaleString()} ر.س`;
+              },
+              sorter: (a: any, b: any) => {
+                const getAfterDiscount = (record: any) => {
+                  const invoiceRows = getFilteredRows().filter(
+                    (row: any) => row.invoiceNumber === record.invoiceNumber && row.invoiceType === record.invoiceType
+                  );
+                  const totalAmount = invoiceRows.reduce((sum: number, row: any) => {
+                    return sum + ((Number(row.price) || 0) * (Number(row.quantity) || 0));
+                  }, 0);
+                  const totalDiscount = invoiceRows.reduce((sum: number, row: any) => {
+                    return sum + (Number(row.discountValue) || 0);
+                  }, 0);
+                  return totalAmount - totalDiscount;
+                };
+                return getAfterDiscount(a) - getAfterDiscount(b);
+              },
+            },
+            {
+              title: 'الضرائب',
+              dataIndex: 'taxValue',
+              key: 'taxValue',
+              width: 100,
+              render: (tax: number, record: any) => {
+                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                return `${(sign * (tax || 0)).toLocaleString()} ر.س`;
+              },
+              sorter: (a: any, b: any) => (a.taxValue || 0) - (b.taxValue || 0),
+            },
+            {
+              title: 'الإجمالي النهائي',
+              dataIndex: 'net',
+              key: 'net',
+              width: 140,
+              render: (net: number, record: any) => {
+                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                return `${(sign * (net || 0)).toLocaleString()} ر.س`;
+              },
+              sorter: (a: any, b: any) => (a.net || 0) - (b.net || 0),
+            },
+            {
+              title: 'الصافي',
+              key: 'netAfterTax',
+              width: 120,
+              render: (record: any) => {
+                // الصافي = الإجمالي النهائي (نفس قيمة net)
+                const net = Number(record.net) || 0;
+                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                return `${(sign * net).toLocaleString()} ر.س`;
+              },
+              sorter: (a: any, b: any) => (a.net || 0) - (b.net || 0),
+            },
+            {
+              title: 'نوع الفاتورة',
+              dataIndex: 'invoiceType',
+              key: 'invoiceType',
+              width: 120,
+              sorter: (a: any, b: any) => a.invoiceType.localeCompare(b.invoiceType),
+              render: (type: string) => (
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  type === 'مرتجع' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                }`}>
+                  {type}
+                </span>
+              ),
+            },
+            {
               title: 'المخزن',
               dataIndex: 'warehouse',
               key: 'warehouse',
-              width: 150,
+              width: 120,
               sorter: (a: any, b: any) => getWarehouseName(a.warehouse).localeCompare(getWarehouseName(b.warehouse)),
               render: (warehouse: string) => getWarehouseName(warehouse),
             },
@@ -1722,54 +1842,6 @@ const Invoice: React.FC = () => {
               key: 'paymentMethod',
               width: 120,
               render: (method: string) => method || '-',
-            },
-            {
-              title: 'قيمة المبلغ',
-              key: 'amount',
-              width: 140,
-              render: (record: any) => {
-                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                const amount = (Number(record.price) || 0) * (Number(record.quantity) || 0);
-                return `${(sign * amount).toLocaleString()} ر.س`;
-              },
-              sorter: (a: any, b: any) => {
-                const amountA = (Number(a.price) || 0) * (Number(a.quantity) || 0);
-                const amountB = (Number(b.price) || 0) * (Number(b.quantity) || 0);
-                return amountA - amountB;
-              },
-            },
-            {
-              title: 'الخصم',
-              dataIndex: 'discountValue',
-              key: 'discountValue',
-              width: 120,
-              render: (discount: number, record: any) => {
-                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                return `${(sign * (discount || 0)).toLocaleString()} ر.س`;
-              },
-              sorter: (a: any, b: any) => (a.discountValue || 0) - (b.discountValue || 0),
-            },
-            {
-              title: 'الضريبة',
-              dataIndex: 'taxValue',
-              key: 'taxValue',
-              width: 120,
-              render: (tax: number, record: any) => {
-                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                return `${(sign * (tax || 0)).toLocaleString()} ر.س`;
-              },
-              sorter: (a: any, b: any) => (a.taxValue || 0) - (b.taxValue || 0),
-            },
-            {
-              title: 'الإجمالي',
-              dataIndex: 'net',
-              key: 'net',
-              width: 120,
-              render: (net: number, record: any) => {
-                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                return `${(sign * (net || 0)).toLocaleString()} ر.س`;
-              },
-              sorter: (a: any, b: any) => (a.net || 0) - (b.net || 0),
             },
             {
               title: 'البائع',
@@ -1855,7 +1927,7 @@ const Invoice: React.FC = () => {
           scroll={{ x: 1200 }}
           size="small"
           bordered
-          className="[&_.ant-table-thead_>_tr_>_th]:bg-emerald-600 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-emerald-500 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
+          className="[&_.ant-table-thead_>_tr_>_th]:bg-gray-400 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-gray-400 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
           locale={{
             emptyText: isLoading ? (
               <div className="flex justify-center items-center py-8">
@@ -1868,6 +1940,99 @@ const Invoice: React.FC = () => {
             ) : (
               <div className="text-gray-400">لا توجد بيانات</div>
             )
+          }}
+          summary={() => {
+            if (getFilteredRows().length === 0) return null;
+            
+            // حساب الإجماليات
+            const allRows = getFilteredRows();
+            let totalAmount = 0;
+            let totalDiscount = 0;
+            let totalAfterDiscount = 0;
+            let totalTax = 0;
+            let totalNet = 0;
+
+            // تجميع البيانات حسب الفاتورة لتجنب التكرار
+            const groupedInvoices = Object.values(
+              allRows.reduce((acc: Record<string, {invoiceType: string, rows: any[]}>, row: any) => {
+                const key = row.invoiceNumber + '-' + row.invoiceType;
+                if (!acc[key]) {
+                  acc[key] = {
+                    invoiceType: row.invoiceType,
+                    rows: []
+                  };
+                }
+                acc[key].rows.push(row);
+                return acc;
+              }, {})
+            );
+
+            groupedInvoices.forEach((invoice) => {
+              const sign = invoice.invoiceType === 'مرتجع' ? -1 : 1;
+              
+              // حساب إجمالي الفاتورة
+              const invoiceTotal = invoice.rows.reduce((sum: number, row: any) => {
+                return sum + ((Number(row.price) || 0) * (Number(row.quantity) || 0));
+              }, 0);
+              
+              // حساب إجمالي الخصم
+              const invoiceDiscount = invoice.rows.reduce((sum: number, row: any) => {
+                return sum + (Number(row.discountValue) || 0);
+              }, 0);
+              
+              // حساب إجمالي الضريبة
+              const invoiceTax = invoice.rows.reduce((sum: number, row: any) => {
+                return sum + (Number(row.taxValue) || 0);
+              }, 0);
+              
+              // حساب الصافي
+              const invoiceNet = invoice.rows.reduce((sum: number, row: any) => {
+                return sum + (Number(row.net) || 0);
+              }, 0);
+
+              totalAmount += sign * invoiceTotal;
+              totalDiscount += sign * invoiceDiscount;
+              totalAfterDiscount += sign * (invoiceTotal - invoiceDiscount);
+              totalTax += sign * invoiceTax;
+              totalNet += sign * invoiceNet;
+            });
+
+            return (
+              <Table.Summary fixed>
+                <Table.Summary.Row className=" ">
+                  <Table.Summary.Cell index={0} className="text-center ">الإجماليات</Table.Summary.Cell>
+                  <Table.Summary.Cell index={1}></Table.Summary.Cell>
+                  <Table.Summary.Cell index={2}></Table.Summary.Cell>
+                  <Table.Summary.Cell index={3}></Table.Summary.Cell>
+                  <Table.Summary.Cell index={4}></Table.Summary.Cell>
+                  <Table.Summary.Cell index={5}></Table.Summary.Cell>
+                  <Table.Summary.Cell index={6} className="">
+                    {totalAmount.toLocaleString()} ر.س
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={7} className="">
+                    {totalDiscount.toLocaleString()} ر.س
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={8} className="">
+                    {totalAfterDiscount.toLocaleString()} ر.س
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={9} className="">
+                    {totalTax.toLocaleString()} ر.س
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={10} className="">
+                    {totalNet.toLocaleString()} ر.س
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={11} className="">
+                    {totalNet.toLocaleString()} ر.س
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={12}></Table.Summary.Cell>
+                  <Table.Summary.Cell index={13}></Table.Summary.Cell>
+                  <Table.Summary.Cell index={14}></Table.Summary.Cell>
+                  <Table.Summary.Cell index={15}></Table.Summary.Cell>
+                  <Table.Summary.Cell index={16}></Table.Summary.Cell>
+                  <Table.Summary.Cell index={17}></Table.Summary.Cell>
+                </Table.Summary.Row>
+              </Table.Summary>
+            );
           }}
         />
 
@@ -1884,7 +2049,7 @@ const Invoice: React.FC = () => {
               showTotal={(total, range) => 
                 `${range[0]}-${range[1]} من ${total} نتيجة`
               }
-              className="[&_.ant-pagination-item-active]:bg-emerald-600 [&_.ant-pagination-item-active]:border-emerald-600"
+              className="bg-white [&_.ant-pagination-item-active]:border-emerald-600"
             />
           </div>
         )}
@@ -1929,6 +2094,10 @@ const Invoice: React.FC = () => {
             <div className="flex flex-col gap-2">
               <label className="text-sm text-gray-600">رقم الفاتورة</label>
               <input type="text" className="bg-gray-100 rounded px-3 py-2 text-gray-800" value={selectedInvoice.invoiceNumber} readOnly />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm text-gray-600">رقم القيد</label>
+              <input type="text" className="bg-gray-100 rounded px-3 py-2 text-gray-800" value={selectedInvoice.entryNumber || '-'} readOnly />
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm text-gray-600">تاريخ الفاتورة</label>
@@ -2001,6 +2170,10 @@ const Invoice: React.FC = () => {
               <span className="text-gray-800">{selectedInvoice.invoiceNumber}</span>
             </div>
             <div className="flex justify-between">
+              <span className="font-semibold text-gray-600">رقم القيد:</span>
+              <span className="text-gray-800">{selectedInvoice.entryNumber || '-'}</span>
+            </div>
+            <div className="flex justify-between">
               <span className="font-semibold text-gray-600">تاريخ الفاتورة:</span>
               <span className="text-gray-800">{dayjs(selectedInvoice.date).format("YYYY-MM-DD")}</span>
             </div>
@@ -2043,6 +2216,7 @@ const Invoice: React.FC = () => {
                     initial={{ y: 10, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.4 }}
+                    className="bg-emerald-100"
                   >
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">كود الصنف</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">اسم الصنف</th>
