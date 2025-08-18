@@ -29,9 +29,13 @@ import Invoice from "./reports/invoice";
 import SettingsPage from "./SettingsPage";
 import ItemCardPage from "./stores/item";
 import SalesPage from "./stores/sales";
+import Quotations from "./stores/quotations";
+import AddQuotationPage from "./stores/addquotations";
+import EditQuotationPage from "./stores/EditQuotation";
 import WarehouseManagementOld from "./stores/manage";
 import AdvancedWarehouseManagement from "./stores/AdvancedWarehouseManagement";
 import SalesReturnPage from "./stores/sales-return";
+import SalesOrder from "./stores/sales-order";
 import Branches from "./business/branches";
 import PaymentMethodsPage from "./business/payment-methods";
 import Suppliers from "./suppliers";
@@ -50,6 +54,7 @@ import {
   PurchaseManagement,
   EquipmentManagement
 } from "../pages/management";
+
 import { Player } from '@lottiefiles/react-lottie-player';
 
 // Accounting Pages
@@ -74,6 +79,7 @@ import SalesRepresentativesPage from "./management/SalesRepresentativesPageFixed
 import EditSalesInvoicePage from "./stores/edit-sales-invoice";
 import EditSalesInvoiceDetailPage from "./stores/edit-sales-invoice-detail";
 import ReceiptVoucher from "./stores/ReceiptVoucher";
+import AddSalesOrderPage from "./stores/add-order-sales";
 import ReceiptVouchersDirectory from "./stores/ReceiptVouchersDirectory";
 import SoldItems from "./reports/sold-items";
 import BranchSales from "./reports/branch-sales";
@@ -201,13 +207,19 @@ const Index = () => {
               <Route path="/stores/edit-sales-invoice/:id" element={<EditSalesInvoiceDetailPage />} />
               <Route path="/stores/receipt-voucher" element={<ReceiptVoucher />} />
               <Route path="/stores/receipt-vouchers-directory" element={<ReceiptVouchersDirectory />} />
+              <Route path="/stores/quotations" element={<Quotations />} />
+              <Route path="/stores/quotations/new" element={<AddQuotationPage />} />
+              <Route path="/stores/quotations/edit/:id" element={<EditQuotationPage />} />
               <Route path="/business/branches" element={<Branches />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/stores/stock" element={<Stockpage />} />
               <Route path="/stores/purchases" element={<PurchasesPage />} />
               <Route path="/reports/invoice-profits" element={<InvoiceProfitsReport />} />
+              <Route path="/stores/sales-order" element={<SalesOrder />} />
               <Route path="/reports/invoice-preferred" element={<InvoicePreferred />} />
               <Route path="/stores/purchases-return" element={<PurchasesReturnPage />} />
+              <Route path="/stores/sales-order/new" element={<AddSalesOrderPage />} />
+
               <Route path="/edit/editsales" element={<EditSalesPage />} />
               <Route path="/edit/edit-return/:id" element={<EditReturnPage />} />
               <Route path="/help" element={<HelpPage />} />

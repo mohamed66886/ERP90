@@ -4,16 +4,22 @@ import { Helmet } from "react-helmet";
 import { Link } from 'react-router-dom';
 import { getDocs, query, collection } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
-import { DatePicker, Input, Select } from "antd";
+import { DatePicker, Input, Select, Button, Table, Pagination } from "antd";
+import { SearchOutlined, DownloadOutlined, FileTextOutlined } from '@ant-design/icons';
 import arEG from 'antd/es/date-picker/locale/ar_EG';
 import { fetchBranches, Branch } from "@/lib/branches";
 import Breadcrumb from "@/components/Breadcrumb";
 import dayjs from 'dayjs';
+import styles from './ReceiptVoucher.module.css';
+
+const { Option } = Select;
 
 
 interface WarehouseOption {
   id: string;
-  name: string;
+  name?: string;
+  nameAr?: string;
+  nameEn?: string;
 }
 
 interface PaymentMethodOption {
@@ -68,6 +74,20 @@ const Invoice: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([]);
   const [seller, setSeller] = useState<string>("");
+  const [salesRepAccounts, setSalesRepAccounts] = useState<{ id: string; name: string; number: string; mobile?: string }[]>([]);
+
+  // ستايل موحد لعناصر الإدخال والدروب داون مثل صفحة أمر البيع
+  const largeControlStyle = {
+    height: 48,
+    fontSize: 18,
+    borderRadius: 8,
+    padding: '8px 16px',
+    boxShadow: '0 1px 6px rgba(0,0,0,0.07)',
+    background: '#fff',
+    border: '1.5px solid #d9d9d9',
+    transition: 'border-color 0.3s',
+  };
+  const labelStyle = { fontSize: 18, fontWeight: 500, marginBottom: 2, display: 'block' };
   useEffect(() => {
     const fetchPaymentMethods = async () => {
       try {
@@ -88,13 +108,58 @@ const Invoice: React.FC = () => {
         const { getDocs, collection } = await import('firebase/firestore');
         const { db } = await import('@/lib/firebase');
         const snap = await getDocs(collection(db, 'warehouses'));
-        const options = snap.docs.map(doc => ({ id: doc.id, name: doc.data().name || doc.id }));
+        const options = snap.docs.map(doc => ({
+          id: doc.id,
+          name: doc.data().name || '',
+          nameAr: doc.data().nameAr || '',
+          nameEn: doc.data().nameEn || ''
+        }));
         setWarehouses(options);
       } catch {
         setWarehouses([]);
       }
     };
     fetchWarehouses();
+  }, []);
+  
+  useEffect(() => {
+    const fetchSalesReps = async () => {
+      try {
+        const { getDocs, collection } = await import('firebase/firestore');
+        const { db } = await import('@/lib/firebase');
+        
+        // جلب من جدول accounts (المندوبين)
+        const accountsSnap = await getDocs(collection(db, 'accounts'));
+        const accountsReps = accountsSnap.docs
+          .map(doc => ({
+            id: doc.id,
+            name: doc.data().nameAr || doc.data().name || '',
+            number: doc.data().accountNumber || '',
+            mobile: doc.data().customerData?.mobile || doc.data().customerData?.phone || ''
+          }))
+          .filter(acc => acc.name && acc.number && (acc.name.includes('مندوب') || acc.name.includes('بائع') || acc.name.includes('مبيعات')));
+        
+        // جلب من جدول salesRepresentatives أيضاً
+        const salesRepsSnap = await getDocs(collection(db, 'salesRepresentatives'));
+        const salesReps = salesRepsSnap.docs.map(doc => ({
+          id: doc.id,
+          name: doc.data().name || '',
+          number: doc.data().number || doc.id,
+          mobile: doc.data().mobile || doc.data().phone || ''
+        }));
+        
+        // دمج القوائم وإزالة المكرر
+        const allReps = [...accountsReps, ...salesReps];
+        const uniqueReps = allReps.filter((rep, index, self) => 
+          index === self.findIndex(r => r.name === rep.name || r.id === rep.id)
+        );
+        
+        setSalesRepAccounts(uniqueReps);
+      } catch {
+        setSalesRepAccounts([]);
+      }
+    };
+    fetchSalesReps();
   }, []);
   const [dateFrom, setDateFrom] = useState<any>(null);
   const [dateTo, setDateTo] = useState<any>(null);
@@ -572,7 +637,8 @@ const Invoice: React.FC = () => {
         parseTime(inv.createdAt) || parseTime(inv.itemData?.createdAt) || (inv.date ? dayjs(inv.date).format('hh:mm:ss A') : ''),
         inv.taxPercent + '%',
         'ريال سعودي',
-        getWarehouseName(inv.warehouse)
+        getWarehouseName(inv.warehouse),
+        getSalesRepName(inv.seller)
       ];
     });
     const workbook = new ExcelJS.Workbook();
@@ -581,8 +647,8 @@ const Invoice: React.FC = () => {
     sheet.columns = [
       { header: 'رقم الفاتورة', key: 'invoiceNumber', width: 20 },
       { header: 'تاريخ الفاتورة', key: 'date', width: 15 },
-      { header: 'نوع الفاتورة', key: 'type', width: 12 },
-      { header: 'كود الصنف', key: 'itemNumber', width: 14 },
+      { header: 'نوع الفاتورة', key: 'type', width: 22 }, // Expanded width
+      { header: 'كود الصنف', key: 'itemNumber', width: 27 },
       { header: 'اسم الصنف', key: 'itemName', width: 50 },
       { header: 'الفئة', key: 'mainCategory', width: 15 },
       { header: 'الكمية', key: 'quantity', width: 10 },
@@ -599,6 +665,7 @@ const Invoice: React.FC = () => {
       { header: 'نسبة الضريبة', key: 'taxPercent', width: 12 },
       { header: 'العملة', key: 'currency', width: 12 },
       { header: 'المخزن', key: 'warehouse', width: 15 },
+      { header: 'البائع', key: 'seller', width: 20 },
     ];
     sheet.addRows(exportData);
     sheet.getRow(1).eachCell(cell => {
@@ -656,7 +723,36 @@ const Invoice: React.FC = () => {
   // دالة لجلب اسم المخزن من القائمة
   const getWarehouseName = (warehouseId: string) => {
     const warehouse = warehouses.find(w => w.id === warehouseId);
-    return warehouse ? warehouse.name : warehouseId;
+    return warehouse ? (warehouse.nameAr || warehouse.name || warehouse.nameEn || warehouseId) : warehouseId;
+  };
+
+  // دالة لجلب اسم البائع من القائمة
+  const getSalesRepName = (salesRepId: string) => {
+    // إذا كان salesRepId فارغ أو undefined، أرجع قيمة افتراضية
+    if (!salesRepId || salesRepId.trim() === '') return 'غير محدد';
+    
+    // ابحث في قائمة حسابات البائعين أولاً
+    const foundRep = salesRepAccounts.find(rep => 
+      rep.id === salesRepId || // البحث بالـ ID
+      rep.name === salesRepId || // البحث بالاسم الكامل
+      rep.name.toLowerCase().includes(salesRepId.toLowerCase()) ||
+      salesRepId.toLowerCase().includes(rep.name.toLowerCase()) ||
+      rep.number === salesRepId // البحث برقم الحساب
+    );
+    
+    if (foundRep) {
+      return foundRep.name;
+    }
+    
+    // في حالة عدم العثور عليه في الحسابات، ابحث في البائعين الموجودين في الفواتير
+    const uniqueSellers = Array.from(new Set(invoices.map(inv => inv.seller).filter(s => !!s && s !== '')));
+    const foundSeller = uniqueSellers.find(seller => 
+      seller === salesRepId || // مطابقة كاملة
+      seller.toLowerCase().includes(salesRepId.toLowerCase()) || 
+      salesRepId.toLowerCase().includes(seller.toLowerCase())
+    );
+    
+    return foundSeller || salesRepId;
   };
 
 
@@ -1174,22 +1270,17 @@ const Invoice: React.FC = () => {
         <meta name="description" content="تقرير فواتير المبيعات، عرض وطباعة فواتير العملاء، ERP90 Dashboard" />
         <meta name="keywords" content="ERP, فواتير, مبيعات, تقرير, عملاء, ضريبة, طباعة, Sales, Invoice, Report, Tax, Customer" />
       </Helmet>
-      <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50">
+      <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50" dir="rtl">
  
-            <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
-        <div className="flex items-center">
-          {/* Invoice Icon */}
-          <svg className="h-8 w-8 text-green-600 ml-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" strokeWidth="2" fill="none" />
-            <line x1="8" y1="8" x2="16" y2="8" stroke="currentColor" strokeWidth="2" />
-            <line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" strokeWidth="2" />
-            <line x1="8" y1="16" x2="12" y2="16" stroke="currentColor" strokeWidth="2" />
-          </svg>
-          <h1 className="text-2xl font-bold text-gray-800">تقرير فواتير المبيعات </h1>
+        {/* العنوان الرئيسي */}
+        <div className="p-3 sm:p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+          <div className="flex items-center">
+            <FileTextOutlined className="h-5 w-5 sm:h-8 sm:w-8 text-emerald-600 ml-1 sm:ml-3" />
+            <h1 className="text-lg sm:text-2xl font-bold text-gray-800">تقرير فواتير المبيعات</h1>
+          </div>
+          <p className="text-xs sm:text-base text-gray-600 mt-2">إدارة وعرض تقارير فواتير المبيعات</p>
+          <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 to-green-500"></div>
         </div>
-        <p className="text-gray-600 mt-2">تقرير  لجميع فواتير المبيعات </p>
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 to-blue-500"></div>
-      </div>
 
       <Breadcrumb
         items={[
@@ -1202,91 +1293,82 @@ const Invoice: React.FC = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
-        className="w-full bg-white p-4 rounded-lg border border-blue-100 flex flex-col gap-4 shadow-sm relative"
+        className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm relative"
       >
-        <div className="flex items-center">
-          <div className="border-r-4 border-blue-500 pr-4 mr-4 h-10 flex items-center">
-            <span className="text-lg font-semibold text-gray-700">خيارات البحث</span>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-2">
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">من تاريخ</label>
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-green-500"></div>
+        
+        <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
+          <SearchOutlined className="text-emerald-600" /> خيارات البحث
+        </h3>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="flex flex-col">
+            <span style={labelStyle}>من تاريخ</span>
             <DatePicker 
-              style={{ width: '100%' }}
-              locale={arEG}
               value={dateFrom}
               onChange={setDateFrom}
+              placeholder="اختر التاريخ"
+              style={largeControlStyle}
+              size="large"
               format="YYYY-MM-DD"
-            />
-          </motion.div>
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.1 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">إلى تاريخ</label>
-            <DatePicker 
-              style={{ width: '100%' }}
               locale={arEG}
+            />
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>إلى تاريخ</span>
+            <DatePicker 
               value={dateTo}
               onChange={setDateTo}
+              placeholder="اختر التاريخ"
+              style={largeControlStyle}
+              size="large"
               format="YYYY-MM-DD"
+              locale={arEG}
             />
-          </motion.div>
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.2 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">رقم الفاتورة</label>
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>رقم الفاتورة</span>
             <Input 
-              style={{ width: '100%' }}
-              placeholder="رقم الفاتورة"
               value={invoiceNumber}
               onChange={e => setInvoiceNumber(e.target.value)}
-            />
-          </motion.div>
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">الفرع</label>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="اختر الفرع"
-              value={branchId || undefined}
-              onChange={value => setBranchId(value)}
-              loading={branchesLoading}
+              placeholder="ادخل رقم الفاتورة"
+              style={largeControlStyle}
+              size="large"
               allowClear
+            />
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>الفرع</span>
+            <Select
+              value={branchId}
+              onChange={setBranchId}
+              placeholder="اختر الفرع"
+              style={{ width: '100%', ...largeControlStyle }}
+              size="large"
+              className={styles.noAntBorder}
+              optionFilterProp="label"
+              allowClear
+              showSearch
+              loading={branchesLoading}
+              filterOption={(input, option) =>
+                option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+              }
             >
-              <Option value="">اختر الفرع</Option>
               {branches.map(branch => (
-                <Option key={branch.id} value={branch.id}>{branch.name}</Option>
+                <Option key={branch.id} value={branch.id}>
+                  {branch.name}
+                </Option>
               ))}
             </Select>
-          </motion.div>
-          {/* خيارات تصفية إضافية */}
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">اسم العميل</label>
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>اسم العميل</span>
             <Select
               showSearch
-              style={{ width: '100%' }}
-              placeholder="اسم العميل"
               value={customerName || undefined}
               onChange={value => {
                 setCustomerName(value);
@@ -1302,26 +1384,25 @@ const Invoice: React.FC = () => {
                   setCustomerPhoneFilter('');
                 }
               }}
+              placeholder="اختر اسم العميل"
+              style={{ width: '100%', ...largeControlStyle }}
+              size="large"
+              className={styles.noAntBorder}
+              optionFilterProp="label"
               allowClear
-              filterOption={(input, option) => (option?.children ?? '').toLowerCase().includes(input.toLowerCase())}
+              filterOption={(input, option) => (option?.children ?? '').toString().toLowerCase().includes(input.toLowerCase())}
             >
-              <Select.Option value="">الكل</Select.Option>
+              <Option value="">الكل</Option>
               {Array.from(new Set(invoices.map(inv => inv.customer).filter(s => !!s && s !== ''))).map(s => (
-                <Select.Option key={s} value={s}>{s}</Select.Option>
+                <Option key={s} value={s}>{s}</Option>
               ))}
             </Select>
-          </motion.div>
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">رقم العميل</label>
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>رقم العميل</span>
             <Select
               showSearch
-              style={{ width: '100%' }}
-              placeholder="رقم العميل"
               value={customerPhoneFilter || undefined}
               onChange={value => {
                 setCustomerPhoneFilter(value);
@@ -1337,30 +1418,34 @@ const Invoice: React.FC = () => {
                   setCustomerName('');
                 }
               }}
+              placeholder="اختر رقم العميل"
+              style={{ width: '100%', ...largeControlStyle }}
+              size="large"
+              className={styles.noAntBorder}
+              optionFilterProp="label"
               allowClear
-              filterOption={(input, option) => (option?.children ?? '').toLowerCase().includes(input.toLowerCase())}
+              filterOption={(input, option) => (option?.children ?? '').toString().toLowerCase().includes(input.toLowerCase())}
             >
-              <Select.Option value="">الكل</Select.Option>
+              <Option value="">الكل</Option>
               {Array.from(new Set(invoices.map(inv => inv.customerPhone).filter(s => !!s && s !== ''))).map(s => (
-                <Select.Option key={s} value={s}>{s}</Select.Option>
+                <Option key={s} value={s}>{s}</Option>
               ))}
             </Select>
-          </motion.div>
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">الوقت</label>
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>الوقت</span>
             <Input
-              style={{ width: '100%' }}
-              placeholder="hh:mm:ss"
               value={timeFilter || ''}
               onChange={e => setTimeFilter(e.target.value)}
+              placeholder="hh:mm:ss"
+              style={largeControlStyle}
+              size="large"
+              allowClear
             />
-          </motion.div>
+          </div>
         </div>
+        
         <AnimatePresence>
           {showMore && (
             <motion.div 
@@ -1370,108 +1455,113 @@ const Invoice: React.FC = () => {
               transition={{ duration: 0.3 }}
               className="overflow-hidden"
             >
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0 }}
-                  className="flex flex-col"
-                >
-                  <label className="text-sm mb-1 text-gray-600">المخزن</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-4">
+                <div className="flex flex-col">
+                  <span style={labelStyle}>المخزن</span>
                   <Select
-                    style={{ width: '100%' }}
-                    placeholder="اختر المخزن"
                     value={warehouseId || undefined}
-                    onChange={value => setWarehouseId(value)}
+                    onChange={setWarehouseId}
+                    placeholder="اختر المخزن"
+                    style={{ width: '100%', ...largeControlStyle }}
+                    size="large"
+                    className={styles.noAntBorder}
+                    optionFilterProp="label"
                     allowClear
+                    showSearch
+                    filterOption={(input, option) =>
+                      option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+                    }
                   >
-                    <Option value="">اختر المخزن</Option>
                     {warehouses.map(w => (
-                      <Option key={w.id} value={w.id}>{w.name}</Option>
+                      <Option key={w.id} value={w.id}>{w.nameAr || w.name || w.nameEn || w.id}</Option>
                     ))}
                   </Select>
-                </motion.div>
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 }}
-                  className="flex flex-col"
-                >
-                  <label className="text-sm mb-1 text-gray-600">طريقة الدفع</label>
+                </div>
+                
+                <div className="flex flex-col">
+                  <span style={labelStyle}>طريقة الدفع</span>
                   <Select
-                    style={{ width: '100%' }}
-                    placeholder="اختر طريقة الدفع"
                     value={paymentMethod || undefined}
-                    onChange={value => setPaymentMethod(value)}
+                    onChange={setPaymentMethod}
+                    placeholder="اختر طريقة الدفع"
+                    style={{ width: '100%', ...largeControlStyle }}
+                    size="large"
+                    className={styles.noAntBorder}
+                    optionFilterProp="label"
                     allowClear
                   >
-                    <Option value="">اختر طريقة الدفع</Option>
                     {paymentMethods.map(m => (
                       <Option key={m.id} value={m.name}>{m.name}</Option>
                     ))}
                   </Select>
-                </motion.div>
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                  className="flex flex-col"
-                >
-                  <label className="text-sm mb-1 text-gray-600">نوع الفاتورة</label>
+                </div>
+                
+                <div className="flex flex-col">
+                  <span style={labelStyle}>نوع الفاتورة</span>
                   <Select
-                    style={{ width: '100%' }}
-                    placeholder="الكل"
                     value={invoiceTypeFilter}
                     onChange={v => setInvoiceTypeFilter(v)}
+                    placeholder="اختر نوع الفاتورة"
+                    style={{ width: '100%', ...largeControlStyle }}
+                    size="large"
+                    className={styles.noAntBorder}
                     allowClear
                   >
                     <Option value="">الكل</Option>
                     <Option value="فاتورة">فاتورة</Option>
                     <Option value="مرتجع">مرتجع</Option>
                   </Select>
-                </motion.div>
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 }}
-                  className="flex flex-col"
-                >
-                  <label className="text-sm mb-1 text-gray-600">البائع</label>
+                </div>
+                
+                <div className="flex flex-col">
+                  <span style={labelStyle}>البائع</span>
                   <Select
-                    style={{ width: '100%' }}
-                    placeholder="اختر البائع"
                     value={seller || undefined}
-                    onChange={value => setSeller(value)}
+                    onChange={setSeller}
+                    placeholder="اختر البائع"
+                    style={{ width: '100%', ...largeControlStyle }}
+                    size="large"
+                    className={styles.noAntBorder}
+                    optionFilterProp="label"
                     allowClear
+                    showSearch
+                    filterOption={(input, option) =>
+                      option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+                    }
                   >
-                    <Option value="">اختر البائع</Option>
-                    {Array.from(new Set(invoices.map(inv => inv.seller).filter(s => !!s && s !== ''))).map(s => (
+                    {/* أولاً عرض البائعين من حسابات المندوبين */}
+                    {salesRepAccounts.map(rep => (
+                      <Option key={rep.id} value={rep.name}>{rep.name}</Option>
+                    ))}
+                    {/* ثم عرض البائعين الإضافيين الموجودين في الفواتير والغير موجودين في الحسابات */}
+                    {Array.from(new Set(invoices.map(inv => inv.seller).filter(s => {
+                      if (!s || s === '') return false;
+                      // تحقق من عدم وجود هذا البائع في حسابات المندوبين
+                      return !salesRepAccounts.some(rep => 
+                        rep.name.toLowerCase().includes(s.toLowerCase()) ||
+                        s.toLowerCase().includes(rep.name.toLowerCase())
+                      );
+                    }))).map(s => (
                       <Option key={s} value={s}>{s}</Option>
                     ))}
                   </Select>
-                </motion.div>
+                </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
+        
         <div className="flex items-center gap-4 mt-4">
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.98 }}
+          <Button
+            type="primary"
+            icon={<SearchOutlined />}
             onClick={handleSearch}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors flex items-center justify-center"
-            disabled={isLoading}
+            loading={isLoading}
+            className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
+            size="large"
           >
-            {isLoading ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                جاري البحث...
-              </>
-            ) : "بحث"}
-          </motion.button>
+            {isLoading ? "جاري البحث..." : "بحث"}
+          </Button>
           <span className="text-gray-500 text-sm">
             نتائج البحث: {
               Object.keys(
@@ -1484,6 +1574,7 @@ const Invoice: React.FC = () => {
             } - عرض الصفحة {currentPage} من {getTotalPages()}
           </span>
         </div>
+        
         <motion.div
           whileHover={{ scale: 1.05 }}
           className="absolute left-4 top-4 flex items-center gap-2 cursor-pointer text-blue-600 select-none"
@@ -1503,322 +1594,299 @@ const Invoice: React.FC = () => {
           </motion.svg>
         </motion.div>
       </motion.div>
+
+      {/* نتائج البحث */}
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, delay: 0.2 }}
-        className="w-full bg-white p-4 rounded-lg border border-blue-100 flex flex-col gap-4 shadow-sm"
+        className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm overflow-x-auto relative"
       >
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-green-500"></div>
+        
         <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="border-r-4 border-blue-500 pr-4 mr-4 h-10 flex items-center">
-            <span className="text-lg font-semibold text-gray-700">نتائج البحث</span>
-          </div>
+          <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
+            <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            نتائج البحث ({Object.keys(
+              getFilteredRows().reduce((acc, inv) => {
+                const key = inv.invoiceNumber + '-' + inv.invoiceType;
+                acc[key] = true;
+                return acc;
+              }, {})
+            ).length} فاتورة)
+          </h3>
           <div className="flex items-center gap-2">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg shadow-md hover:bg-green-700 transition-colors flex items-center gap-1"
+            <Button
+              type="primary"
+              icon={<DownloadOutlined />}
               onClick={handleExport}
               disabled={filteredInvoices.length === 0}
+              className="bg-green-600 hover:bg-green-700 border-green-600 hover:border-green-700"
+              size="large"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              تصدير
-            </motion.button>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors flex items-center gap-1"
+              تصدير إكسل
+            </Button>
+            <Button
+              type="primary"
+              className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
+              size="large"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-              </svg>
               طباعة
-            </motion.button>
+            </Button>
           </div>
         </div>
-        <div className="overflow-x-auto mt-4">
-          <div className="w-full inline-block align-middle">
-            <div className="overflow-x-auto border rounded-lg" style={{maxWidth: '100vw'}}>
-              <div className="grid grid-cols-12 bg-blue-600 text-white font-medium text-xs rounded-t-lg">
-                <div className="col-span-1 px-2 py-3 text-center border border-gray-300">رقم الفاتورة</div>
-                <div className="col-span-1 px-2 py-3 text-center border border-gray-300">تاريخ الفاتورة</div>
-                <div className="col-span-1 px-2 py-3 text-center border border-gray-300">رقم العميل</div>
-                <div className="col-span-1 px-2 py-3 text-center border border-gray-300">اسم العميل</div>
-                <div className="col-span-1 px-2 py-3 text-center border border-gray-300">الفرع</div>
-                <div className="col-span-1 px-2 py-3 text-center border border-gray-300">طريقة الدفع</div>
-                <div className="col-span-1 px-2 py-3 text-center border border-gray-300">قيمة الفاتورة</div>
-                <div className="col-span-1 px-2 py-3 text-center border border-gray-300">خصم الفاتورة</div>
-                <div className="col-span-1 px-2 py-3 text-center border border-gray-300">الضريبة</div>
-                <div className="col-span-1 px-2 py-3 text-center border border-gray-300">الإجمالي</div>
-                <div className="col-span-1 px-2 py-3 text-center border border-gray-300">الوقت</div>
-                <div className="col-span-1 px-2 py-3 text-center border border-gray-300">البائع</div>
-              </div>
-              <div className="bg-white">
-                {getPaginatedRows().length > 0 ? (
-                  <>
-                    {/* عرض صف واحد لكل فاتورة */}
-                    {Object.values(
-                      getPaginatedRows().reduce((acc, inv) => {
-                        const key = inv.invoiceNumber + '-' + inv.invoiceType;
-                        if (!acc[key]) {
-                          acc[key] = {
-                            ...inv,
-                            _rows: []
-                          };
-                        }
-                        acc[key]._rows.push(inv);
-                        return acc;
-                      }, {})
-                    ).map((group: InvoiceItemRow & { _rows: InvoiceItemRow[] }, idx) => {
-                      // حساب الإجماليات لكل فاتورة
-                      const sign = group.invoiceType === 'مرتجع' ? -1 : 1;
-                      let subtotal = 0, discountValue = 0, taxValue = 0, totalAfterDiscount = 0, net = 0;
-                      group._rows.forEach(row => {
-                        const price = Number(row.price) || 0;
-                        const quantity = Number(row.quantity) || 0;
-                        const discount = Number(row.discountValue) || 0;
-                        const tax = Number(row.taxValue) || 0;
-                        const afterDiscount = typeof row.totalAfterDiscount !== 'undefined' ? row.totalAfterDiscount : price * quantity - discount;
-                        subtotal += price * quantity;
-                        discountValue += discount;
-                        taxValue += tax;
-                        totalAfterDiscount += afterDiscount < 0 ? 0 : afterDiscount;
-                        net += (afterDiscount < 0 ? 0 : afterDiscount) + tax;
-                      });
-                      const branchName = getBranchName(group.branch);
-                      const parseTime = (val) => {
-                        if (!val) return '';
-                        if (typeof val === 'object' && val.seconds) {
-                          return dayjs(val.seconds * 1000).format('hh:mm:ss A');
-                        }
-                        if (typeof val === 'string') {
-                          const d = dayjs(val);
-                          if (d.isValid()) return d.format('hh:mm:ss A');
-                        }
-                        return '';
-                      };
-                      return (
-                        <div key={group.invoiceNumber + '-' + group.invoiceType + '-' + idx} className={`grid grid-cols-12 items-center border-b border-gray-200 ${idx % 2 === 0 ? 'bg-blue-50' : 'bg-white'} hover:bg-blue-100 cursor-pointer transition-colors duration-150`}>
-                          <div className="col-span-1 px-2 py-2 text-center">
-                            {group.invoiceType === 'مرتجع' && group.id ? (
-                              <Link
-                                to={`/edit/edit-return/${group.id}`}
-                                className="text-red-700 underline hover:text-red-900"
-                              >
-                                {group.invoiceNumber}
-                              </Link>
-                            ) : (
-                              <Link
-                                to={`/edit/editsales?invoice=${encodeURIComponent(group.invoiceNumber)}`}
-                                className="text-blue-700 underline hover:text-blue-900"
-                              >
-                                {group.invoiceNumber}
-                              </Link>
-                            )}
-                          </div>
-                          <div className="col-span-1 px-2 py-2 text-center">{group.date ? dayjs(group.date).format('YYYY-MM-DD') : ''}</div>
-                          <div className="col-span-1 px-2 py-2 text-center">{group.customerPhone && group.customerPhone.trim() !== '' ? group.customerPhone : 'غير متوفر'}</div>
-                          <div className="col-span-1 px-2 py-2 text-center">{group.customer || ''}</div>
-                          <div className="col-span-1 px-2 py-2 text-center">{branchName}</div>
-                          <div className="col-span-1 px-2 py-2 text-center">{group.paymentMethod || ''}</div>
-                          <div className="col-span-1 px-2 py-2 text-center">{(sign * subtotal).toFixed(2)}</div>
-                          <div className="col-span-1 px-2 py-2 text-center">{(sign * discountValue).toFixed(2)}</div>
-                          <div className="col-span-1 px-2 py-2 text-center">{(sign * taxValue).toFixed(2)}</div>
-                          <div className="col-span-1 px-2 py-2 text-center">{(sign * net).toFixed(2)}</div>
-                          <div className="col-span-1 px-2 py-2 text-center">{parseTime(group.createdAt) || (group.date ? dayjs(group.date).format('hh:mm:ss A') : '')}</div>
-                          <div className="col-span-1 px-2 py-2 text-center">{group.seller || '-'}</div>
-                        </div>
-                      );
-                    })}
-                    {/* صف الإجمالي الكلي */}
-                    {
-                      (() => {
-                        const rows = getFilteredRows(); // استخدم كل البيانات المفلترة، ليس فقط المعروضة في الصفحة
-                        let totalDiscount = 0, totalAfterDiscount = 0, totalTax = 0, totalNet = 0;
-                        rows.forEach(inv => {
-                          const sign = inv.invoiceType === 'مرتجع' ? -1 : 1;
-                          totalDiscount += sign * (inv.discountValue || 0);
-                          totalAfterDiscount += sign * (inv.totalAfterDiscount ?? ((inv.price || 0) * (inv.quantity || 0) - (inv.discountValue || 0)));
-                          totalTax += sign * (inv.taxValue || 0);
-                          totalNet += sign * (inv.net || 0);
-                        });
-                        return (
-                          <div className="grid grid-cols-12 font-bold bg-gray-100 border-t border-gray-300">
-                            <div className="col-span-6 px-2 py-2 text-center">الإجمالي الكلي</div>
-                            <div className="col-span-1 px-2 py-2 text-center">{totalDiscount.toFixed(2)}</div>
-                            <div className="col-span-1 px-2 py-2 text-center">{totalAfterDiscount.toFixed(2)}</div>
-                            <div className="col-span-1 px-2 py-2 text-center">{totalTax.toFixed(2)}</div>
-                            <div className="col-span-1 px-2 py-2 text-center">{totalNet.toFixed(2)}</div>
-                            <div className="col-span-2"></div>
-                          </div>
-                        );
-                      })()
-                    }
-                  </>
+
+        <Table
+          columns={[
+            {
+              title: 'رقم الفاتورة',
+              dataIndex: 'invoiceNumber',
+              key: 'invoiceNumber',
+              width: 120,
+              sorter: (a: any, b: any) => a.invoiceNumber.localeCompare(b.invoiceNumber),
+              render: (text: string, record: any) => (
+                record.invoiceType === 'مرتجع' && record.id ? (
+                  <Link
+                    to={`/edit/edit-return/${record.id}`}
+                    className="text-red-700 underline hover:text-red-900"
+                  >
+                    {text}
+                  </Link>
                 ) : (
-                  <div className="grid grid-cols-12">
-                    <div className="col-span-12 px-4 py-4 whitespace-nowrap text-sm text-gray-500 text-center border border-gray-300">
-                      {isLoading ? (
-                        <div className="flex justify-center items-center py-8">
-                          <div className="animate-pulse flex space-x-4">
-                            <div className="flex-1 space-y-4 py-1">
-                              <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto"></div>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-gray-400">لا توجد بيانات</div>
-                      )}
-                    </div>
+                  <Link
+                    to={`/edit/editsales?invoice=${encodeURIComponent(text)}`}
+                    className="text-blue-700 underline hover:text-blue-900"
+                  >
+                    {text}
+                  </Link>
+                )
+              ),
+            },
+            {
+              title: 'تاريخ الفاتورة',
+              dataIndex: 'date',
+              key: 'date',
+              width: 120,
+              sorter: (a: any, b: any) => dayjs(a.date).valueOf() - dayjs(b.date).valueOf(),
+              render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '',
+            },
+            {
+              title: 'نوع الفاتورة',
+              dataIndex: 'invoiceType',
+              key: 'invoiceType',
+              width: 140,
+              sorter: (a: any, b: any) => a.invoiceType.localeCompare(b.invoiceType),
+              render: (type: string) => (
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  type === 'مرتجع' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                }`}>
+                  {type}
+                </span>
+              ),
+            },
+            {
+              title: 'اسم العميل',
+              dataIndex: 'customer',
+              key: 'customer',
+              width: 180,
+              sorter: (a: any, b: any) => (a.customer || '').localeCompare(b.customer || ''),
+            },
+            {
+              title: 'رقم العميل',
+              dataIndex: 'customerPhone',
+              key: 'customerPhone',
+              width: 120,
+              render: (phone: string) => phone && phone.trim() !== '' ? phone : 'غير متوفر',
+            },
+            {
+              title: 'الفرع',
+              dataIndex: 'branch',
+              key: 'branch',
+              width: 120,
+              sorter: (a: any, b: any) => getBranchName(a.branch).localeCompare(getBranchName(b.branch)),
+              render: (branch: string) => getBranchName(branch),
+            },
+            {
+              title: 'المخزن',
+              dataIndex: 'warehouse',
+              key: 'warehouse',
+              width: 150,
+              sorter: (a: any, b: any) => getWarehouseName(a.warehouse).localeCompare(getWarehouseName(b.warehouse)),
+              render: (warehouse: string) => getWarehouseName(warehouse),
+            },
+            {
+              title: 'طريقة الدفع',
+              dataIndex: 'paymentMethod',
+              key: 'paymentMethod',
+              width: 120,
+              render: (method: string) => method || '-',
+            },
+            {
+              title: 'قيمة المبلغ',
+              key: 'amount',
+              width: 140,
+              render: (record: any) => {
+                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                const amount = (Number(record.price) || 0) * (Number(record.quantity) || 0);
+                return `${(sign * amount).toLocaleString()} ر.س`;
+              },
+              sorter: (a: any, b: any) => {
+                const amountA = (Number(a.price) || 0) * (Number(a.quantity) || 0);
+                const amountB = (Number(b.price) || 0) * (Number(b.quantity) || 0);
+                return amountA - amountB;
+              },
+            },
+            {
+              title: 'الخصم',
+              dataIndex: 'discountValue',
+              key: 'discountValue',
+              width: 120,
+              render: (discount: number, record: any) => {
+                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                return `${(sign * (discount || 0)).toLocaleString()} ر.س`;
+              },
+              sorter: (a: any, b: any) => (a.discountValue || 0) - (b.discountValue || 0),
+            },
+            {
+              title: 'الضريبة',
+              dataIndex: 'taxValue',
+              key: 'taxValue',
+              width: 120,
+              render: (tax: number, record: any) => {
+                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                return `${(sign * (tax || 0)).toLocaleString()} ر.س`;
+              },
+              sorter: (a: any, b: any) => (a.taxValue || 0) - (b.taxValue || 0),
+            },
+            {
+              title: 'الإجمالي',
+              dataIndex: 'net',
+              key: 'net',
+              width: 120,
+              render: (net: number, record: any) => {
+                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                return `${(sign * (net || 0)).toLocaleString()} ر.س`;
+              },
+              sorter: (a: any, b: any) => (a.net || 0) - (b.net || 0),
+            },
+            {
+              title: 'البائع',
+              dataIndex: 'seller',
+              key: 'seller',
+              width: 120,
+              sorter: (a: any, b: any) => getSalesRepName(a.seller).localeCompare(getSalesRepName(b.seller)),
+              render: (seller: string) => getSalesRepName(seller),
+            },
+            {
+              title: 'الوقت',
+              key: 'time',
+              width: 100,
+              render: (record: any) => {
+                const parseTime = (val: any) => {
+                  if (!val) return '';
+                  if (typeof val === 'object' && val.seconds) {
+                    return dayjs(val.seconds * 1000).format('hh:mm:ss A');
+                  }
+                  if (typeof val === 'string') {
+                    const d = dayjs(val);
+                    if (d.isValid()) return d.format('hh:mm:ss A');
+                  }
+                  return '';
+                };
+                return parseTime(record.createdAt) || (record.date ? dayjs(record.date).format('hh:mm:ss A') : '');
+              },
+            },
+            {
+              title: 'الإجراءات',
+              key: 'actions',
+              width: 120,
+              fixed: 'right' as const,
+              render: (record: any) => (
+                <div className="flex gap-2">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
+                    onClick={() => {
+                      setSelectedInvoice(record);
+                      setShowInvoiceModal(true);
+                    }}
+                    style={{ padding: 0, minWidth: 32, color: '#2563eb' }}
+                    aria-label="عرض"
+                  />
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>}
+                    onClick={() => {
+                      setSelectedInvoice(record);
+                      handlePrint();
+                    }}
+                    style={{ padding: 0, minWidth: 32, color: '#16a34a' }}
+                    aria-label="طباعة"
+                  />
+                </div>
+              ),
+            },
+          ]}
+          dataSource={(() => {
+            // تجميع البيانات بنفس طريقة الكود السابق
+            const grouped = Object.values(
+              getPaginatedRows().reduce((acc, inv) => {
+                const key = inv.invoiceNumber + '-' + inv.invoiceType;
+                if (!acc[key]) {
+                  acc[key] = {
+                    ...inv,
+                    key: key,
+                    _rows: []
+                  };
+                }
+                acc[key]._rows.push(inv);
+                return acc;
+              }, {})
+            );
+            return grouped;
+          })()}
+          rowKey="key"
+          pagination={false}
+          loading={isLoading}
+          scroll={{ x: 1200 }}
+          size="small"
+          bordered
+          className="[&_.ant-table-thead_>_tr_>_th]:bg-emerald-600 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-emerald-500 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
+          locale={{
+            emptyText: isLoading ? (
+              <div className="flex justify-center items-center py-8">
+                <div className="animate-pulse flex space-x-4">
+                  <div className="flex-1 space-y-4 py-1">
+                    <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto"></div>
                   </div>
-                )}
+                </div>
               </div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Pagination Controls */}
+            ) : (
+              <div className="text-gray-400">لا توجد بيانات</div>
+            )
+          }}
+        />
+
+        {/* Pagination */}
         {getFilteredRows().length > 0 && (
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.1 }}
-            className="flex flex-col sm:flex-row justify-between items-center mt-6 gap-4"
-          >
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <span>عرض</span>
-              <span className="font-semibold">
-                {Math.min((currentPage - 1) * pageSize + 1, getFilteredRows().length)} - {Math.min(currentPage * pageSize, getFilteredRows().length)}
-              </span>
-              <span>من</span>
-              <span className="font-semibold">{getFilteredRows().length}</span>
-              <span>نتيجة</span>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              {/* Previous Button */}
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  currentPage === 1
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </motion.button>
-
-              {/* Page Numbers */}
-              <div className="flex items-center gap-1">
-                {(() => {
-                  const totalPages = getTotalPages();
-                  const pages = [];
-                  
-                  // Show first page
-                  if (totalPages > 0) {
-                    pages.push(
-                      <motion.button
-                        key={1}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setCurrentPage(1)}
-                        className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                          currentPage === 1
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        1
-                      </motion.button>
-                    );
-                  }
-
-                  // Show ellipsis if needed
-                  if (currentPage > 3) {
-                    pages.push(
-                      <span key="dots1" className="px-2 text-gray-400">...</span>
-                    );
-                  }
-
-                  // Show pages around current page
-                  const start = Math.max(2, currentPage - 1);
-                  const end = Math.min(totalPages - 1, currentPage + 1);
-                  
-                  for (let i = start; i <= end; i++) {
-                    if (i !== 1 && i !== totalPages) {
-                      pages.push(
-                        <motion.button
-                          key={i}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => setCurrentPage(i)}
-                          className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                            currentPage === i
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {i}
-                        </motion.button>
-                      );
-                    }
-                  }
-
-                  // Show ellipsis if needed
-                  if (currentPage < totalPages - 2) {
-                    pages.push(
-                      <span key="dots2" className="px-2 text-gray-400">...</span>
-                    );
-                  }
-
-                  // Show last page
-                  if (totalPages > 1) {
-                    pages.push(
-                      <motion.button
-                        key={totalPages}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setCurrentPage(totalPages)}
-                        className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                          currentPage === totalPages
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {totalPages}
-                      </motion.button>
-                    );
-                  }
-
-                  return pages;
-                })()}
-              </div>
-
-              {/* Next Button */}
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, getTotalPages()))}
-                disabled={currentPage === getTotalPages()}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  currentPage === getTotalPages()
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </motion.button>
-            </div>
-          </motion.div>
+          <div className="flex justify-center mt-4">
+            <Pagination
+              current={currentPage}
+              total={getFilteredRows().length}
+              pageSize={pageSize}
+              onChange={setCurrentPage}
+              showSizeChanger={false}
+              showQuickJumper
+              showTotal={(total, range) => 
+                `${range[0]}-${range[1]} من ${total} نتيجة`
+              }
+              className="[&_.ant-pagination-item-active]:bg-emerald-600 [&_.ant-pagination-item-active]:border-emerald-600"
+            />
+          </div>
         )}
       </motion.div>
     {/* مودال تفاصيل الفاتورة */}
@@ -1893,8 +1961,8 @@ const Invoice: React.FC = () => {
               <label className="text-sm text-gray-600">المخزن</label>
               <div className="bg-gray-100 rounded px-3 py-2">
                 <Select value={selectedInvoice.warehouse} disabled style={{ width: '100%' }}>
-                  {Array.from(new Set(filteredInvoices.map(inv => inv.warehouse).filter(s => !!s && s !== ''))).map(s => (
-                    <Select.Option key={s} value={s}>{getWarehouseName(s)}</Select.Option>
+                  {warehouses.map(w => (
+                    <Select.Option key={w.id} value={w.id}>{w.name}</Select.Option>
                   ))}
                 </Select>
               </div>
@@ -1904,7 +1972,7 @@ const Invoice: React.FC = () => {
               <div className="bg-gray-100 rounded px-3 py-2">
                 <Select value={selectedInvoice.seller} disabled style={{ width: '100%' }}>
                   {Array.from(new Set(filteredInvoices.map(inv => inv.seller).filter(s => !!s && s !== ''))).map(s => (
-                    <Select.Option key={s} value={s}>{s}</Select.Option>
+                    <Select.Option key={s} value={s}>{getSalesRepName(s)}</Select.Option>
                   ))}
                 </Select>
               </div>
@@ -1954,7 +2022,7 @@ const Invoice: React.FC = () => {
             </div>
             <div className="flex justify-between">
               <span className="font-semibold text-gray-600">البائع:</span>
-              <span className="text-gray-800">{selectedInvoice.seller || "-"}</span>
+              <span className="text-gray-800">{getSalesRepName(selectedInvoice.seller)}</span>
             </div>
             <div className="flex justify-between">
               <span className="font-semibold text-gray-600">طريقة الدفع:</span>
