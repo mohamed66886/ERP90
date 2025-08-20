@@ -9,6 +9,7 @@ import { SearchOutlined, DownloadOutlined, FileTextOutlined } from '@ant-design/
 import arEG from 'antd/es/date-picker/locale/ar_EG';
 import { fetchBranches, Branch } from "@/lib/branches";
 import Breadcrumb from "@/components/Breadcrumb";
+import { useFinancialYear } from "@/hooks/useFinancialYear";
 import dayjs from 'dayjs';
 import styles from './ReceiptVoucher.module.css';
 
@@ -181,6 +182,29 @@ const Invoice: React.FC = () => {
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(30); // عدد الصفوف في كل صفحة
+
+  // السنة المالية من السياق
+  const { currentFinancialYear } = useFinancialYear();
+
+  // دالة لفلترة التواريخ المسموحة في DatePicker حسب السنة المالية
+  const disabledDate = (current: dayjs.Dayjs) => {
+    if (!currentFinancialYear) return false;
+    
+    const startDate = dayjs(currentFinancialYear.startDate);
+    const endDate = dayjs(currentFinancialYear.endDate);
+    
+    return current.isBefore(startDate, 'day') || current.isAfter(endDate, 'day');
+  };
+
+  // تعيين التواريخ الافتراضية حسب السنة المالية
+  useEffect(() => {
+    if (currentFinancialYear) {
+      const start = dayjs(currentFinancialYear.startDate);
+      const end = dayjs(currentFinancialYear.endDate);
+      setDateFrom(start);
+      setDateTo(end);
+    }
+  }, [currentFinancialYear]);
 
   useEffect(() => {
     fetchBranches().then(data => {
@@ -611,7 +635,6 @@ const Invoice: React.FC = () => {
         (sign * afterDiscount).toFixed(2),
         (sign * totalTax).toFixed(2),
         (sign * net).toFixed(2),
-        (sign * net).toFixed(2),
         (invoice as any)?.invoiceType || '-',
         getWarehouseName((invoice as any)?.warehouse) || '-',
         (invoice as any)?.paymentMethod || '-',
@@ -636,7 +659,6 @@ const Invoice: React.FC = () => {
       { header: 'بعد الخصم', key: 'afterDiscount', width: 15 },
       { header: 'الضرائب', key: 'tax', width: 15 },
       { header: 'الإجمالي النهائي', key: 'finalTotal', width: 18 },
-      { header: 'الصافي', key: 'net', width: 15 },
       { header: 'نوع الفاتورة', key: 'invoiceType', width: 20 },
       { header: 'المخزن', key: 'warehouse', width: 20 },
       { header: 'طريقة الدفع', key: 'paymentMethod', width: 20 },
@@ -914,7 +936,8 @@ const handlePrintTable = () => {
           font-size: 9px;
         }
         th { 
-
+          background-color: #bbbbbc !important;
+          color: #fff;
           font-weight: 600;
           font-size: 9px;
           padding: 6px 4px;
@@ -975,8 +998,12 @@ const handlePrintTable = () => {
       </div>
       
       <div class="header">
-        <h1>تقرير فواتير المبيعات</h1>
-        <p>نظام إدارة الموارد ERP90</p>
+=        <p class="font-weight-bold">نظام إدارة الموارد ERP90</p>
+        ${dateFrom && dateTo ? `
+        <div style="margin-top: 10px; font-size: 14px;  color: #333;">
+          الفترة: من ${dateFrom.format('DD/MM/YYYY')} إلى ${dateTo.format('DD/MM/YYYY')}
+        </div>
+        ` : ''}
       </div>
       
       <table>
@@ -993,7 +1020,6 @@ const handlePrintTable = () => {
             <th style="width: 75px;">بعد الخصم</th>
             <th style="width: 60px;">الضرائب</th>
             <th style="width: 70px;">الإجمالي النهائي</th>
-            <th style="width: 60px;">الصافي</th>
             <th style="width: 70px;">نوع الفاتورة</th>
             <th style="width: 65px;">المخزن</th>
             <th style="width: 70px;">طريقة الدفع</th>
@@ -1031,7 +1057,7 @@ const handlePrintTable = () => {
             return '<tr>' +
               '<td>' + ((invoice as any)?.invoiceNumber || '-') + '</td>' +
               '<td>' + ((invoice as any)?.entryNumber || (invoice as any)?.id || '-') + '</td>' +
-              '<td>' + ((invoice as any)?.date ? new Date((invoice as any).date).toLocaleDateString('ar-SA') : '') + '</td>' +
+              '<td>' + ((invoice as any)?.date ? new Date((invoice as any).date).toLocaleDateString('en-GB') : '') + '</td>' +
               '<td>' + ((invoice as any)?.customerPhone && (invoice as any).customerPhone.trim() !== '' ? (invoice as any).customerPhone : 'غير متوفر') + '</td>' +
               '<td>' + ((invoice as any)?.customer || '') + '</td>' +
               '<td>' + branchName + '</td>' +
@@ -1040,31 +1066,92 @@ const handlePrintTable = () => {
               '<td>' + (sign * afterDiscount).toLocaleString() + ' ر.س</td>' +
               '<td>' + (sign * totalTax).toLocaleString() + ' ر.س</td>' +
               '<td>' + (sign * net).toLocaleString() + ' ر.س</td>' +
-              '<td>' + (sign * net).toLocaleString() + ' ر.س</td>' +
               '<td class="' + ((invoice as any)?.invoiceType === 'مرتجع' ? 'return-invoice' : 'normal-invoice') + '">' + ((invoice as any)?.invoiceType || '-') + '</td>' +
               '<td>' + warehouseName + '</td>' +
               '<td>' + ((invoice as any)?.paymentMethod || '-') + '</td>' +
               '<td>' + salesRepName + '</td>' +
-              '<td>' + (parseTime((invoice as any)?.createdAt) || ((invoice as any)?.date ? new Date((invoice as any).date).toLocaleTimeString('ar-SA') : '')) + '</td>' +
+              '<td>' + (parseTime((invoice as any)?.createdAt) || ((invoice as any)?.date ? new Date((invoice as any).date).toLocaleTimeString('en-GB') : '')) + '</td>' +
               '</tr>';
           }).join('')}
         </tbody>
         <tfoot>
           <tr class="total-row">
-            <td colspan="6"><strong>الإجماليات</strong></td>
-            <td><strong>${totalAmount.toLocaleString()} ر.س</strong></td>
-            <td><strong>${totalDiscount.toLocaleString()} ر.س</strong></td>
-            <td><strong>${totalAfterDiscount.toLocaleString()} ر.س</strong></td>
-            <td><strong>${totalTax.toLocaleString()} ر.س</strong></td>
-            <td><strong>${totalNet.toLocaleString()} ر.س</strong></td>
-            <td><strong>${totalNet.toLocaleString()} ر.س</strong></td>
+            <td colspan="6">الإجماليات</td>
+            <td>${totalAmount.toLocaleString()} ر.س</td>
+            <td>${totalDiscount.toLocaleString()} ر.س</td>
+            <td>${totalAfterDiscount.toLocaleString()} ر.س</td>
+            <td>${totalTax.toLocaleString()} ر.س</td>
+            <td>${totalNet.toLocaleString()} ر.س</td>
             <td colspan="5"></td>
           </tr>
         </tfoot>
       </table>
       
       <div class="print-date">
-        تاريخ الطباعة: ${new Date().toLocaleDateString('ar-SA')} - ${new Date().toLocaleTimeString('ar-SA')}
+        تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')} - ${new Date().toLocaleTimeString('en-GB')}
+      </div>
+      
+      <!-- Signature Section at the end of the page -->
+      <div style="
+        margin-top: 50px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 0 20px;
+        page-break-inside: avoid;
+      ">
+        <div style="
+          flex: 1;
+          text-align: right;
+          font-size: 14px;
+          font-weight: 500;
+        ">
+          <div style="margin-bottom: 8px;">المسؤول المالي: ___________________</div>
+          <div>التوقيع: ___________________</div>
+        </div>
+        <div style="
+          flex: 1;
+          text-align: center;
+          position: relative;
+        ">
+          <!-- Decorative Company Stamp -->
+          <div style="
+            margin-top: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 180px;
+            height: 70px;
+            border: 3px dashed #000;
+            border-radius: 50%;
+            box-shadow: 0 3px 10px 0 rgba(0,0,0,0.12);
+            opacity: 0.9;
+            background: repeating-linear-gradient(135deg, #f8f8f8 0 10px, #fff 10px 20px);
+            font-family: 'Tajawal', Arial, sans-serif;
+            font-size: 16px;
+            font-weight: bold;
+            color: #000;
+            letter-spacing: 1px;
+            text-align: center;
+            margin-left: auto;
+            margin-right: auto;
+            z-index: 2;
+          ">
+            <div style="width: 100%;">
+              <div style="font-size: 18px; font-weight: 700; line-height: 1.2;">${companyData.arabicName || 'الشركة'}</div>
+              <div style="font-size: 14px; font-weight: 500; margin-top: 4px; line-height: 1.1;">${companyData.phone ? 'هاتف: ' + companyData.phone : ''}</div>
+            </div>
+          </div>
+        </div>
+        <div style="
+          flex: 1;
+          text-align: left;
+          font-size: 14px;
+          font-weight: 500;
+        ">
+          <div style="margin-bottom: 8px;">مدير المبيعات: ___________________</div>
+          <div>التاريخ: ${new Date().toLocaleDateString('ar-SA')}</div>
+        </div>
       </div>
     </body>
     </html>
@@ -1607,6 +1694,7 @@ const handlePrintTable = () => {
               size="large"
               format="YYYY-MM-DD"
               locale={arEG}
+              disabledDate={disabledDate}
             />
           </div>
           
@@ -1620,6 +1708,7 @@ const handlePrintTable = () => {
               size="large"
               format="YYYY-MM-DD"
               locale={arEG}
+              disabledDate={disabledDate}
             />
           </div>
           
@@ -2096,18 +2185,6 @@ const handlePrintTable = () => {
               sorter: (a: any, b: any) => (a.net || 0) - (b.net || 0),
             },
             {
-              title: 'الصافي',
-              key: 'netAfterTax',
-              width: 120,
-              render: (record: any) => {
-                // الصافي = الإجمالي النهائي (نفس قيمة net)
-                const net = Number(record.net) || 0;
-                const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                return `${(sign * net).toLocaleString()} ر.س`;
-              },
-              sorter: (a: any, b: any) => (a.net || 0) - (b.net || 0),
-            },
-            {
               title: 'نوع الفاتورة',
               dataIndex: 'invoiceType',
               key: 'invoiceType',
@@ -2314,10 +2391,7 @@ const handlePrintTable = () => {
                   <Table.Summary.Cell index={10} className="">
                     {totalNet.toLocaleString()} ر.س
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={11} className="">
-                    {totalNet.toLocaleString()} ر.س
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={12}></Table.Summary.Cell>
+                  <Table.Summary.Cell index={11}></Table.Summary.Cell>
                   <Table.Summary.Cell index={13}></Table.Summary.Cell>
                   <Table.Summary.Cell index={14}></Table.Summary.Cell>
                   <Table.Summary.Cell index={15}></Table.Summary.Cell>
@@ -2518,7 +2592,6 @@ const handlePrintTable = () => {
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">الوحدة</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">سعر الوحدة</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">الخصم</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">الصافي</th>
                   </motion.tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -2561,9 +2634,6 @@ const handlePrintTable = () => {
                               <span>{discountPercent}%</span>
                               <span className="text-red-500">{(sign * discountValue).toFixed(2)}</span>
                             </div>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-blue-600">
-                            {(sign * net).toFixed(2)}
                           </td>
                         </motion.tr>
                       );
