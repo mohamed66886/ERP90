@@ -1,3 +1,5 @@
+  // دالة طباعة مخصصة لتقرير الفواتير
+
 import React, { useState, useEffect, useMemo } from "react";
 import { Helmet } from "react-helmet";
 import { motion, AnimatePresence } from "framer-motion";
@@ -9,6 +11,9 @@ import Breadcrumb from "@/components/Breadcrumb";
 import dayjs from 'dayjs';
 import { collection, query, where, orderBy, getDocs, getDoc, doc, limit, startAfter } from 'firebase/firestore';
 import type { Query, DocumentData } from 'firebase/firestore';
+import { useFinancialYear } from '@/hooks/useFinancialYear';
+import styles from './ReceiptVoucher.module.css';
+
 
 const { Option } = Select;
 
@@ -22,6 +27,23 @@ interface WarehouseOption {
 interface PaymentMethodOption {
   id: string;
   name: string;
+}
+
+interface CompanyData {
+  arabicName?: string;
+  englishName?: string;
+  companyType?: string;
+  commercialRegistration?: string;
+  taxFile?: string;
+  city?: string;
+  region?: string;
+  street?: string;
+  district?: string;
+  buildingNumber?: string;
+  postalCode?: string;
+  phone?: string;
+  mobile?: string;
+  logoUrl?: string;
 }
 
 // أنواع بيانات الفاتورة (مأخوذة من صفحة المبيعات)
@@ -106,6 +128,9 @@ function InvoiceProfits() {
   const [seller, setSeller] = useState<string>("");
   const [salesRepAccounts, setSalesRepAccounts] = useState<{ id: string; name: string; number: string; mobile?: string }[]>([]);
 
+  // بيانات الشركة
+  const [companyData, setCompanyData] = useState<CompanyData>({});
+
   // ستايل موحد لعناصر الإدخال والدروب داون مثل صفحة أمر البيع
   const largeControlStyle = {
     height: 48,
@@ -118,6 +143,176 @@ function InvoiceProfits() {
     transition: 'border-color 0.3s',
   };
   const labelStyle = { fontSize: 18, fontWeight: 500, marginBottom: 2, display: 'block' };
+  const handlePrint = () => {
+    // حساب الإجماليات
+    let totalAmount = 0;
+    let totalDiscount = 0;
+    let totalAfterDiscount = 0;
+    let totalCost = 0;
+    let totalProfit = 0;
+    const groupedData = filteredInvoices;
+    groupedData.forEach(inv => {
+      const sign = inv.invoiceType === 'مرتجع' ? -1 : 1;
+      totalAmount += sign * inv.total;
+      totalDiscount += sign * inv.discountValue;
+      totalAfterDiscount += sign * (inv.total - inv.discountValue);
+      totalCost += sign * inv.cost;
+      totalProfit += sign * ((inv.total - inv.discountValue) - inv.cost);
+    });
+
+    // إنشاء نافذة الطباعة
+    const printWindow = window.open('', '', 'width=1400,height=900');
+    printWindow?.document.write(`
+      <html>
+      <head>
+        <title>طباعة تقرير الارباح</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700&display=swap');
+          @page { size: A4 landscape; margin: 15mm; }
+          body { font-family: 'Tajawal', Arial, sans-serif; direction: rtl; padding: 10px; font-size: 11px; line-height: 1.3; margin: 0; }
+          .company-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #000; padding-bottom: 10px; }
+          .header-section { flex: 1; min-width: 0; padding: 0 8px; box-sizing: border-box; }
+          .header-section.center { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 0 0 120px; max-width: 120px; min-width: 100px; }
+          .logo { width: 100px; height: auto; margin-bottom: 8px; }
+          .company-info-ar { text-align: right; font-size: 11px; font-weight: 500; line-height: 1.4; }
+          .company-info-en { text-align: left; font-family: Arial, sans-serif; direction: ltr; font-size: 10px; font-weight: 500; line-height: 1.4; }
+          .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+          .header h1 { color: #000; margin: 0; font-size: 20px; font-weight: 700; }
+          .header p { color: #000; margin: 3px 0 0 0; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10px; }
+          th, td { border: 1px solid #d1d5db; padding: 4px 2px; text-align: center; vertical-align: middle; font-size: 9px; }
+          th { background-color: #bbbbbc !important; color: #fff; font-weight: 600; font-size: 9px; padding: 6px 4px; }
+          tbody tr:nth-child(even) { background-color: #f5f5f5; }
+          tbody tr:hover { background-color: #e5e5e5; }
+          .return-invoice { color: #000; font-weight: 600; }
+          .normal-invoice { color: #000; font-weight: 600; }
+          .print-date { text-align: left; margin-top: 15px; font-size: 9px; color: #000; }
+          .print-last-page-only { display: none; }
+          .totals-container { margin-top: 20px; display: flex; justify-content: flex-start; direction: rtl; }
+          .totals-table { width: 300px; font-size: 12px; border-radius: 8px; overflow: hidden; }
+          .totals-table th { background-color: #000; color: #fff; padding: 10px; text-align: center; font-weight: bold; font-size: 14px; }
+          .totals-table .total-label { background-color: #f8f9fa; padding: 8px 12px; text-align: right; font-weight: 600; width: 60%; }
+          .totals-table .total-value { background-color: #fff; padding: 8px 12px; text-align: left; font-weight: 500; width: 40%; }
+          .totals-table .final-total .total-label {}
+          .totals-table .final-total .total-value { font-size: 13px; }
+          @media print { body { margin: 0; padding: 10px; } .no-print { display: none; } .print-last-page-only { display: block; break-inside: avoid; page-break-inside: avoid; } table { page-break-inside: auto; } tbody { page-break-inside: auto; } .print-last-page-only { page-break-before: avoid; break-before: avoid; } }
+        </style>
+      </head>
+      <body>
+       <!-- Company Header Section -->
+      <div class="company-header">
+        <div class="header-section company-info-ar">
+          <div>${companyData.arabicName || ''}</div>
+          <div>${companyData.companyType || ''}</div>
+          <div>السجل التجاري: ${companyData.commercialRegistration || ''}</div>
+          <div>الملف الضريبي: ${companyData.taxFile || ''}</div>
+          <div>العنوان: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+          <div>الرمز البريدي: ${companyData.postalCode || ''}</div>
+          <div>الهاتف: ${companyData.phone || ''}</div>
+          <div>الجوال: ${companyData.mobile || ''}</div>
+        </div>
+        <div class="header-section center">
+          <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
+        </div>
+        <div class="header-section company-info-en">
+          <div>${companyData.englishName || ''}</div>
+          <div>${companyData.companyType || ''}</div>
+          <div>Commercial Reg.: ${companyData.commercialRegistration || ''}</div>
+          <div>Tax File: ${companyData.taxFile || ''}</div>
+          <div>Address: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+          <div>Postal Code: ${companyData.postalCode || ''}</div>
+          <div>Phone: ${companyData.phone || ''}</div>
+          <div>Mobile: ${companyData.mobile || ''}</div>
+        </div>
+      </div>
+      
+        <div class="header">
+          <h1>تقرير أرباح الفواتير</h1>
+          <p class="font-weight-bold">نظام إدارة الموارد ERP90</p>
+          ${currentFinancialYear ? `<div style="margin-top: 5px; font-size: 13px; color: #555;">السنة المالية: ${currentFinancialYear.year}</div>` : ''}
+          ${dateFrom && dateTo ? `<div style="margin-top: 10px; font-size: 14px;  color: #333;">الفترة: من ${dateFrom.format('DD/MM/YYYY')} إلى ${dateTo.format('DD/MM/YYYY')}</div>` : ''}
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 80px;">رقم الفاتورة/المرتجع</th>
+              <th style="width: 70px;">التاريخ</th>
+              <th style="width: 80px;">قيمة الفاتورة</th>
+              <th style="width: 60px;">الخصم</th>
+              <th style="width: 85px;">المبلغ بعد الخصم</th>
+              <th style="width: 65px;">التكلفة</th>
+              <th style="width: 65px;">الربح</th>
+              <th style="width: 65px;">الفرع</th>
+              <th style="width: 70px;">المخزن</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${groupedData.map(inv => {
+              const sign = inv.invoiceType === 'مرتجع' ? -1 : 1;
+              const afterDiscount = inv.total - inv.discountValue;
+              const profit = sign * (afterDiscount - inv.cost);
+              return `<tr>
+                <td><span class="${inv.invoiceType === 'مرتجع' ? 'return-invoice' : 'normal-invoice'}">${inv.invoiceNumber || '-'}</span></td>
+                <td>${inv.date ? dayjs(inv.date).format('YYYY-MM-DD') : ''}</td>
+                <td><span class="${inv.invoiceType === 'مرتجع' ? 'return-invoice' : 'normal-invoice'}">${(sign * inv.total).toLocaleString()} ر.س</span></td>
+                <td>${(sign * (inv.discountValue || 0)).toLocaleString()} ر.س</td>
+                <td>${(sign * afterDiscount).toLocaleString()} ر.س</td>
+                <td>${(sign * inv.cost).toLocaleString()} ر.س</td>
+                <td><span style="color: ${profit >= 0 ? '#16a34a' : '#dc2626'}; font-weight: 500;">${profit.toLocaleString()} ر.س</span></td>
+                <td>${getBranchName(inv.branch)}</td>
+                <td>${getWarehouseName(inv.warehouse)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+        <div class="print-last-page-only totals-container">
+          <table class="totals-table">
+            <thead>
+              <tr><th colspan="2">الإجماليات النهائية</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="total-label">إجمالي قيمة الفواتير:</td><td class="total-value">${totalAmount.toLocaleString()} ر.س</td></tr>
+              <tr><td class="total-label">إجمالي الخصم:</td><td class="total-value">${totalDiscount.toLocaleString()} ر.س</td></tr>
+              <tr><td class="total-label">المبلغ بعد الخصم:</td><td class="total-value">${totalAfterDiscount.toLocaleString()} ر.س</td></tr>
+              <tr><td class="total-label">إجمالي التكلفة:</td><td class="total-value">${totalCost.toLocaleString()} ر.س</td></tr>
+              <tr class="final-total"><td class="total-label">إجمالي الربح:</td><td class="total-value" style="color: ${totalProfit >= 0 ? '#16a34a' : '#dc2626'}; font-weight: bold;">${totalProfit.toLocaleString()} ر.س</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="print-date">تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')} - ${new Date().toLocaleTimeString('en-GB')}</div>
+        <div style="margin-top: 50px; display: flex; justify-content: space-between; align-items: flex-start; padding: 0 20px; page-break-inside: avoid;">
+          <div style="flex: 1; text-align: right; font-size: 14px; font-weight: 500;"><div style="margin-bottom: 8px;">المسؤول المالي: ___________________</div><div>التوقيع: ___________________</div></div>
+          <div style="flex: 1; text-align: center; position: relative;">
+            <div style="margin-top: 10px; display: flex; justify-content: center; align-items: center; width: 180px; height: 70px; border: 3px dashed #000; border-radius: 50%; box-shadow: 0 3px 10px 0 rgba(0,0,0,0.12); opacity: 0.9; background: repeating-linear-gradient(135deg, #f8f8f8 0 10px, #fff 10px 20px); font-family: 'Tajawal', Arial, sans-serif; font-size: 16px; font-weight: bold; color: #000; letter-spacing: 1px; text-align: center; margin-left: auto; margin-right: auto; z-index: 2;">
+              <div style="width: 100%;"><div style="font-size: 18px; font-weight: 700; line-height: 1.2;">${companyData.arabicName || 'الشركة'}</div><div style="font-size: 14px; font-weight: 500; margin-top: 4px; line-height: 1.1;">${companyData.phone ? 'هاتف: ' + companyData.phone : ''}</div></div>
+            </div>
+          </div>
+          <div style="flex: 1; text-align: left; font-size: 14px; font-weight: 500;"><div style="margin-bottom: 8px;">مدير المبيعات: ___________________</div><div>التاريخ: ${new Date().toLocaleDateString('ar-SA')}</div></div>
+        </div>
+      </body>
+      </html>
+    `);
+    setTimeout(() => { printWindow?.print(); }, 500);
+  };
+
+  // جلب بيانات الشركة من قاعدة البيانات
+  useEffect(() => {
+    const fetchCompany = async () => {
+      try {
+        const { db } = await import('@/lib/firebase');
+        const { query, collection, getDocs } = await import('firebase/firestore');
+        const q = query(collection(db, "companies"));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+          const docData = snapshot.docs[0];
+          setCompanyData({ ...docData.data() });
+        }
+      } catch (e) {
+        console.error("Error fetching company for print: ", e);
+      }
+    };
+    fetchCompany();
+  }, []);
 
   // جلب طرق الدفع من قاعدة البيانات
   useEffect(() => {
@@ -268,6 +463,29 @@ function InvoiceProfits() {
   const [invoiceNumber, setInvoiceNumber] = useState<string>("");
   const [invoiceTypeFilter, setInvoiceTypeFilter] = useState<string>(""); // ""=الكل, "فاتورة", "مرتجع"
 
+  // السنة المالية من السياق
+  const { currentFinancialYear } = useFinancialYear();
+
+  // دالة لفلترة التواريخ المسموحة في DatePicker حسب السنة المالية
+  const disabledDate = (current: dayjs.Dayjs) => {
+    if (!currentFinancialYear) return false;
+    
+    const startDate = dayjs(currentFinancialYear.startDate);
+    const endDate = dayjs(currentFinancialYear.endDate);
+    
+    return current.isBefore(startDate, 'day') || current.isAfter(endDate, 'day');
+  };
+
+  // تعيين التواريخ الافتراضية حسب السنة المالية
+  useEffect(() => {
+    if (currentFinancialYear) {
+      const startDate = dayjs(currentFinancialYear.startDate);
+      const endDate = dayjs(currentFinancialYear.endDate);
+      setDateFrom(startDate);
+      setDateTo(endDate);
+    }
+  }, [currentFinancialYear]);
+
   // بيانات الفواتير
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [filteredInvoices, setFilteredInvoices] = useState<InvoiceRecord[]>([]);
@@ -356,7 +574,6 @@ function InvoiceProfits() {
       let qReturn: Query<DocumentData> = collection(db, 'sales_returns');
       const filtersReturn: ReturnType<typeof where>[] = [];
       if (branchId) filtersReturn.push(where('branch', '==', branchId));
-      if (invoiceNumber) filtersReturn.push(where('invoiceNumber', '==', invoiceNumber));
       if (dateFrom) filtersReturn.push(where('date', '>=', dayjs(dateFrom).format('YYYY-MM-DD')));
       if (dateTo) filtersReturn.push(where('date', '<=', dayjs(dateTo).format('YYYY-MM-DD')));
       if (warehouseId) filtersReturn.push(where('warehouse', '==', warehouseId));
@@ -365,10 +582,26 @@ function InvoiceProfits() {
         qReturn = qFn(qReturn, ...filtersReturn);
       }
       const snapshotReturn = await getDocs(qReturn);
+      
+      // إنشاء خريطة للفواتير الأصلية لجلب التكلفة منها
+      const originalInvoicesMap = new Map();
+      salesRecords.forEach(record => {
+        if (!originalInvoicesMap.has(record.invoiceNumber)) {
+          originalInvoicesMap.set(record.invoiceNumber, []);
+        }
+        originalInvoicesMap.get(record.invoiceNumber).push(record);
+      });
+      
       const returnRecords: InvoiceRecord[] = [];
       snapshotReturn.forEach(doc => {
         const data = doc.data() as Record<string, unknown>;
-        const invoiceNumber = (data.invoiceNumber as string) || '';
+        const originalInvoiceNumber = (data.invoiceNumber as string) || '';
+        const returnNumber = (data.referenceNumber as string) || (data.returnNumber as string) || doc.id; // استخدام رقم المرجع أولاً، ثم رقم المرتجع، وأخيراً ID الوثيقة
+        
+        // إذا كان هناك بحث برقم، تحقق من أنه يطابق رقم المرتجع أو رقم الفاتورة الأصلية
+        if (invoiceNumber && returnNumber !== invoiceNumber && originalInvoiceNumber !== invoiceNumber) {
+          return; // تخطى هذا المرتجع إذا لم يطابق رقم البحث
+        }
         const date = (data.date as string) || '';
         const rawData = doc.data() as Record<string, unknown>;
         const branch = typeof rawData.branch === 'string' ? rawData.branch : '';
@@ -378,9 +611,29 @@ function InvoiceProfits() {
         const paymentMethod = (data.paymentMethod as string) || '';
         const invoiceType = 'مرتجع';
         const items = Array.isArray(data.items) ? data.items : [];
+        
+        // جلب بيانات الفاتورة الأصلية للحصول على التكلفة
+        const originalInvoiceItems = originalInvoicesMap.get(originalInvoiceNumber) || [];
+        
         items.forEach((item: Record<string, unknown>, idx: number) => {
           const price = Number(item.price) || 0;
-          const cost = Number(item.cost) || 0;
+          
+          // محاولة جلب التكلفة من عدة مصادر
+          let cost = Number(item.cost) || 0;
+          if (cost === 0) {
+            cost = Number(item.purchasePrice) || 0;
+          }
+          
+          // إذا لم نجد التكلفة، ابحث في الفاتورة الأصلية
+          if (cost === 0) {
+            const originalItem = originalInvoiceItems.find((origItem: InvoiceRecord) => 
+              origItem.itemNumber === (item.itemNumber as string)
+            );
+            if (originalItem) {
+              cost = originalItem.cost || 0;
+            }
+          }
+          
           const quantity = Number(item.returnedQty) || 0;
           const total = price * quantity;
           const discountPercent = Number(item.discountPercent) || 0;
@@ -391,7 +644,7 @@ function InvoiceProfits() {
           const profit = (price - cost) * quantity * -1;
           returnRecords.push({
             key: 'return-' + doc.id + '-' + idx,
-            invoiceNumber,
+            invoiceNumber: returnNumber, // استخدم رقم المرتجع بدلاً من رقم الفاتورة
             date,
             branch,
             itemNumber: (item.itemNumber as string) || '',
@@ -653,25 +906,18 @@ function InvoiceProfits() {
     const exportData = filteredInvoices.map(inv => {
       const sign = inv.invoiceType === 'مرتجع' ? -1 : 1;
       const afterDiscount = inv.total - inv.discountValue;
-      const profit = (inv.total - (inv.taxValue ?? 0)) - inv.cost;
+      const profit = afterDiscount - inv.cost;
       
       return [
         inv.invoiceNumber,
         dayjs(inv.date).format('YYYY-MM-DD'),
-        inv.customer || '-',
-        inv.customerPhone || '-',
         (sign * inv.total),
         (sign * inv.discountValue),
         (sign * afterDiscount),
-        (sign * (inv.taxValue ?? 0)),
-        (sign * (inv.net || 0)),
         (sign * inv.cost),
         (sign * profit),
-        inv.invoiceType,
         getBranchName(inv.branch),
-        getWarehouseName(inv.warehouse),
-        inv.paymentMethod || '-',
-        getSalesRepName(inv.seller)
+        getWarehouseName(inv.warehouse)
       ];
     });
 
@@ -680,22 +926,15 @@ function InvoiceProfits() {
 
     // إعداد الأعمدة
     sheet.columns = [
-      { header: 'رقم الفاتورة', key: 'invoiceNumber', width: 25 },
-      { header: 'تاريخ الفاتورة', key: 'date', width: 15 },
-      { header: 'العميل', key: 'customer', width: 26 },
-      { header: 'رقم العميل', key: 'customerPhone', width: 15 },
+      { header: 'رقم الفاتورة/المرتجع', key: 'invoiceNumber', width: 25 },
+      { header: 'التاريخ', key: 'date', width: 15 },
       { header: 'قيمة الفاتورة', key: 'total', width: 15 },
-      { header: 'قيمة الخصم', key: 'discount', width: 15 },
-      { header: 'بعد الخصم', key: 'afterDiscount', width: 15 },
-      { header: 'قيمة الضريبة', key: 'tax', width: 15 },
-      { header: 'الصافي بعد الضريبة', key: 'net', width: 18 },
+      { header: 'الخصم', key: 'discount', width: 15 },
+      { header: 'المبلغ بعد الخصم', key: 'afterDiscount', width: 18 },
       { header: 'التكلفة', key: 'cost', width: 15 },
       { header: 'الربح', key: 'profit', width: 15 },
-      { header: 'نوع الفاتورة', key: 'type', width: 12 },
       { header: 'الفرع', key: 'branch', width: 15 },
       { header: 'المخزن', key: 'warehouse', width: 15 },
-      { header: 'طريقة الدفع', key: 'payment', width: 15 },
-      { header: 'البائع', key: 'seller', width: 21 },
     ];
 
     // إضافة البيانات
@@ -814,6 +1053,7 @@ function InvoiceProfits() {
                 size="large"
                 format="YYYY-MM-DD"
                 locale={arEG}
+                disabledDate={disabledDate}
               />
             </div>
             
@@ -827,15 +1067,16 @@ function InvoiceProfits() {
                 size="large"
                 format="YYYY-MM-DD"
                 locale={arEG}
+                disabledDate={disabledDate}
               />
             </div>
             
             <div className="flex flex-col">
-              <span style={labelStyle}>رقم الفاتورة</span>
+              <span style={labelStyle}>رقم الفاتورة/المرتجع</span>
               <Input 
                 value={invoiceNumber}
                 onChange={e => setInvoiceNumber(e.target.value)}
-                placeholder="ادخل رقم الفاتورة"
+                placeholder="ادخل رقم الفاتورة أو المرتجع"
                 style={largeControlStyle}
                 size="large"
                 allowClear
@@ -850,6 +1091,8 @@ function InvoiceProfits() {
                 placeholder="اختر الفرع"
                 style={{ width: '100%', ...largeControlStyle }}
                 size="large"
+                className={styles.noAntBorder}
+                
                 optionFilterProp="label"
                 allowClear
                 showSearch
@@ -887,6 +1130,8 @@ function InvoiceProfits() {
                       size="large"
                       optionFilterProp="label"
                       allowClear
+                      className={styles.noAntBorder}
+
                       showSearch
                       filterOption={(input, option) =>
                         option?.children?.toString().toLowerCase().includes(input.toLowerCase())
@@ -906,6 +1151,8 @@ function InvoiceProfits() {
                       placeholder="اختر طريقة الدفع"
                       style={{ width: '100%', ...largeControlStyle }}
                       size="large"
+                      className={styles.noAntBorder}
+
                       optionFilterProp="label"
                       allowClear
                     >
@@ -924,50 +1171,14 @@ function InvoiceProfits() {
                       style={{ width: '100%', ...largeControlStyle }}
                       size="large"
                       allowClear
+                className={styles.noAntBorder}
                     >
                       <Option value="">الكل</Option>
                       <Option value="فاتورة">فاتورة</Option>
                       <Option value="مرتجع">مرتجع</Option>
                     </Select>
                   </div>
-                  
-                  <div className="flex flex-col">
-                    <span style={labelStyle}>البائع</span>
-                    <Select
-                      value={seller || undefined}
-                      onChange={setSeller}
-                      placeholder="اختر البائع"
-                      style={{ width: '100%', ...largeControlStyle }}
-                      size="large"
-                      optionFilterProp="label"
-                      allowClear
-                      showSearch
-                      filterOption={(input, option) =>
-                        option?.children?.toString().toLowerCase().includes(input.toLowerCase())
-                      }
-                    >
-                      {/* أولاً عرض البائعين من حسابات المندوبين */}
-                      {salesRepAccounts.map(rep => (
-                        <Option key={rep.id} value={rep.name}>{rep.name}</Option>
-                      ))}
-                      {/* ثم عرض البائعين الإضافيين الموجودين في الفواتير والغير موجودين في الحسابات */}
-                      {Array.from(new Set(invoices.map(inv => inv.seller).filter(s => {
-                        if (!s || s === '') return false;
-                        // تحقق من عدم وجود هذا البائع في حسابات المندوبين
-                        return !salesRepAccounts.some(rep => 
-                          rep.id === s ||
-                          rep.name === s ||
-                          rep.name.toLowerCase().includes(s.toLowerCase()) ||
-                          s.toLowerCase().includes(rep.name.toLowerCase())
-                        );
-                      }))).map(s => {
-                        const displayName = getSalesRepName(s);
-                        return (
-                          <Option key={s} value={displayName}>{displayName}</Option>
-                        );
-                      })}
-                    </Select>
-                  </div>
+ 
                 </div>
               </motion.div>
             )}
@@ -1036,23 +1247,34 @@ function InvoiceProfits() {
               >
                 تصدير إكسل
               </Button>
+              <Button
+                type="primary"
+                icon={<FileTextOutlined />}
+                onClick={handlePrint}
+                className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
+                size="large"
+              >
+                طباعة
+              </Button>
             </div>
           </div>
 
           <Table
             columns={[
               {
-                title: 'رقم الفاتورة',
+                title: 'رقم الفاتورة/المرتجع',
                 dataIndex: 'invoiceNumber',
                 key: 'invoiceNumber',
                 width: 160,
                 sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.invoiceNumber.localeCompare(b.invoiceNumber),
-                render: (text: string) => (
-                  <span className="font-medium text-blue-600">{text}</span>
+                render: (text: string, record: InvoiceRecord) => (
+                  <span className={`font-medium ${record.invoiceType === 'مرتجع' ? 'text-red-600' : 'text-blue-600'}`}>
+                    {text}
+                  </span>
                 )
               },
               {
-                title: 'تاريخ الفاتورة',
+                title: 'التاريخ',
                 dataIndex: 'date',
                 key: 'date',
                 width: 120,
@@ -1076,7 +1298,7 @@ function InvoiceProfits() {
                 }
               },
               {
-                title: 'قيمة الخصم',
+                title: 'الخصم',
                 dataIndex: 'discountValue',
                 key: 'discountValue',
                 width: 120,
@@ -1088,9 +1310,9 @@ function InvoiceProfits() {
                 }
               },
               {
-                title: 'بعد الخصم',
+                title: 'المبلغ بعد الخصم',
                 key: 'afterDiscount',
-                width: 120,
+                width: 150,
                 align: 'center',
                 render: (record: InvoiceRecord) => {
                   const afterDiscount = record.total - record.discountValue;
@@ -1098,30 +1320,6 @@ function InvoiceProfits() {
                   return `${(sign * afterDiscount).toLocaleString()} ر.س`;
                 },
                 sorter: (a: InvoiceRecord, b: InvoiceRecord) => (a.total - a.discountValue) - (b.total - b.discountValue),
-              },
-              {
-                title: 'قيمة الضريبة',
-                dataIndex: 'taxValue',
-                key: 'taxValue',
-                width: 120,
-                align: 'center',
-                sorter: (a: InvoiceRecord, b: InvoiceRecord) => (a.taxValue || 0) - (b.taxValue || 0),
-                render: (value: number, record: InvoiceRecord) => {
-                  const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                  return `${(sign * (value || 0)).toLocaleString()} ر.س`;
-                }
-              },
-              {
-                title: 'الصافي بعد الضريبة',
-                dataIndex: 'net',
-                key: 'net',
-                width: 160,
-                align: 'center',
-                render: (net: number, record: InvoiceRecord) => {
-                  const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                  return `${(sign * (net || 0)).toLocaleString()} ر.س`;
-                },
-                sorter: (a: InvoiceRecord, b: InvoiceRecord) => (a.net || 0) - (b.net || 0),
               },
               {
                 title: 'التكلفة',
@@ -1144,31 +1342,17 @@ function InvoiceProfits() {
                 key: 'profit',
                 width: 120,
                 align: 'center',
-                sorter: (a: InvoiceRecord, b: InvoiceRecord) => ((a.total - (a.taxValue ?? 0)) - a.cost) - ((b.total - (b.taxValue ?? 0)) - b.cost),
+                sorter: (a: InvoiceRecord, b: InvoiceRecord) => ((a.total - a.discountValue) - a.cost) - ((b.total - b.discountValue) - b.cost),
                 render: (record: InvoiceRecord) => {
                   const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                  const profit = sign * ((record.total - (record.taxValue ?? 0)) - record.cost);
+                  const afterDiscount = record.total - record.discountValue;
+                  const profit = sign * (afterDiscount - record.cost);
                   return (
                     <span className={profit >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
                       {profit.toLocaleString()} ر.س
                     </span>
                   );
                 }
-              },
-              {
-                title: 'نوع الفاتورة',
-                dataIndex: 'invoiceType',
-                key: 'invoiceType',
-                width: 120,
-                align: 'center',
-                sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.invoiceType.localeCompare(b.invoiceType),
-                render: (text: string) => (
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    text === 'مرتجع' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-                  }`}>
-                    {text}
-                  </span>
-                )
               },
               {
                 title: 'الفرع',
@@ -1185,21 +1369,6 @@ function InvoiceProfits() {
                 width: 120,
                 sorter: (a: InvoiceRecord, b: InvoiceRecord) => getWarehouseName(a.warehouse).localeCompare(getWarehouseName(b.warehouse)),
                 render: (warehouse: string) => getWarehouseName(warehouse),
-              },
-              {
-                title: 'طريقة الدفع',
-                dataIndex: 'paymentMethod',
-                key: 'paymentMethod',
-                width: 120,
-                render: (method: string) => method || '-'
-              },
-              {
-                title: 'البائع',
-                dataIndex: 'seller',
-                key: 'seller',
-                width: 150,
-                sorter: (a: InvoiceRecord, b: InvoiceRecord) => getSalesRepName(a.seller).localeCompare(getSalesRepName(b.seller)),
-                render: (seller: string) => getSalesRepName(seller)
               }
             ]}
             dataSource={getFilteredRows()}
@@ -1212,7 +1381,7 @@ function InvoiceProfits() {
               showTotal: (total, range) => `عرض ${range[0]}-${range[1]} من ${total} فاتورة`
             }}
             loading={isLoading}
-            scroll={{ x: 1400 }}
+            scroll={{ x: 1100 }}
             size="small"
             bordered
             className="[&_.ant-table-thead_>_tr_>_th]:bg-gray-400 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-gray-400 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
@@ -1237,8 +1406,6 @@ function InvoiceProfits() {
               let totalAmount = 0;
               let totalDiscount = 0;
               let totalAfterDiscount = 0;
-              let totalTax = 0;
-              let totalNet = 0;
               let totalCost = 0;
               let totalProfit = 0;
 
@@ -1247,10 +1414,8 @@ function InvoiceProfits() {
                 totalAmount += sign * row.total;
                 totalDiscount += sign * row.discountValue;
                 totalAfterDiscount += sign * (row.total - row.discountValue);
-                totalTax += sign * (row.taxValue ?? 0);
-                totalNet += sign * (row.net || 0);
                 totalCost += sign * row.cost;
-                totalProfit += sign * ((row.total - (row.taxValue ?? 0)) - row.cost);
+                totalProfit += sign * ((row.total - row.discountValue) - row.cost);
               });
 
               return (
@@ -1258,34 +1423,23 @@ function InvoiceProfits() {
                   <Table.Summary.Row className="">
                     <Table.Summary.Cell index={0} className="text-center font-bold">الإجماليات</Table.Summary.Cell>
                     <Table.Summary.Cell index={1}></Table.Summary.Cell>
-                    <Table.Summary.Cell index={2}></Table.Summary.Cell>
-                    <Table.Summary.Cell index={3}></Table.Summary.Cell>
-                    <Table.Summary.Cell index={4} className="text-center font-bold text-blue-600">
+                    <Table.Summary.Cell index={2} className="text-center font-bold text-blue-600">
                       {totalAmount.toLocaleString()} ر.س
                     </Table.Summary.Cell>
-                    <Table.Summary.Cell index={5} className="text-center font-bold text-red-600">
+                    <Table.Summary.Cell index={3} className="text-center font-bold text-red-600">
                       {totalDiscount.toLocaleString()} ر.س
                     </Table.Summary.Cell>
-                    <Table.Summary.Cell index={6} className="text-center font-bold text-orange-600">
+                    <Table.Summary.Cell index={4} className="text-center font-bold text-orange-600">
                       {totalAfterDiscount.toLocaleString()} ر.س
                     </Table.Summary.Cell>
-                    <Table.Summary.Cell index={7} className="text-center font-bold text-purple-600">
-                      {totalTax.toLocaleString()} ر.س
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={8} className="text-center font-bold text-emerald-600">
-                      {totalNet.toLocaleString()} ر.س
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={9} className="text-center font-bold">
+                    <Table.Summary.Cell index={5} className="text-center font-bold">
                       {totalCost.toLocaleString()} ر.س
                     </Table.Summary.Cell>
-                    <Table.Summary.Cell index={10} className={`text-center font-bold ${totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <Table.Summary.Cell index={6} className={`text-center font-bold ${totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {totalProfit.toLocaleString()} ر.س
                     </Table.Summary.Cell>
-                    <Table.Summary.Cell index={11}></Table.Summary.Cell>
-                    <Table.Summary.Cell index={12}></Table.Summary.Cell>
-                    <Table.Summary.Cell index={13}></Table.Summary.Cell>
-                    <Table.Summary.Cell index={14}></Table.Summary.Cell>
-                    <Table.Summary.Cell index={15}></Table.Summary.Cell>
+                    <Table.Summary.Cell index={7}></Table.Summary.Cell>
+                    <Table.Summary.Cell index={8}></Table.Summary.Cell>
                   </Table.Summary.Row>
                 </Table.Summary>
               );
