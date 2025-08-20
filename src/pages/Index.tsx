@@ -76,7 +76,7 @@ import CustomerStatusPage from "./customers/CustomerStatusPage";
 import CustomerClassificationPage from "./customers/CustomerClassificationPage";
 import CustomerFollowUpPage from "./customers/CustomerFollowUpPage";
 import SalesRepresentativesPage from "./management/SalesRepresentativesPageFixed";
-import EditSalesInvoicePage from "./stores/edit-sales-invoice";
+import EditSalesInvoice from "./stores/EditSalesInvoicePage";
 import EditSalesInvoiceDetailPage from "./stores/edit-sales-invoice-detail";
 import ReceiptVoucher from "./stores/ReceiptVoucher";
 import AddSalesOrderPage from "./stores/add-order-sales";
@@ -203,7 +203,7 @@ const Index = () => {
               <Route path="/stores/manage" element={<WarehouseManagementOld />} />
               <Route path="/stores/advanced-warehouse" element={<AdvancedWarehouseManagement />} />
               <Route path="/stores/sales-return" element={<SalesReturnPage />} />
-              <Route path="/stores/edit-sales-invoice" element={<EditSalesInvoicePage />} />
+              <Route path="/stores/edit-sales-invoice" element={<EditSalesInvoice />} />
               <Route path="/stores/edit-sales-invoice/:id" element={<EditSalesInvoiceDetailPage />} />
               <Route path="/stores/receipt-voucher" element={<ReceiptVoucher />} />
               <Route path="/stores/receipt-vouchers-directory" element={<ReceiptVouchersDirectory />} />

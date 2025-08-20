@@ -562,132 +562,109 @@ const Invoice: React.FC = () => {
       });
       ExcelJS = (window as any).ExcelJS;
     }
-    // استخراج كل الأصناف (items) من الفواتير المفلترة
-    const allItems = invoices
-      .filter(inv => {
-        // نفس الفلاتر المستخدمة في الجدول
-        if (invoiceTypeFilter) {
-          if (invoiceTypeFilter === 'فاتورة' && inv.isReturn) return false;
-          if (invoiceTypeFilter === 'مرتجع' && !inv.isReturn) return false;
-          if (invoiceTypeFilter !== 'فاتورة' && invoiceTypeFilter !== 'مرتجع' && inv.invoiceType !== invoiceTypeFilter) return false;
-        }
-        if (paymentMethod && inv.paymentMethod !== paymentMethod) return false;
-        if (seller && inv.seller !== seller) return false;
-        return true;
-      })
-      .flatMap(inv => inv.itemData && Array.isArray(inv.itemData.items) ? inv.itemData.items.map((item, idx) => ({
-        ...inv,
-        // استخدم بيانات الصنف
-        itemNumber: item.itemNumber || '',
-        itemName: item.itemName || '',
-        mainCategory: inv.mainCategory || '',
-        quantity: Number(item.quantity) || Number(item.returnedQty) || 0,
-        price: Number(item.price) || 0,
-        discountValue: Number(item.discountValue) || 0,
-        discountPercent: Number(item.discountPercent) || 0,
-        taxValue: Number(item.taxValue) || 0,
-        taxPercent: Number(item.taxPercent) || 0,
-        net: Number(item.net) || 0,
-        unit: item.unit || '',
-        createdAt: item.createdAt || inv.createdAt,
-        isReturn: inv.isReturn,
-        invoiceType: inv.invoiceType,
-        customerPhone: inv.customerPhone,
-        customer: inv.customer,
-        warehouse: item.warehouseId || inv.warehouse,
-        // إجمالي بعد الخصم للصنف
-        totalAfterDiscount: ((Number(item.price) || 0) * (Number(item.quantity) || Number(item.returnedQty) || 0)) - (Number(item.discountValue) || 0)
-      })) : [inv]);
 
-    const exportData = allItems.map(inv => {
-      const sign = inv.invoiceType === 'مرتجع' ? -1 : 1;
+    // الحصول على البيانات المفلترة كما تظهر في الجدول
+    const filteredData = getFilteredRows();
+    
+    // تجميع البيانات حسب الفاتورة مثل ما يظهر في الطباعة
+    const groupedData = Object.values(
+      filteredData.reduce((acc, inv) => {
+        const key = inv.invoiceNumber + '-' + inv.invoiceType;
+        if (!acc[key]) {
+          acc[key] = { ...inv, _rows: [] };
+        }
+        acc[key]._rows.push(inv);
+        return acc;
+      }, {})
+    );
+
+    const exportData = groupedData.map(invoice => {
+      const invoiceRows = (invoice as any)?._rows || [];
+      const totalAmount = invoiceRows.reduce((sum, row) => sum + ((Number(row.price) || 0) * (Number(row.quantity) || 0)), 0);
+      const totalDiscount = invoiceRows.reduce((sum, row) => sum + (Number(row.discountValue) || 0), 0);
+      const afterDiscount = totalAmount - totalDiscount;
+      const totalTax = invoiceRows.reduce((sum, row) => sum + (Number(row.taxValue) || 0), 0);
+      const net = Number((invoice as any)?.net) || totalAmount - totalDiscount + totalTax;
+      const sign = (invoice as any)?.invoiceType === 'مرتجع' ? -1 : 1;
+      
       const parseTime = (val) => {
         if (!val) return '';
         if (typeof val === 'object' && val.seconds) {
-          return dayjs(val.seconds * 1000).format('hh:mm:ss A');
+          return new Date(val.seconds * 1000).toLocaleTimeString('ar-SA');
         }
         if (typeof val === 'string') {
-          const d = dayjs(val);
-          if (d.isValid()) return d.format('hh:mm:ss A');
+          const d = new Date(val);
+          if (!isNaN(d.getTime())) return d.toLocaleTimeString('ar-SA');
         }
         return '';
       };
-      const price = Number(inv.price) || 0;
-      const quantity = Number(inv.quantity) || 0;
-      const discountValue = Number(inv.discountValue) || 0;
-      // إجمالي بعد الخصم للصنف
-      let totalAfterDiscount = typeof inv.totalAfterDiscount !== 'undefined'
-        ? inv.totalAfterDiscount
-        : (price * quantity) - discountValue;
-      if (totalAfterDiscount < 0) totalAfterDiscount = 0;
-      totalAfterDiscount = sign * totalAfterDiscount;
+
       return [
-        // إذا كان مرتجع استخدم رقم المرتجع (referenceNumber) إن وجد
-        (inv.isReturn && inv.itemData && inv.itemData.referenceNumber) ? inv.itemData.referenceNumber : inv.invoiceNumber,
-        dayjs(inv.date).format('YYYY-MM-DD'),
-        inv.invoiceType,
-        inv.itemNumber,
-        inv.itemName,
-        inv.mainCategory || '',
-        inv.quantity,
-        inv.unit || inv.itemData?.unit || '',
-        inv.price,
-        inv.discountPercent + '%',
-        (sign * discountValue).toFixed(2),
-        totalAfterDiscount.toFixed(2),
-        (sign * inv.taxValue).toFixed(2),
-        (sign * inv.net).toFixed(2),
-        inv.customer,
-        (inv.customerPhone && inv.customerPhone.trim() !== '' ? inv.customerPhone : 'غير متوفر'),
-        parseTime(inv.createdAt) || parseTime(inv.itemData?.createdAt) || (inv.date ? dayjs(inv.date).format('hh:mm:ss A') : ''),
-        inv.taxPercent + '%',
-        'ريال سعودي',
-        getWarehouseName(inv.warehouse),
-        getSalesRepName(inv.seller)
+        (invoice as any)?.invoiceNumber || '-',
+        (invoice as any)?.entryNumber || (invoice as any)?.id || '-',
+        (invoice as any)?.date ? new Date((invoice as any).date).toLocaleDateString('ar-SA') : '',
+        (invoice as any)?.customerPhone && (invoice as any).customerPhone.trim() !== '' ? (invoice as any).customerPhone : 'غير متوفر',
+        (invoice as any)?.customer || '',
+        getBranchName((invoice as any)?.branch) || '-',
+        (sign * totalAmount).toFixed(2),
+        (sign * totalDiscount).toFixed(2),
+        (sign * afterDiscount).toFixed(2),
+        (sign * totalTax).toFixed(2),
+        (sign * net).toFixed(2),
+        (sign * net).toFixed(2),
+        (invoice as any)?.invoiceType || '-',
+        getWarehouseName((invoice as any)?.warehouse) || '-',
+        (invoice as any)?.paymentMethod || '-',
+        getSalesRepName((invoice as any)?.seller) || '-',
+        parseTime((invoice as any)?.createdAt) || ((invoice as any)?.date ? new Date((invoice as any).date).toLocaleTimeString('ar-SA') : ''),
+        'ريال سعودي'
       ];
     });
+
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('تقرير الفواتير ');
+    const sheet = workbook.addWorksheet('تقرير الفواتير');
 
     sheet.columns = [
       { header: 'رقم الفاتورة', key: 'invoiceNumber', width: 20 },
-      { header: 'تاريخ الفاتورة', key: 'date', width: 15 },
-      { header: 'نوع الفاتورة', key: 'type', width: 22 }, // Expanded width
-      { header: 'كود الصنف', key: 'itemNumber', width: 27 },
-      { header: 'اسم الصنف', key: 'itemName', width: 50 },
-      { header: 'الفئة', key: 'mainCategory', width: 15 },
-      { header: 'الكمية', key: 'quantity', width: 10 },
-      { header: 'الوحدة', key: 'unit', width: 10 },
-      { header: 'سعر الوحدة', key: 'price', width: 12 },
-      { header: 'نسبة الخصم', key: 'discountPercent', width: 12 },
-      { header: 'قيمة الخصم', key: 'discountValue', width: 14 },
-      { header: 'الإجمالي بعد الخصم', key: 'totalAfterDiscount', width: 18 },
-      { header: 'قيمة الضريبة المضافة', key: 'taxValue', width: 16 },
-      { header: 'الصافي', key: 'net', width: 12 },
-      { header: 'اسم العميل', key: 'customer', width: 45 },
+      { header: 'رقم القيد', key: 'entryNumber', width: 20 },
+      { header: 'التاريخ', key: 'date', width: 15 },
       { header: 'رقم العميل', key: 'customerPhone', width: 18 },
-      { header: 'وقت الإنشاء', key: 'createdAt', width: 14 },
-      { header: 'نسبة الضريبة', key: 'taxPercent', width: 12 },
-      { header: 'العملة', key: 'currency', width: 12 },
-      { header: 'المخزن', key: 'warehouse', width: 15 },
-      { header: 'البائع', key: 'seller', width: 20 },
+      { header: 'اسم العميل', key: 'customer', width: 45 },
+      { header: 'الفرع', key: 'branch', width: 20 },
+      { header: 'الإجمالي', key: 'totalAmount', width: 15 },
+      { header: 'الخصم', key: 'discount', width: 15 },
+      { header: 'بعد الخصم', key: 'afterDiscount', width: 15 },
+      { header: 'الضرائب', key: 'tax', width: 15 },
+      { header: 'الإجمالي النهائي', key: 'finalTotal', width: 18 },
+      { header: 'الصافي', key: 'net', width: 15 },
+      { header: 'نوع الفاتورة', key: 'invoiceType', width: 20 },
+      { header: 'المخزن', key: 'warehouse', width: 20 },
+      { header: 'طريقة الدفع', key: 'paymentMethod', width: 20 },
+      { header: 'البائع', key: 'seller', width: 25 },
+      { header: 'الوقت', key: 'time', width: 15 },
+      { header: 'العملة', key: 'currency', width: 12 }
     ];
+
     sheet.addRows(exportData);
+
+    // تنسيق الهيدر
     sheet.getRow(1).eachCell(cell => {
-      cell.font = { bold: true, color: { argb: 'FF305496' } };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FFDDEBF7' }
+        fgColor: { argb: 'FF000000' }
       };
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
       cell.border = {
-        top: { style: 'thin', color: { argb: 'FFAAAAAA' } },
-        bottom: { style: 'thin', color: { argb: 'FFAAAAAA' } },
-        left: { style: 'thin', color: { argb: 'FFAAAAAA' } },
-        right: { style: 'thin', color: { argb: 'FFAAAAAA' } },
+        top: { style: 'thin', color: { argb: 'FF000000' } },
+        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FF000000' } },
+        right: { style: 'thin', color: { argb: 'FF000000' } },
       };
     });
+
+    // تنسيق الصفوف
     for (let i = 2; i <= sheet.rowCount; i++) {
       const row = sheet.getRow(i);
       row.eachCell(cell => {
@@ -698,26 +675,29 @@ const Invoice: React.FC = () => {
           left: { style: 'thin', color: { argb: 'FFAAAAAA' } },
           right: { style: 'thin', color: { argb: 'FFAAAAAA' } },
         };
-        if (i % 2 === 1) {
+        if (i % 2 === 0) {
           cell.fill = {
             type: 'pattern',
             pattern: 'solid',
-            fgColor: { argb: 'FFF7F9FC' }
+            fgColor: { argb: 'FFF5F5F5' }
           };
         }
       });
     }
+
+    // إضافة التجميد والفلتر
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
     sheet.autoFilter = {
       from: { row: 1, column: 1 },
       to: { row: 1, column: sheet.columnCount }
     };
+
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `تقرير_الفواتير_المفضلة_${dayjs().format('YYYYMMDD_HHmmss')}.xlsx`;
+    a.download = `تقرير_الفواتير_${new Date().toLocaleDateString('ar-SA').replace(/\//g, '-')}.xlsx`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
@@ -786,7 +766,317 @@ const Invoice: React.FC = () => {
     };
     fetchCompany();
   }, []);
+// أعلى الكومبوننت
+const handlePrintTable = () => {
+  // البحث عن الجدول باستخدام Ant Design table class
+  const table = document.querySelector('.ant-table-tbody') || document.querySelector('table');
+  if (!table) {
+    alert('لم يتم العثور على جدول البيانات');
+    return;
+  }
 
+  // إنشاء جدول جديد للطباعة
+  const filteredData = getFilteredRows();
+  const groupedData = Object.values(
+    filteredData.reduce((acc, inv) => {
+      const key = inv.invoiceNumber + '-' + inv.invoiceType;
+      if (!acc[key]) {
+        acc[key] = { ...inv, _rows: [] };
+      }
+      acc[key]._rows.push(inv);
+      return acc;
+    }, {})
+  );
+
+  // حساب الإجماليات
+  let totalAmount = 0;
+  let totalDiscount = 0;
+  let totalAfterDiscount = 0;
+  let totalTax = 0;
+  let totalNet = 0;
+
+  groupedData.forEach((invoice) => {
+    const sign = invoice.invoiceType === 'مرتجع' ? -1 : 1;
+    
+    const invoiceTotal = invoice._rows.reduce((sum, row) => {
+      return sum + ((Number(row.price) || 0) * (Number(row.quantity) || 0));
+    }, 0);
+    
+    const invoiceDiscount = invoice._rows.reduce((sum, row) => {
+      return sum + (Number(row.discountValue) || 0);
+    }, 0);
+    
+    const invoiceTax = invoice._rows.reduce((sum, row) => {
+      return sum + (Number(row.taxValue) || 0);
+    }, 0);
+    
+    const invoiceNet = invoice._rows.reduce((sum, row) => {
+      return sum + (Number(row.net) || 0);
+    }, 0);
+
+    totalAmount += sign * invoiceTotal;
+    totalDiscount += sign * invoiceDiscount;
+    totalAfterDiscount += sign * (invoiceTotal - invoiceDiscount);
+    totalTax += sign * invoiceTax;
+    totalNet += sign * invoiceNet;
+  });
+
+  // إنشاء HTML للطباعة
+  const printWindow = window.open('', '', 'width=1400,height=900');
+  printWindow?.document.write(`
+    <html>
+    <head>
+      <title>طباعة تقرير الفواتير</title>
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700&display=swap');
+        @page { 
+          size: A4 landscape; 
+          margin: 15mm; 
+        }
+        body { 
+          font-family: 'Tajawal', Arial, sans-serif; 
+          direction: rtl; 
+          padding: 10px; 
+          font-size: 11px;
+          line-height: 1.3;
+          margin: 0;
+        }
+        .company-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 15px;
+          border-bottom: 1px solid #000;
+          padding-bottom: 10px;
+        }
+        .header-section {
+          flex: 1;
+          min-width: 0;
+          padding: 0 8px;
+          box-sizing: border-box;
+        }
+        .header-section.center {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          flex: 0 0 120px;
+          max-width: 120px;
+          min-width: 100px;
+        }
+        .logo {
+          width: 100px;
+          height: auto;
+          margin-bottom: 8px;
+        }
+        .company-info-ar {
+          text-align: right;
+          font-size: 11px;
+          font-weight: 500;
+          line-height: 1.4;
+        }
+        .company-info-en {
+          text-align: left;
+          font-family: Arial, sans-serif;
+          direction: ltr;
+          font-size: 10px;
+          font-weight: 500;
+          line-height: 1.4;
+        }
+        .header {
+          text-align: center;
+          margin-bottom: 20px;
+          border-bottom: 2px solid #000;
+          padding-bottom: 10px;
+        }
+        .header h1 {
+          color: #000;
+          margin: 0;
+          font-size: 20px;
+          font-weight: 700;
+        }
+        .header p {
+          color: #000;
+          margin: 3px 0 0 0;
+          font-size: 12px;
+        }
+        table { 
+          width: 100%; 
+          border-collapse: collapse; 
+          margin-bottom: 20px;
+          font-size: 10px;
+        }
+        th, td { 
+          border: 1px solid #d1d5db; 
+          padding: 4px 2px; 
+          text-align: center;
+          vertical-align: middle;
+          font-size: 9px;
+        }
+        th { 
+
+          font-weight: 600;
+          font-size: 9px;
+          padding: 6px 4px;
+        }
+        tbody tr:nth-child(even) {
+          background-color: #f5f5f5;
+        }
+        tbody tr:hover {
+          background-color: #e5e5e5;
+        }
+
+        .return-invoice {
+          color: #000;
+          font-weight: 600;
+        }
+        .normal-invoice {
+          color: #000;
+          font-weight: 600;
+        }
+        .print-date {
+          text-align: left;
+          margin-top: 15px;
+          font-size: 9px;
+          color: #000;
+        }
+        @media print {
+          body { margin: 0; padding: 10px; }
+          .no-print { display: none; }
+        }
+      </style>
+    </head>
+    <body>
+      <!-- Company Header Section -->
+      <div class="company-header">
+        <div class="header-section company-info-ar">
+          <div>${companyData.arabicName || ''}</div>
+          <div>${companyData.companyType || ''}</div>
+          <div>السجل التجاري: ${companyData.commercialRegistration || ''}</div>
+          <div>الملف الضريبي: ${companyData.taxFile || ''}</div>
+          <div>العنوان: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+          <div>الرمز البريدي: ${companyData.postalCode || ''}</div>
+          <div>الهاتف: ${companyData.phone || ''}</div>
+          <div>الجوال: ${companyData.mobile || ''}</div>
+        </div>
+        <div class="header-section center">
+          <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
+        </div>
+        <div class="header-section company-info-en">
+          <div>${companyData.englishName || ''}</div>
+          <div>${companyData.companyType || ''}</div>
+          <div>Commercial Reg.: ${companyData.commercialRegistration || ''}</div>
+          <div>Tax File: ${companyData.taxFile || ''}</div>
+          <div>Address: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+          <div>Postal Code: ${companyData.postalCode || ''}</div>
+          <div>Phone: ${companyData.phone || ''}</div>
+          <div>Mobile: ${companyData.mobile || ''}</div>
+        </div>
+      </div>
+      
+      <div class="header">
+        <h1>تقرير فواتير المبيعات</h1>
+        <p>نظام إدارة الموارد ERP90</p>
+      </div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 70px;">رقم الفاتورة</th>
+            <th style="width: 70px;">رقم القيد</th>
+            <th style="width: 70px;">التاريخ</th>
+            <th style="width: 75px;">رقم العميل</th>
+            <th style="width: 100px;">اسم العميل</th>
+            <th style="width: 65px;">الفرع</th>
+            <th style="width: 70px;">الإجمالي</th>
+            <th style="width: 60px;">الخصم</th>
+            <th style="width: 75px;">بعد الخصم</th>
+            <th style="width: 60px;">الضرائب</th>
+            <th style="width: 70px;">الإجمالي النهائي</th>
+            <th style="width: 60px;">الصافي</th>
+            <th style="width: 70px;">نوع الفاتورة</th>
+            <th style="width: 65px;">المخزن</th>
+            <th style="width: 70px;">طريقة الدفع</th>
+            <th style="width: 65px;">البائع</th>
+            <th style="width: 60px;">الوقت</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${groupedData.map(invoice => {
+            const invoiceRows = (invoice as any)?._rows || [];
+            const totalAmount = invoiceRows.reduce((sum, row) => sum + ((Number(row.price) || 0) * (Number(row.quantity) || 0)), 0);
+            const totalDiscount = invoiceRows.reduce((sum, row) => sum + (Number(row.discountValue) || 0), 0);
+            const afterDiscount = totalAmount - totalDiscount;
+            const totalTax = invoiceRows.reduce((sum, row) => sum + (Number(row.taxValue) || 0), 0);
+            const net = Number((invoice as any)?.net) || 0;
+            const sign = (invoice as any)?.invoiceType === 'مرتجع' ? -1 : 1;
+            
+            // حساب الأسماء مسبقاً مع معالجة safe
+            const branchName = (invoice as any)?.branch ? getBranchName((invoice as any).branch) : '-';
+            const warehouseName = (invoice as any)?.warehouse ? getWarehouseName((invoice as any).warehouse) : '-';
+            const salesRepName = (invoice as any)?.seller ? getSalesRepName((invoice as any).seller) : '-';
+            
+            const parseTime = (val) => {
+              if (!val) return '';
+              if (typeof val === 'object' && val.seconds) {
+                return new Date(val.seconds * 1000).toLocaleTimeString('ar-SA');
+              }
+              if (typeof val === 'string') {
+                const d = new Date(val);
+                if (!isNaN(d.getTime())) return d.toLocaleTimeString('ar-SA');
+              }
+              return '';
+            };
+
+            return '<tr>' +
+              '<td>' + ((invoice as any)?.invoiceNumber || '-') + '</td>' +
+              '<td>' + ((invoice as any)?.entryNumber || (invoice as any)?.id || '-') + '</td>' +
+              '<td>' + ((invoice as any)?.date ? new Date((invoice as any).date).toLocaleDateString('ar-SA') : '') + '</td>' +
+              '<td>' + ((invoice as any)?.customerPhone && (invoice as any).customerPhone.trim() !== '' ? (invoice as any).customerPhone : 'غير متوفر') + '</td>' +
+              '<td>' + ((invoice as any)?.customer || '') + '</td>' +
+              '<td>' + branchName + '</td>' +
+              '<td>' + (sign * totalAmount).toLocaleString() + ' ر.س</td>' +
+              '<td>' + (sign * totalDiscount).toLocaleString() + ' ر.س</td>' +
+              '<td>' + (sign * afterDiscount).toLocaleString() + ' ر.س</td>' +
+              '<td>' + (sign * totalTax).toLocaleString() + ' ر.س</td>' +
+              '<td>' + (sign * net).toLocaleString() + ' ر.س</td>' +
+              '<td>' + (sign * net).toLocaleString() + ' ر.س</td>' +
+              '<td class="' + ((invoice as any)?.invoiceType === 'مرتجع' ? 'return-invoice' : 'normal-invoice') + '">' + ((invoice as any)?.invoiceType || '-') + '</td>' +
+              '<td>' + warehouseName + '</td>' +
+              '<td>' + ((invoice as any)?.paymentMethod || '-') + '</td>' +
+              '<td>' + salesRepName + '</td>' +
+              '<td>' + (parseTime((invoice as any)?.createdAt) || ((invoice as any)?.date ? new Date((invoice as any).date).toLocaleTimeString('ar-SA') : '')) + '</td>' +
+              '</tr>';
+          }).join('')}
+        </tbody>
+        <tfoot>
+          <tr class="total-row">
+            <td colspan="6"><strong>الإجماليات</strong></td>
+            <td><strong>${totalAmount.toLocaleString()} ر.س</strong></td>
+            <td><strong>${totalDiscount.toLocaleString()} ر.س</strong></td>
+            <td><strong>${totalAfterDiscount.toLocaleString()} ر.س</strong></td>
+            <td><strong>${totalTax.toLocaleString()} ر.س</strong></td>
+            <td><strong>${totalNet.toLocaleString()} ر.س</strong></td>
+            <td><strong>${totalNet.toLocaleString()} ر.س</strong></td>
+            <td colspan="5"></td>
+          </tr>
+        </tfoot>
+      </table>
+      
+      <div class="print-date">
+        تاريخ الطباعة: ${new Date().toLocaleDateString('ar-SA')} - ${new Date().toLocaleTimeString('ar-SA')}
+      </div>
+    </body>
+    </html>
+  `);
+  
+  printWindow?.document.close();
+  printWindow?.focus();
+  setTimeout(() => { 
+    printWindow?.print(); 
+    printWindow?.close(); 
+  }, 1000);
+};
   // دالة طباعة محتوى المودال فقط
   const handlePrint = () => {
     // Professional print template
@@ -985,7 +1275,7 @@ const Invoice: React.FC = () => {
             table { width: 100%; border-collapse: collapse; margin-bottom: 5mm; font-size: 11px; }
             th, td { border: 1px solid #000; padding: 2mm; text-align: center; }
             th {
-              background-color: #305496;
+              background-color: #000;
               color: #fff;
               font-weight: bold;
               font-size: 12.5px;
@@ -1120,9 +1410,9 @@ const Invoice: React.FC = () => {
             </tbody>
             <!-- Summary Row -->
             <tfoot>
-              <tr style="background:#f3f3f3; font-weight:bold;">
+              <tr style="background:#f0f0f0; font-weight:bold;">
                 <td colspan="6" style="text-align:right; font-weight:bold; color:#000;">الإجماليات:</td>
-                <td style="color:#dc2626; font-weight:bold;">
+                <td style="color:#000; font-weight:bold;">
                   ${(() => {
                     // إجمالي الخصم
                     if (!invoice.items) return '0.00';
@@ -1131,7 +1421,7 @@ const Invoice: React.FC = () => {
                     return total.toFixed(2);
                   })()}
                 </td>
-                <td style="color:#ea580c; font-weight:bold;">
+                <td style="color:#000; font-weight:bold;">
                   ${(() => {
                     // إجمالي قبل الضريبة
                     if (!invoice.items) return '0.00';
@@ -1144,7 +1434,7 @@ const Invoice: React.FC = () => {
                     return total.toFixed(2);
                   })()}
                 </td>
-                <td style="color:#9333ea; font-weight:bold;">
+                <td style="color:#000; font-weight:bold;">
                   ${(() => {
                     // إجمالي الضريبة
                     if (!invoice.items) return '0.00';
@@ -1153,7 +1443,7 @@ const Invoice: React.FC = () => {
                     return total.toFixed(2);
                   })()}
                 </td>
-                <td style="color:#059669; font-weight:bold;">
+                <td style="color:#000; font-weight:bold;">
                   ${(() => {
                     // إجمالي النهائي
                     if (!invoice.items) return '0.00';
@@ -1233,7 +1523,7 @@ const Invoice: React.FC = () => {
                 align-items:center;
                 width:160px;
                 height:60px;
-                border:2.5px dashed #888;
+                border:2.5px dashed #000;
                 border-radius:50%;
                 box-shadow:0 2px 8px 0 rgba(0,0,0,0.08);
                 opacity:0.85;
@@ -1241,7 +1531,7 @@ const Invoice: React.FC = () => {
                 font-family: 'Cairo', 'Tajawal', Arial, sans-serif;
                 font-size:15px;
                 font-weight:bold;
-                color:#222;
+                color:#000;
                 letter-spacing:1px;
                 text-align:center;
                 position:absolute;
@@ -1637,6 +1927,7 @@ const Invoice: React.FC = () => {
               type="primary"
               className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
               size="large"
+                onClick={handlePrintTable}
             >
               طباعة
             </Button>
@@ -1661,8 +1952,10 @@ const Invoice: React.FC = () => {
                   </Link>
                 ) : (
                   <Link
-                    to={`/edit/editsales?invoice=${encodeURIComponent(text)}`}
+                    to={`/stores/edit-sales-invoice?invoice=${encodeURIComponent(text)}`}
                     className="text-blue-700 underline hover:text-blue-900"
+                    target="_blank"
+                    rel="noopener noreferrer"
                   >
                     {text}
                   </Link>

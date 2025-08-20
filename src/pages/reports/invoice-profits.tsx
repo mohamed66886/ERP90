@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Helmet } from "react-helmet";
 import { motion, AnimatePresence } from "framer-motion";
-import { DatePicker, Input, Select, Button, Table, Pagination } from "antd";
+import { DatePicker, Input, Select, Button, Table } from "antd";
 import { SearchOutlined, DownloadOutlined, FileTextOutlined } from '@ant-design/icons';
 import arEG from 'antd/es/date-picker/locale/ar_EG';
 import { fetchBranches, Branch } from "@/lib/branches";
@@ -119,10 +119,6 @@ function InvoiceProfits() {
   };
   const labelStyle = { fontSize: 18, fontWeight: 500, marginBottom: 2, display: 'block' };
 
-  // Pagination states
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(30); // عدد الصفوف في كل صفحة
-
   // جلب طرق الدفع من قاعدة البيانات
   useEffect(() => {
     const fetchPaymentMethods = async () => {
@@ -164,7 +160,7 @@ function InvoiceProfits() {
   useEffect(() => {
     const fetchSalesReps = async () => {
       try {
-        const { getDocs, collection, query, where } = await import('firebase/firestore');
+        const { getDocs, collection, query, where, getDoc, doc } = await import('firebase/firestore');
         const { db } = await import('@/lib/firebase');
         
         // جلب من مجموعة accounts مع فلتر classification
@@ -180,23 +176,82 @@ function InvoiceProfits() {
           mobile: doc.data().mobile || doc.data().phone || ''
         }));
         
-        // جلب البائعين من الفواتير الموجودة
+        // جلب البائعين من الفواتير الموجودة وتحويل الـ IDs إلى أسماء
         const salesSnap = await getDocs(collection(db, 'sales_invoices'));
-        const salesReps = Array.from(new Set(
-          salesSnap.docs
-            .map(doc => doc.data().delegate || doc.data().seller)
-            .filter(seller => seller && seller.trim() !== '')
-        )).map(seller => ({
-          id: seller,
-          name: seller,
-          number: '',
-          mobile: ''
-        }));
+        const sellerIds = new Set<string>();
+        
+        salesSnap.docs.forEach(docSnap => {
+          const data = docSnap.data();
+          const seller = data.delegate || data.seller;
+          if (seller && seller.trim() !== '') {
+            sellerIds.add(seller);
+          }
+        });
+        
+        // تحويل الـ IDs إلى أسماء عن طريق البحث في accounts
+        const salesReps: Array<{ id: string; name: string; number: string; mobile: string }> = [];
+        
+        for (const sellerId of Array.from(sellerIds)) {
+          // أولاً، تحقق إذا كان موجود في accountsReps
+          const existingRep = accountsReps.find(rep => 
+            rep.id === sellerId || 
+            rep.name === sellerId ||
+            rep.number === sellerId
+          );
+          
+          if (existingRep) {
+            // إذا كان موجود، لا تضيفه مرة أخرى
+            continue;
+          }
+          
+          // إذا بدا sellerId كأنه ID، حاول جلب الاسم من accounts
+          if (sellerId.length > 10 && /^[a-zA-Z0-9_-]+$/.test(sellerId)) {
+            try {
+              const accountDoc = await getDoc(doc(db, 'accounts', sellerId));
+              if (accountDoc.exists()) {
+                const accountData = accountDoc.data();
+                salesReps.push({
+                  id: sellerId,
+                  name: accountData.name || sellerId,
+                  number: accountData.number || '',
+                  mobile: accountData.mobile || accountData.phone || ''
+                });
+              } else {
+                // إذا لم يوجد في accounts، أضف sellerId كما هو
+                salesReps.push({
+                  id: sellerId,
+                  name: sellerId,
+                  number: '',
+                  mobile: ''
+                });
+              }
+            } catch {
+              // في حالة حدوث خطأ، أضف sellerId كما هو
+              salesReps.push({
+                id: sellerId,
+                name: sellerId,
+                number: '',
+                mobile: ''
+              });
+            }
+          } else {
+            // إذا لم يبدو كأنه ID، أضفه كاسم
+            salesReps.push({
+              id: sellerId,
+              name: sellerId,
+              number: '',
+              mobile: ''
+            });
+          }
+        }
         
         // دمج القوائم وإزالة المكرر
         const allReps = [...accountsReps, ...salesReps];
         const uniqueReps = allReps.filter((rep, index, self) => 
-          index === self.findIndex(r => r.name === rep.name || r.id === rep.id)
+          index === self.findIndex(r => 
+            r.name.toLowerCase() === rep.name.toLowerCase() || 
+            r.id === rep.id
+          )
         );
         
         setSalesRepAccounts(uniqueReps);
@@ -462,35 +517,46 @@ function InvoiceProfits() {
       filtered = filtered.filter(inv => inv.paymentMethod === paymentMethod);
     }
     
-    // فلتر البائع
+    // فلتر البائع - محسن للتعامل مع الأسماء والـ IDs
     if (seller) {
-      filtered = filtered.filter(inv => inv.seller === seller);
+      filtered = filtered.filter(inv => {
+        if (!inv.seller) return false;
+        
+        // أولاً: مقارنة مباشرة
+        if (inv.seller === seller) return true;
+        
+        // ثانياً: البحث في قائمة salesRepAccounts
+        const foundRep = salesRepAccounts.find(rep => 
+          (rep.id === inv.seller && rep.name === seller) ||
+          (rep.name === inv.seller && rep.name === seller)
+        );
+        if (foundRep) return true;
+        
+        // ثالثاً: التحويل باستخدام نفس منطق getSalesRepName
+        // البحث بالـ ID
+        const foundRepById = salesRepAccounts.find(rep => rep.id === inv.seller);
+        if (foundRepById && foundRepById.name === seller) return true;
+        
+        // البحث بالاسم
+        const foundRepByName = salesRepAccounts.find(rep => 
+          rep.name === inv.seller ||
+          rep.name.toLowerCase() === inv.seller.toLowerCase()
+        );
+        if (foundRepByName && foundRepByName.name === seller) return true;
+        
+        // البحث برقم الحساب
+        const foundRepByNumber = salesRepAccounts.find(rep => rep.number === inv.seller);
+        if (foundRepByNumber && foundRepByNumber.name === seller) return true;
+        
+        return false;
+      });
     }
     
     return filtered;
-  }, [invoices, invoiceTypeFilter, paymentMethod, seller]);
-
-  // دالة للحصول على البيانات المقسمة على صفحات - محسنة بـ useMemo
-  const paginatedRows = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    const endIndex = startIndex + pageSize;
-    return filteredRows.slice(startIndex, endIndex);
-  }, [filteredRows, currentPage, pageSize]);
-
-  // حساب إجمالي عدد الصفحات - محسنة بـ useMemo
-  const totalPages = useMemo(() => {
-    return Math.ceil(filteredRows.length / pageSize);
-  }, [filteredRows.length, pageSize]);
+  }, [invoices, invoiceTypeFilter, paymentMethod, seller, salesRepAccounts]);
 
   // دالة للتوافق مع الكود القديم
   const getFilteredRows = () => filteredRows;
-  const getPaginatedRows = () => paginatedRows;
-  const getTotalPages = () => totalPages;
-
-  // إعادة تعيين الصفحة الحالية إلى 1 عند تغيير الفلاتر
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [invoiceTypeFilter, paymentMethod, seller, invoices]);
 
   // تطبيق فلاتر التصفية القديمة
   useEffect(() => {
@@ -519,28 +585,52 @@ function InvoiceProfits() {
     // إذا كان salesRepId فارغ أو undefined، أرجع قيمة افتراضية
     if (!salesRepId || salesRepId.trim() === '') return 'غير محدد';
     
-    // ابحث في قائمة حسابات البائعين أولاً
-    const foundRep = salesRepAccounts.find(rep => 
-      rep.id === salesRepId ||
-      rep.name === salesRepId ||
-      rep.name.toLowerCase().includes(salesRepId.toLowerCase()) ||
-      salesRepId.toLowerCase().includes(rep.name.toLowerCase()) ||
-      rep.number === salesRepId
-    );
-    
-    if (foundRep) {
-      return foundRep.name + (foundRep.mobile ? ` (${foundRep.mobile})` : '');
+    // أولاً: ابحث في قائمة حسابات البائعين بالـ ID
+    const foundRepById = salesRepAccounts.find(rep => rep.id === salesRepId);
+    if (foundRepById) {
+      return foundRepById.name;
     }
     
-    // في حالة عدم العثور عليه في الحسابات، ابحث في البائعين الموجودين في الفواتير
+    // ثانياً: ابحث في قائمة حسابات البائعين بالاسم
+    const foundRepByName = salesRepAccounts.find(rep => 
+      rep.name === salesRepId ||
+      rep.name.toLowerCase() === salesRepId.toLowerCase()
+    );
+    if (foundRepByName) {
+      return foundRepByName.name;
+    }
+    
+    // ثالثاً: ابحث برقم الحساب
+    const foundRepByNumber = salesRepAccounts.find(rep => rep.number === salesRepId);
+    if (foundRepByNumber) {
+      return foundRepByNumber.name;
+    }
+    
+    // رابعاً: بحث جزئي في الأسماء
+    const foundRepPartial = salesRepAccounts.find(rep => 
+      rep.name.toLowerCase().includes(salesRepId.toLowerCase()) ||
+      salesRepId.toLowerCase().includes(rep.name.toLowerCase())
+    );
+    if (foundRepPartial) {
+      return foundRepPartial.name;
+    }
+    
+    // خامساً: في حالة عدم العثور عليه في الحسابات، ابحث في البائعين الموجودين في الفواتير
     const uniqueSellers = Array.from(new Set(invoices.map(inv => inv.seller).filter(s => !!s && s !== '')));
     const foundSeller = uniqueSellers.find(seller => 
-      seller === salesRepId ||
+      seller === salesRepId || // مطابقة كاملة
       seller.toLowerCase().includes(salesRepId.toLowerCase()) || 
       salesRepId.toLowerCase().includes(seller.toLowerCase())
     );
     
-    return foundSeller || salesRepId;
+    if (foundSeller) {
+      return foundSeller;
+    }
+    
+    // أخيراً: إذا بدا salesRepId كأنه ID (يحتوي على أرقام وحروف)، أرجع "غير محدد"
+    // وإلا أرجع القيمة كما هي
+    const isLikelyId = /^[a-zA-Z0-9_-]{10,}$/.test(salesRepId);
+    return isLikelyId ? 'غير محدد' : salesRepId;
   };
 
   // دالة تصدير البيانات إلى ملف Excel باستخدام exceljs (حل متوافق مع Vite والمتصفح)
@@ -562,19 +652,26 @@ function InvoiceProfits() {
     }
     const exportData = filteredInvoices.map(inv => {
       const sign = inv.invoiceType === 'مرتجع' ? -1 : 1;
+      const afterDiscount = inv.total - inv.discountValue;
+      const profit = (inv.total - (inv.taxValue ?? 0)) - inv.cost;
+      
       return [
         inv.invoiceNumber,
         dayjs(inv.date).format('YYYY-MM-DD'),
+        inv.customer || '-',
+        inv.customerPhone || '-',
         (sign * inv.total),
-        'ريال سعودي',
         (sign * inv.discountValue),
+        (sign * afterDiscount),
+        (sign * (inv.taxValue ?? 0)),
+        (sign * (inv.net || 0)),
         (sign * inv.cost),
-        (sign * ((inv.total - (inv.taxValue ?? 0)) - inv.cost)),
+        (sign * profit),
         inv.invoiceType,
         getBranchName(inv.branch),
-        inv.paymentMethod,
-        inv.seller,
-        inv.customer
+        getWarehouseName(inv.warehouse),
+        inv.paymentMethod || '-',
+        getSalesRepName(inv.seller)
       ];
     });
 
@@ -585,16 +682,20 @@ function InvoiceProfits() {
     sheet.columns = [
       { header: 'رقم الفاتورة', key: 'invoiceNumber', width: 25 },
       { header: 'تاريخ الفاتورة', key: 'date', width: 15 },
+      { header: 'العميل', key: 'customer', width: 26 },
+      { header: 'رقم العميل', key: 'customerPhone', width: 15 },
       { header: 'قيمة الفاتورة', key: 'total', width: 15 },
-      { header: 'العملة', key: 'currency', width: 12 },
       { header: 'قيمة الخصم', key: 'discount', width: 15 },
+      { header: 'بعد الخصم', key: 'afterDiscount', width: 15 },
+      { header: 'قيمة الضريبة', key: 'tax', width: 15 },
+      { header: 'الصافي بعد الضريبة', key: 'net', width: 18 },
       { header: 'التكلفة', key: 'cost', width: 15 },
       { header: 'الربح', key: 'profit', width: 15 },
       { header: 'نوع الفاتورة', key: 'type', width: 12 },
       { header: 'الفرع', key: 'branch', width: 15 },
+      { header: 'المخزن', key: 'warehouse', width: 15 },
       { header: 'طريقة الدفع', key: 'payment', width: 15 },
       { header: 'البائع', key: 'seller', width: 21 },
-      { header: 'العميل', key: 'customer', width: 26 },
     ];
 
     // إضافة البيانات
@@ -854,12 +955,17 @@ function InvoiceProfits() {
                         if (!s || s === '') return false;
                         // تحقق من عدم وجود هذا البائع في حسابات المندوبين
                         return !salesRepAccounts.some(rep => 
+                          rep.id === s ||
+                          rep.name === s ||
                           rep.name.toLowerCase().includes(s.toLowerCase()) ||
                           s.toLowerCase().includes(rep.name.toLowerCase())
                         );
-                      }))).map(s => (
-                        <Option key={s} value={s}>{s}</Option>
-                      ))}
+                      }))).map(s => {
+                        const displayName = getSalesRepName(s);
+                        return (
+                          <Option key={s} value={displayName}>{displayName}</Option>
+                        );
+                      })}
                     </Select>
                   </div>
                 </div>
@@ -879,7 +985,7 @@ function InvoiceProfits() {
               {isLoading ? "جاري البحث..." : "بحث"}
             </Button>
             <span className="text-gray-500 text-sm">
-              نتائج البحث: {filteredInvoices.length} - عرض الصفحة {currentPage} من {getTotalPages()}
+              نتائج البحث: {filteredInvoices.length} فاتورة
             </span>
           </div>
 
@@ -939,7 +1045,7 @@ function InvoiceProfits() {
                 title: 'رقم الفاتورة',
                 dataIndex: 'invoiceNumber',
                 key: 'invoiceNumber',
-                width: 120,
+                width: 160,
                 sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.invoiceNumber.localeCompare(b.invoiceNumber),
                 render: (text: string) => (
                   <span className="font-medium text-blue-600">{text}</span>
@@ -949,7 +1055,7 @@ function InvoiceProfits() {
                 title: 'تاريخ الفاتورة',
                 dataIndex: 'date',
                 key: 'date',
-                width: 100,
+                width: 120,
                 sorter: (a: InvoiceRecord, b: InvoiceRecord) => dayjs(a.date).unix() - dayjs(b.date).unix(),
                 render: (text: string) => dayjs(text).format('YYYY-MM-DD')
               },
@@ -957,47 +1063,94 @@ function InvoiceProfits() {
                 title: 'قيمة الفاتورة',
                 dataIndex: 'total',
                 key: 'total',
-                width: 100,
+                width: 140,
                 align: 'center',
                 sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.total - b.total,
                 render: (value: number, record: InvoiceRecord) => {
                   const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
                   return (
                     <span className={record.invoiceType === 'مرتجع' ? 'text-red-600' : 'text-green-600'}>
-                      {(sign * value).toFixed(2)}
+                      {(sign * value).toLocaleString()} ر.س
                     </span>
                   );
                 }
               },
               {
+                title: 'قيمة الخصم',
+                dataIndex: 'discountValue',
+                key: 'discountValue',
+                width: 120,
+                align: 'center',
+                sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.discountValue - b.discountValue,
+                render: (value: number, record: InvoiceRecord) => {
+                  const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                  return `${(sign * (value || 0)).toLocaleString()} ر.س`;
+                }
+              },
+              {
+                title: 'بعد الخصم',
+                key: 'afterDiscount',
+                width: 120,
+                align: 'center',
+                render: (record: InvoiceRecord) => {
+                  const afterDiscount = record.total - record.discountValue;
+                  const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                  return `${(sign * afterDiscount).toLocaleString()} ر.س`;
+                },
+                sorter: (a: InvoiceRecord, b: InvoiceRecord) => (a.total - a.discountValue) - (b.total - b.discountValue),
+              },
+              {
+                title: 'قيمة الضريبة',
+                dataIndex: 'taxValue',
+                key: 'taxValue',
+                width: 120,
+                align: 'center',
+                sorter: (a: InvoiceRecord, b: InvoiceRecord) => (a.taxValue || 0) - (b.taxValue || 0),
+                render: (value: number, record: InvoiceRecord) => {
+                  const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                  return `${(sign * (value || 0)).toLocaleString()} ر.س`;
+                }
+              },
+              {
+                title: 'الصافي بعد الضريبة',
+                dataIndex: 'net',
+                key: 'net',
+                width: 160,
+                align: 'center',
+                render: (net: number, record: InvoiceRecord) => {
+                  const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                  return `${(sign * (net || 0)).toLocaleString()} ر.س`;
+                },
+                sorter: (a: InvoiceRecord, b: InvoiceRecord) => (a.net || 0) - (b.net || 0),
+              },
+              {
                 title: 'التكلفة',
                 dataIndex: 'cost',
                 key: 'cost',
-                width: 100,
+                width: 120,
                 align: 'center',
                 sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.cost - b.cost,
                 render: (value: number, record: InvoiceRecord) => {
                   const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
                   return (
                     <span>
-                      {(sign * value).toFixed(2)}
+                      {(sign * value).toLocaleString()} ر.س
                     </span>
                   );
                 }
               },
               {
                 title: 'الربح',
-                dataIndex: 'profit',
                 key: 'profit',
-                width: 100,
+                width: 120,
                 align: 'center',
                 sorter: (a: InvoiceRecord, b: InvoiceRecord) => ((a.total - (a.taxValue ?? 0)) - a.cost) - ((b.total - (b.taxValue ?? 0)) - b.cost),
-                render: (value: number, record: InvoiceRecord) => {
+                render: (record: InvoiceRecord) => {
                   const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
                   const profit = sign * ((record.total - (record.taxValue ?? 0)) - record.cost);
                   return (
                     <span className={profit >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                      {profit.toFixed(2)}
+                      {profit.toLocaleString()} ر.س
                     </span>
                   );
                 }
@@ -1006,10 +1159,11 @@ function InvoiceProfits() {
                 title: 'نوع الفاتورة',
                 dataIndex: 'invoiceType',
                 key: 'invoiceType',
-                width: 100,
+                width: 120,
                 align: 'center',
+                sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.invoiceType.localeCompare(b.invoiceType),
                 render: (text: string) => (
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     text === 'مرتجع' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
                   }`}>
                     {text}
@@ -1021,51 +1175,122 @@ function InvoiceProfits() {
                 dataIndex: 'branch',
                 key: 'branch',
                 width: 120,
+                sorter: (a: InvoiceRecord, b: InvoiceRecord) => getBranchName(a.branch).localeCompare(getBranchName(b.branch)),
                 render: (text: string) => getBranchName(text)
+              },
+              {
+                title: 'المخزن',
+                dataIndex: 'warehouse',
+                key: 'warehouse',
+                width: 120,
+                sorter: (a: InvoiceRecord, b: InvoiceRecord) => getWarehouseName(a.warehouse).localeCompare(getWarehouseName(b.warehouse)),
+                render: (warehouse: string) => getWarehouseName(warehouse),
               },
               {
                 title: 'طريقة الدفع',
                 dataIndex: 'paymentMethod',
                 key: 'paymentMethod',
-                width: 120
+                width: 120,
+                render: (method: string) => method || '-'
               },
               {
                 title: 'البائع',
                 dataIndex: 'seller',
                 key: 'seller',
                 width: 150,
-                render: (text: string) => getSalesRepName(text)
-              },
-              {
-                title: 'العميل',
-                dataIndex: 'customer',
-                key: 'customer',
-                width: 200
+                sorter: (a: InvoiceRecord, b: InvoiceRecord) => getSalesRepName(a.seller).localeCompare(getSalesRepName(b.seller)),
+                render: (seller: string) => getSalesRepName(seller)
               }
             ]}
-            dataSource={getPaginatedRows()}
-            pagination={false}
-            scroll={{ x: 1200 }}
+            dataSource={getFilteredRows()}
+            rowKey="key"
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              pageSizeOptions: ['10', '20', '50', '100'],
+              position: ['bottomRight'],
+              showTotal: (total, range) => `عرض ${range[0]}-${range[1]} من ${total} فاتورة`
+            }}
+            loading={isLoading}
+            scroll={{ x: 1400 }}
             size="small"
             bordered
-            rowKey="key"
-          />
+            className="[&_.ant-table-thead_>_tr_>_th]:bg-gray-400 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-gray-400 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
+            locale={{
+              emptyText: isLoading ? (
+                <div className="flex justify-center items-center py-8">
+                  <div className="animate-pulse flex space-x-4">
+                    <div className="flex-1 space-y-4 py-1">
+                      <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto"></div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-gray-400">لا توجد بيانات</div>
+              )
+            }}
+            summary={() => {
+              if (getFilteredRows().length === 0) return null;
+              
+              // حساب الإجماليات
+              const allRows = getFilteredRows();
+              let totalAmount = 0;
+              let totalDiscount = 0;
+              let totalAfterDiscount = 0;
+              let totalTax = 0;
+              let totalNet = 0;
+              let totalCost = 0;
+              let totalProfit = 0;
 
-          {getTotalPages() > 1 && (
-            <div className="flex justify-center mt-4">
-              <Pagination
-                current={currentPage}
-                total={filteredRows.length}
-                pageSize={pageSize}
-                onChange={setCurrentPage}
-                showSizeChanger={false}
-                showQuickJumper
-                showTotal={(total, range) => 
-                  `${range[0]}-${range[1]} من ${total} عنصر`
-                }
-              />
-            </div>
-          )}
+              allRows.forEach((row: InvoiceRecord) => {
+                const sign = row.invoiceType === 'مرتجع' ? -1 : 1;
+                totalAmount += sign * row.total;
+                totalDiscount += sign * row.discountValue;
+                totalAfterDiscount += sign * (row.total - row.discountValue);
+                totalTax += sign * (row.taxValue ?? 0);
+                totalNet += sign * (row.net || 0);
+                totalCost += sign * row.cost;
+                totalProfit += sign * ((row.total - (row.taxValue ?? 0)) - row.cost);
+              });
+
+              return (
+                <Table.Summary fixed>
+                  <Table.Summary.Row className="">
+                    <Table.Summary.Cell index={0} className="text-center font-bold">الإجماليات</Table.Summary.Cell>
+                    <Table.Summary.Cell index={1}></Table.Summary.Cell>
+                    <Table.Summary.Cell index={2}></Table.Summary.Cell>
+                    <Table.Summary.Cell index={3}></Table.Summary.Cell>
+                    <Table.Summary.Cell index={4} className="text-center font-bold text-blue-600">
+                      {totalAmount.toLocaleString()} ر.س
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={5} className="text-center font-bold text-red-600">
+                      {totalDiscount.toLocaleString()} ر.س
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={6} className="text-center font-bold text-orange-600">
+                      {totalAfterDiscount.toLocaleString()} ر.س
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={7} className="text-center font-bold text-purple-600">
+                      {totalTax.toLocaleString()} ر.س
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={8} className="text-center font-bold text-emerald-600">
+                      {totalNet.toLocaleString()} ر.س
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={9} className="text-center font-bold">
+                      {totalCost.toLocaleString()} ر.س
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={10} className={`text-center font-bold ${totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {totalProfit.toLocaleString()} ر.س
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={11}></Table.Summary.Cell>
+                    <Table.Summary.Cell index={12}></Table.Summary.Cell>
+                    <Table.Summary.Cell index={13}></Table.Summary.Cell>
+                    <Table.Summary.Cell index={14}></Table.Summary.Cell>
+                    <Table.Summary.Cell index={15}></Table.Summary.Cell>
+                  </Table.Summary.Row>
+                </Table.Summary>
+              );
+            }}
+          />
         </motion.div>
       </div>
     </>

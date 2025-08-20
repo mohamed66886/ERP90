@@ -13,7 +13,7 @@ const customArEg = {
 };
 import { PrinterOutlined, CreditCardOutlined } from "@ant-design/icons";
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 import { fetchBranches, Branch } from "@/lib/branches";
 import dayjs, { Dayjs } from 'dayjs';
@@ -26,25 +26,22 @@ const { RangePicker } = DatePicker;
 
 const gridLabels = [
   [
-    "عدد الفواتير النقدية",
-    "عدد الفواتير الآجلة",
-    "إجمالي عدد الفواتير",
-    "عدد مردود المبيعات",
-    "الفواتير + المردودات",
+    "مبيعات النقدي",
+    "مبيعات الشبكة", 
+    "مبيعات الآجلة",
+    "مبيعات التحويلات",
   ],
   [
-    "إجمالي المبيعات نقداً",
-    "إجمالي المبيعات شبكة",
-    "إجمالي المبيعات الآجلة",
-    "إجمالي المبيعات",
-    "إجمالي المردود نقداً",
+    "مرتجعات نقدي",
+    "مرتجعات شبكة",
+    "مرتجعات آجلة", 
+    "مرتجعات تحويلات",
   ],
   [
-    "إجمالي المردودات شبكة",
-    "إجمالي مردودات المبيعات",
-    "صافي المبيعات نقداً",
-    "صافي المبيعات شبكة",
-    "الصافي",
+    "صافي مبيعات نقدي",
+    "صافي مبيعات شبكة",
+    "صافي مبيعات آجلة",
+    "صافي مبيعات التحويلات",
   ],
 ];
 
@@ -79,6 +76,7 @@ const DailySales: React.FC = () => {
   const [timeFrom, setTimeFrom] = useState<any>(null);
   const [timeTo, setTimeTo] = useState<any>(null);
   const [branchId, setBranchId] = useState<string>('');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('');
   const [companyData, setCompanyData] = useState<any>({});
 
   const paymentMethods = usePaymentMethods();
@@ -107,9 +105,10 @@ const DailySales: React.FC = () => {
     branchId?: string;
     timeFrom?: Dayjs | null;
     timeTo?: Dayjs | null;
+    paymentMethodFilter?: string;
   };
 
-  const fetchData = async (filters?: Filters) => {
+  const fetchData = useCallback(async (filters?: Filters) => {
     setLoading(true);
     try {
       const invoicesSnap = await getDocs(collection(db, 'sales_invoices'));
@@ -176,6 +175,65 @@ const DailySales: React.FC = () => {
             return branchA === filterBranch || branchB === filterBranch || branchA === branchName || branchB === branchName;
           });
         }
+        if (filters.paymentMethodFilter && filters.paymentMethodFilter !== '') {
+          const filterMethod = String(filters.paymentMethodFilter).trim();
+          
+          // فلترة الفواتير حسب طريقة الدفع
+          invoices = invoices.filter(inv => {
+            // إذا كانت طريقة الدفع متعددة، تحقق من وجود الطريقة المطلوبة في multiplePayment
+            if (inv.paymentMethod === 'متعدد' && inv.multiplePayment) {
+              const multiplePayment = inv.multiplePayment;
+              
+              // تحقق من النقدي
+              if (filterMethod.includes('نقد') && multiplePayment.cash && parseFloat(multiplePayment.cash.amount || '0') > 0) {
+                return true;
+              }
+              
+              // تحقق من الشبكة
+              if (filterMethod.includes('شبك') && multiplePayment.card && parseFloat(multiplePayment.card.amount || '0') > 0) {
+                return true;
+              }
+              
+              // تحقق من التحويل
+              if (filterMethod.includes('تحويل') && multiplePayment.bank && parseFloat(multiplePayment.bank.amount || '0') > 0) {
+                return true;
+              }
+              
+              return false;
+            } else {
+              // طريقة دفع مفردة
+              return String(inv.paymentMethod || '').trim() === filterMethod;
+            }
+          });
+          
+          // فلترة المرتجعات حسب طريقة الدفع
+          returns = returns.filter(ret => {
+            // إذا كانت طريقة الدفع متعددة، تحقق من وجود الطريقة المطلوبة في multiplePayment
+            if (ret.paymentMethod === 'متعدد' && ret.multiplePayment) {
+              const multiplePayment = ret.multiplePayment;
+              
+              // تحقق من النقدي
+              if (filterMethod.includes('نقد') && multiplePayment.cash && parseFloat(multiplePayment.cash.amount || '0') > 0) {
+                return true;
+              }
+              
+              // تحقق من الشبكة
+              if (filterMethod.includes('شبك') && multiplePayment.card && parseFloat(multiplePayment.card.amount || '0') > 0) {
+                return true;
+              }
+              
+              // تحقق من التحويل
+              if (filterMethod.includes('تحويل') && multiplePayment.bank && parseFloat(multiplePayment.bank.amount || '0') > 0) {
+                return true;
+              }
+              
+              return false;
+            } else {
+              // طريقة دفع مفردة
+              return String(ret.paymentMethod || '').trim() === filterMethod;
+            }
+          });
+        }
       }
       setSalesInvoices(invoices);
       setSalesReturns(returns);
@@ -185,45 +243,89 @@ const DailySales: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [branches]);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    const loadInitialData = async () => {
+      await fetchData();
+    };
+    loadInitialData();
+  }, [fetchData]);
 
   const gridValues = React.useMemo(() => {
-    let cashCount = 0, networkCount = 0, creditCount = 0, totalCount = 0, returnCount = 0;
-    let cashTotal = 0, networkTotal = 0, creditTotal = 0, totalSales = 0;
-    let returnCash = 0, returnNetwork = 0, totalReturns = 0;
-    let netCash = 0, netNetwork = 0, netTotal = 0;
+    let cashCount = 0, networkCount = 0, creditCount = 0, returnCount = 0;
+    let cashTotal = 0, networkTotal = 0, creditTotal = 0, transferTotal = 0;
+    let returnCash = 0, returnNetwork = 0, returnCredit = 0, returnTransfer = 0;
+    let netCash = 0, netNetwork = 0, netCredit = 0, netTransfer = 0;
 
     const findMethod = (keywords: string[]) =>
       paymentMethods.find(n => n && keywords.some(keyword => n.toString().replace(/\s/g, '').toLowerCase().includes(keyword))) || '';
     const cashName = findMethod(['نقد']);
     const networkName = findMethod(['شبك']);
     const creditName = findMethod(['آجل', 'اجل']);
+    const transferName = findMethod(['تحويل', 'محول']);
 
     salesInvoices.forEach(inv => {
       if (!Array.isArray(inv.items)) return;
       const method = inv.paymentMethod;
       const invoiceTotal = inv.totals?.afterTax || 0;
       
-      if (cashName && method && method.replace(/\s/g, '').toLowerCase().includes('نقد')) {
-        cashCount++;
-        cashTotal += invoiceTotal;
-      } else if (networkName && method && method.replace(/\s/g, '').toLowerCase().includes('شبك')) {
-        networkCount++;
-        networkTotal += invoiceTotal;
-      } else if (
-        creditName &&
-        method &&
-        (method.replace(/\s/g, '').toLowerCase().includes('آجل') || method.replace(/\s/g, '').toLowerCase().includes('اجل'))
-      ) {
-        creditCount++;
-        creditTotal += invoiceTotal;
+      // التحقق من وجود الدفع المتعدد
+      if (method === 'متعدد' && inv.multiplePayment) {
+        const multiplePayment = inv.multiplePayment;
+        let hasAnyPayment = false;
+        
+        // النقدي من الصناديق
+        if (multiplePayment.cash && parseFloat(multiplePayment.cash.amount || '0') > 0) {
+          cashTotal += parseFloat(multiplePayment.cash.amount || '0');
+          hasAnyPayment = true;
+        }
+        
+        // التحويلات البنكية
+        if (multiplePayment.bank && parseFloat(multiplePayment.bank.amount || '0') > 0) {
+          transferTotal += parseFloat(multiplePayment.bank.amount || '0');
+          hasAnyPayment = true;
+        }
+        
+        // الشبكة من البنوك
+        if (multiplePayment.card && parseFloat(multiplePayment.card.amount || '0') > 0) {
+          networkTotal += parseFloat(multiplePayment.card.amount || '0');
+          hasAnyPayment = true;
+        }
+        
+        // عد الفاتورة بناءً على نوع الدفع السائد
+        if (hasAnyPayment) {
+          const cashAmount = parseFloat(multiplePayment.cash?.amount || '0');
+          const networkAmount = parseFloat(multiplePayment.card?.amount || '0');
+          const transferAmount = parseFloat(multiplePayment.bank?.amount || '0');
+          
+          // تصنيف الفاتورة حسب المبلغ الأكبر
+          if (cashAmount >= networkAmount && cashAmount >= transferAmount && cashAmount > 0) {
+            cashCount++;
+          } else if (networkAmount >= transferAmount && networkAmount > 0) {
+            networkCount++;
+          }
+          // لا نعد التحويلات في عدد الفواتير لأنها تعتبر معاملات بنكية
+        }
+      } else {
+        // طرق الدفع المفردة
+        if (cashName && method && method.replace(/\s/g, '').toLowerCase().includes('نقد')) {
+          cashCount++;
+          cashTotal += invoiceTotal;
+        } else if (networkName && method && method.replace(/\s/g, '').toLowerCase().includes('شبك')) {
+          networkCount++;
+          networkTotal += invoiceTotal;
+        } else if (
+          creditName &&
+          method &&
+          (method.replace(/\s/g, '').toLowerCase().includes('آجل') || method.replace(/\s/g, '').toLowerCase().includes('اجل'))
+        ) {
+          creditCount++;
+          creditTotal += invoiceTotal; // إضافة المبلغ للمبيعات الآجلة
+        } else if (transferName && method && method.replace(/\s/g, '').toLowerCase().includes('تحويل')) {
+          transferTotal += invoiceTotal;
+        }
       }
-      totalCount++;
-      totalSales += invoiceTotal;
     });
 
     salesReturns.forEach(ret => {
@@ -235,21 +337,53 @@ const DailySales: React.FC = () => {
       else if (typeof ret.amount === 'number') retTotal = ret.amount;
       else if (typeof ret.total === 'number') retTotal = ret.total;
       
-      if (cashName && method && /^نقد/.test(method.replace(/\s/g, '').toLowerCase())) returnCash += retTotal;
-      else if (networkName && method && method.replace(/\s/g, '').toLowerCase().includes('شبك')) returnNetwork += retTotal;
-      else if (creditName && method && (method.replace(/\s/g, '').toLowerCase().includes('آجل') || method.replace(/\s/g, '').toLowerCase().includes('اجل'))) creditTotal -= retTotal;
-      totalReturns += retTotal;
+      // التحقق من وجود الدفع المتعدد في المرتجعات
+      if (method === 'متعدد' && ret.multiplePayment) {
+        const multiplePayment = ret.multiplePayment;
+        
+        // مرتجعات نقدية من الصناديق
+        if (multiplePayment.cash && parseFloat(multiplePayment.cash.amount || '0') > 0) {
+          returnCash += parseFloat(multiplePayment.cash.amount || '0');
+        }
+        
+        // مرتجعات تحويلات بنكية
+        if (multiplePayment.bank && parseFloat(multiplePayment.bank.amount || '0') > 0) {
+          returnTransfer += parseFloat(multiplePayment.bank.amount || '0');
+        }
+        
+        // مرتجعات شبكة من البنوك
+        if (multiplePayment.card && parseFloat(multiplePayment.card.amount || '0') > 0) {
+          returnNetwork += parseFloat(multiplePayment.card.amount || '0');
+        }
+      } else {
+        // طرق الدفع المفردة للمرتجعات
+        if (cashName && method && /^نقد/.test(method.replace(/\s/g, '').toLowerCase())) {
+          returnCash += retTotal;
+        } else if (networkName && method && method.replace(/\s/g, '').toLowerCase().includes('شبك')) {
+          returnNetwork += retTotal;
+        } else if (
+          creditName &&
+          method &&
+          (method.replace(/\s/g, '').toLowerCase().includes('آجل') || method.replace(/\s/g, '').toLowerCase().includes('اجل'))
+        ) {
+          returnCredit += retTotal; // إضافة مرتجعات آجلة
+        } else if (transferName && method && method.replace(/\s/g, '').toLowerCase().includes('تحويل')) {
+          returnTransfer += retTotal;
+        }
+      }
     });
 
     netCash = cashTotal - returnCash;
     netNetwork = networkTotal - returnNetwork;
-    netTotal = totalSales - totalReturns;
+    netCredit = creditTotal - returnCredit;
+    netTransfer = transferTotal - returnTransfer;
 
-    return [
-      [cashCount, creditCount, totalCount, returnCount, totalCount + returnCount],
-      [cashTotal, networkTotal, creditTotal, totalSales, returnCash],
-      [returnNetwork, totalReturns, netCash, netNetwork, netTotal]
-    ];
+    return {
+      counts: [cashCount, networkCount, creditCount, returnCount],
+      sales: [cashTotal, networkTotal, creditTotal, transferTotal],
+      returns: [returnCash, returnNetwork, returnCredit, returnTransfer],
+      net: [netCash, netNetwork, netCredit, netTransfer]
+    };
   }, [salesInvoices, salesReturns, paymentMethods]);
 
   const handlePrint = () => {
@@ -480,7 +614,7 @@ const DailySales: React.FC = () => {
               <thead>
                 <tr>
                   ${gridLabels[0].map((_, colIdx) => `
-                    <th>${String.fromCharCode(1632 + colIdx)}</th>
+                    <th>${String.fromCharCode(1632 + colIdx + 1)}</th>
                   `).join('')}
                 </tr>
               </thead>
@@ -489,10 +623,14 @@ const DailySales: React.FC = () => {
                   <tr ${rowIdx === gridLabels.length - 1 ? 'class="total-row"' : ''}>
                     ${row.map((label, colIdx) => `
                       <td>
-                        <div class="value-cell">${typeof gridValues[rowIdx]?.[colIdx] === 'number' ? 
-                          gridValues[rowIdx][colIdx].toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 
-                          gridValues[rowIdx][colIdx]}</div>
+                        <div class="value-cell">\${(() => {
+                          const valueKey = ${rowIdx} === 0 ? 'sales' : ${rowIdx} === 1 ? 'returns' : 'net';
+                          const value = gridValues[valueKey][${colIdx}];
+                          return typeof value === 'number' ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value;
+                        })()}</div>
                         <div class="label-cell">${label}</div>
+                        ${rowIdx === 0 ? `<div class="label-cell" style="font-size: 10px; color: #999;">عدد الفواتير: \${gridValues.counts[${colIdx}] || 0}</div>` : ''}
+                        ${rowIdx === 1 && colIdx === 3 ? `<div class="label-cell" style="font-size: 10px; color: #999;">عدد المرتجعات: \${gridValues.counts[3] || 0}</div>` : ''}
                       </td>
                     `).join('')}
                   </tr>
@@ -503,15 +641,21 @@ const DailySales: React.FC = () => {
             <div style="display: flex; justify-content: space-around; margin: 20px 0;">
               <div style="background: #e3f2fd; padding: 10px 20px; border-radius: 5px; text-align: center;">
                 <div style="font-size: 11px; color: #555;">إجمالي المبيعات</div>
-                <div style="font-weight: bold; font-size: 16px;">${gridValues[1]?.[3]?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'} ريال سعودي</div>
+                <div style="font-weight: bold; font-size: 16px;">\${(() => {
+                  const total = gridValues.sales.reduce((a, b) => a + b, 0);
+                  return total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                })()} ريال سعودي</div>
               </div>
               <div style="background: #e8f5e9; padding: 10px 20px; border-radius: 5px; text-align: center;">
-                <div style="font-size: 11px; color: #555;">عدد المعاملات</div>
-                <div style="font-weight: bold; font-size: 16px;">${gridValues[0]?.[4] || 0}</div>
+                <div style="font-size: 11px; color: #555;">عدد المرتجعات</div>
+                <div style="font-weight: bold; font-size: 16px;">\${gridValues.counts[3] || 0}</div>
               </div>
               <div style="background: #fff3e0; padding: 10px 20px; border-radius: 5px; text-align: center;">
-                <div style="font-size: 11px; color: #555;">الصافي</div>
-                <div style="font-weight: bold; font-size: 16px;">${gridValues[2]?.[4]?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'} ريال سعودي</div>
+                <div style="font-size: 11px; color: #555;">الصافي النهائي</div>
+                <div style="font-weight: bold; font-size: 16px;">\${(() => {
+                  const total = gridValues.net.reduce((a, b) => a + b, 0);
+                  return total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                })()} ريال سعودي</div>
               </div>
             </div>
             
@@ -590,7 +734,7 @@ const DailySales: React.FC = () => {
 
         <div className="bg-white rounded-lg shadow p-4 md:p-6 w-full max-w-full">
           {/* Filters Row - Responsive Grid */}
-          <Form layout="vertical" className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 mb-6 items-end">
+          <Form layout="vertical" className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-3 mb-6 items-end">
             <Form.Item label="من تاريخ" className="mb-0">
               <DatePicker 
                 className="w-full"
@@ -642,13 +786,25 @@ const DailySales: React.FC = () => {
               />
             </Form.Item>
             
+            <Form.Item label="طريقة الدفع" className="mb-0">
+              <Select
+                className="w-full"
+                value={paymentMethodFilter}
+                onChange={v => setPaymentMethodFilter(v)}
+                options={[
+                  { value: '', label: 'جميع طرق الدفع' },
+                  ...paymentMethods.map(method => ({ value: method, label: method }))
+                ]}
+              />
+            </Form.Item>
+            
             <div className="col-span-1 sm:col-span-2 md:col-span-3 lg:col-span-2 flex flex-col sm:flex-row items-center justify-center gap-2 mt-2 sm:mt-0">
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full">
                 <Button 
                   type="primary"
                   className="w-full h-9 text-lg  bg-blue-600 rounded-xl shadow-md"
                   loading={loading}
-                  onClick={() => fetchData({ dateFrom, dateTo, branchId, timeFrom, timeTo })}
+                  onClick={() => fetchData({ dateFrom, dateTo, branchId, timeFrom, timeTo, paymentMethodFilter })}
                 >
                   بحث
                 </Button>
@@ -672,13 +828,14 @@ const DailySales: React.FC = () => {
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.2, duration: 0.5 }}
-            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 border rounded-lg bg-gray-50 p-2"
+            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 border rounded-lg bg-gray-50 p-2"
           >
             {gridLabels.map((row, rowIdx) =>
               row.map((label, colIdx) => {
-                const showVisaIcon =
-                  label === "عدد الفواتير الآجلة" || label === "إجمالي المبيعات الآجلة";
-                const value = gridValues[rowIdx]?.[colIdx] ?? 0;
+                const showVisaIcon = label === "مبيعات التحويلات";
+                const value = gridValues[rowIdx === 0 ? 'sales' : rowIdx === 1 ? 'returns' : 'net'][colIdx];
+                const count = gridValues.counts[colIdx];
+                
                 return (
                   <motion.div
                     key={label}
@@ -690,6 +847,18 @@ const DailySales: React.FC = () => {
                       {showVisaIcon && <CreditCardOutlined className="text-black text-xl" />}
                     </span>
                     <span className="text-sm md:text-base text-gray-700 font-bold text-center">{label}</span>
+                    {/* عرض العدد تحت المبلغ للمبيعات فقط */}
+                    {rowIdx === 0 && (
+                      <span className="text-xs text-gray-500 mt-1">
+                        عدد الفواتير: {count || 0}
+                      </span>
+                    )}
+                    {/* عرض عدد المرتجعات في التحويلات */}
+                    {rowIdx === 1 && colIdx === 3 && (
+                      <span className="text-xs text-gray-500 mt-1">
+                        عدد المرتجعات: {gridValues.counts[3] || 0}
+                      </span>
+                    )}
                   </motion.div>
                 );
               })

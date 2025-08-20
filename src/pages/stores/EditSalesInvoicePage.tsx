@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { SearchOutlined, SaveOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons';
+import { SearchOutlined, SaveOutlined, PlusOutlined, UserOutlined, EditOutlined } from '@ant-design/icons';
 import { FileText } from 'lucide-react';
 import { useAuth } from '@/contexts/useAuth';
-import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space, Card, Divider } from 'antd';
 import Breadcrumb from "../../components/Breadcrumb";
@@ -401,7 +402,16 @@ function calculateDueDate(invoiceDate: string): string {
   return dayjs(invoiceDate).add(12, 'day').format('YYYY-MM-DD');
 }
 
-const SalesPage: React.FC = () => {
+const EditSalesInvoice: React.FC = () => {
+  // معاملات URL للتعديل
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const invoiceNumberParam = searchParams.get('invoice');
+  const [isEditMode, setIsEditMode] = useState(false); // تبدأ بـ false
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+
+  console.log('EditSalesInvoice تم تحميلها - invoiceNumberParam:', invoiceNumberParam, 'isEditMode:', isEditMode);
+
   // حالة الرسائل
   const [notifications, setNotifications] = useState<Array<{
     id: string;
@@ -1041,6 +1051,11 @@ interface CompanyData {
     dueDate: '' // سيتم حسابه لاحقاً
   });
 
+  // مراقبة تغيير حالة invoiceData
+  useEffect(() => {
+    console.log('invoiceData تم تحديثها:', invoiceData);
+  }, [invoiceData]);
+
   // توليد رقم فاتورة جديد عند كل إعادة تعيين أو تغيير الفرع
   // دالة توليد رقم قيد تلقائي
   function generateEntryNumber() {
@@ -1096,6 +1111,12 @@ interface CompanyData {
   const [loading, setLoading] = useState<boolean>(false);
   const [item, setItem] = useState<InvoiceItem & { warehouseId?: string }>(initialItem);
   const [items, setItems] = useState<InvoiceItem[]>([]);
+
+  // مراقبة تغيير حالة الأصناف
+  useEffect(() => {
+    console.log('items تم تحديثها:', items);
+  }, [items]);
+
   const [totals, setTotals] = useState<Totals>({
     afterDiscount: 0,
     afterTax: 0,
@@ -1365,13 +1386,6 @@ interface SavedInvoice {
                 grandParentName = grandParentItem?.name || '';
               }
             }
-            // حساب التكلفة بناءً على سعر الشراء مضروباً في الكمية
-            // إذا لم تكن التكلفة محفوظة، احسبها من سعر الشراء
-            let itemCost = Number(item.cost) || 0;
-            if (itemCost === 0 && foundItem && foundItem.purchasePrice) {
-              itemCost = Number(foundItem.purchasePrice) * Number(item.quantity);
-            }
-            
             invoicesData.push({
               key: doc.id + '-' + item.itemNumber,
               invoiceNumber: data.invoiceNumber || 'N/A',
@@ -1390,8 +1404,8 @@ interface SavedInvoice {
               taxValue: Number(item.taxValue) || 0,
               taxPercent: Number(item.taxPercent) || 0,
               net: (Number(item.total) - Number(item.discountValue) + Number(item.taxValue)) || 0,
-              cost: itemCost,
-              profit: (Number(item.total) - Number(item.discountValue) - itemCost) || 0,
+              cost: Number(item.cost) || 0,
+              profit: (Number(item.total) - Number(item.discountValue) - Number(item.cost)) || 0,
               warehouse: data.warehouse || '',
               customer: data.customerName || '',
               customerPhone: data.customerNumber || '',
@@ -1553,9 +1567,8 @@ interface SavedInvoice {
     
     const { discountValue, taxValue, total } = calculateItemValues(item);
     const mainCategory = selected?.type || '';
-    // حساب التكلفة بناءً على سعر الشراء مضروباً في الكمية
-    const purchasePrice = selected && 'purchasePrice' in selected && typeof selected.purchasePrice !== 'undefined' ? Number(selected.purchasePrice) : 0;
-    const cost = purchasePrice * Number(item.quantity);
+    // إذا كان يوجد cost في بيانات الصنف
+    const cost = selected && 'cost' in selected && typeof selected.cost !== 'undefined' ? Number(selected.cost) : 0;
 
     const newItem: InvoiceItem & { warehouseId?: string; mainCategory?: string; cost?: number } = {
       ...item,
@@ -1681,12 +1694,62 @@ interface SavedInvoice {
       invoice.multiplePayment = invoiceData.multiplePayment;
     }
     try {
-      // حفظ الفاتورة في Firestore مباشرة
-      const { addDoc, collection } = await import('firebase/firestore');
-      await addDoc(collection(db, 'sales_invoices'), invoice);
-      customMessage.success('تم حفظ الفاتورة بنجاح!');
+      if (isEditMode && editingInvoiceId) {
+        // تحديث الفاتورة الموجودة
+        const { updateDoc, doc } = await import('firebase/firestore');
+        await updateDoc(doc(db, 'sales_invoices', editingInvoiceId), {
+          ...invoice,
+          updatedAt: new Date().toISOString()
+        });
+        customMessage.success('تم تحديث الفاتورة بنجاح!');
+        
+        // العودة إلى صفحة التقارير بعد التحديث
+        setTimeout(() => {
+          navigate('/reports/invoice');
+        }, 1500);
+        
+      } else {
+        // إنشاء فاتورة جديدة
+        const { addDoc, collection } = await import('firebase/firestore');
+        await addDoc(collection(db, 'sales_invoices'), invoice);
+        customMessage.success('تم حفظ الفاتورة بنجاح!');
+        
+        // إعادة تعيين النموذج للفاتورة الجديدة
+        setItems([]);
+        setTotals({ afterDiscount: 0, afterTax: 0, total: 0, tax: 0 });
+        setMultiplePaymentMode(false);
+        // توليد رقم فاتورة جديد بعد الحفظ
+        if (branchCode) {
+          generateAndSetInvoiceNumber(branchCode);
+        } else {
+          const newDate = getTodayString();
+          setInvoiceData(prev => ({
+            ...prev,
+            invoiceNumber: '',
+            entryNumber: generateEntryNumber(),
+            date: newDate,
+            paymentMethod: '',
+            cashBox: '',
+            multiplePayment: {},
+            branch: '',
+            warehouse: '',
+            customerNumber: '',
+            customerName: '',
+            delegate: '',
+            priceRule: '',
+            commercialRecord: '',
+            taxFile: '',
+            dueDate: calculateDueDate(newDate) // إضافة تاريخ الاستحقاق عند الإعادة تعيين
+          }));
+        }
+        // تحديث سجل الفواتير
+        await fetchInvoices();
+        // حفظ بيانات الفاتورة الأخيرة للمودال
+        setLastSavedInvoice(invoice as SavedInvoice);
+        setShowPrintModal(true);
+      }
       
-      // تحديث الأرصدة بعد الحفظ
+      // تحديث الأرصدة بعد الحفظ/التحديث
       if (warehouseMode === 'single' && invoiceData.warehouse) {
         await fetchItemStocks(invoiceData.warehouse);
       } else if (warehouseMode === 'multiple') {
@@ -1698,40 +1761,6 @@ interface SavedInvoice {
           }
         }
       }
-      
-      // إعادة تعيين النموذج
-      setItems([]);
-      setTotals({ afterDiscount: 0, afterTax: 0, total: 0, tax: 0 });
-      setMultiplePaymentMode(false);
-      // توليد رقم فاتورة جديد بعد الحفظ
-      if (branchCode) {
-        generateAndSetInvoiceNumber(branchCode);
-      } else {
-        const newDate = getTodayString();
-        setInvoiceData(prev => ({
-          ...prev,
-          invoiceNumber: '',
-          entryNumber: generateEntryNumber(),
-          date: newDate,
-          paymentMethod: '',
-          cashBox: '',
-          multiplePayment: {},
-          branch: '',
-          warehouse: '',
-          customerNumber: '',
-          customerName: '',
-          delegate: '',
-          priceRule: '',
-          commercialRecord: '',
-          taxFile: '',
-          dueDate: calculateDueDate(newDate) // إضافة تاريخ الاستحقاق عند الإعادة تعيين
-        }));
-      }
-      // تحديث سجل الفواتير
-      await fetchInvoices();
-      // حفظ بيانات الفاتورة الأخيرة للمودال
-      setLastSavedInvoice(invoice as SavedInvoice);
-      setShowPrintModal(true);
     } catch (err) {
       console.error('Error saving invoice:', err);
       message.error(err.message || 'حدث خطأ أثناء الحفظ');
@@ -2239,14 +2268,124 @@ interface SavedInvoice {
       setFetchingItems(false);
     }
   }, [setFetchingItems, customMessage, fetchBasicData]);
+  
+  // دالة تحميل الفاتورة للتعديل
+  const loadInvoiceForEdit = useCallback(async (invoiceNumber: string) => {
+    console.log('بدء تحميل الفاتورة:', invoiceNumber);
+    setFetchingItems(true);
+    try {
+      // البحث عن الفاتورة في مجموعة sales_invoices
+      const salesQuery = query(
+        collection(db, 'sales_invoices'),
+        where('invoiceNumber', '==', invoiceNumber)
+      );
+      console.log('تنفيذ الاستعلام...');
+      const salesSnapshot = await getDocs(salesQuery);
+      console.log('عدد النتائج:', salesSnapshot.docs.length);
+      
+      if (!salesSnapshot.empty) {
+        const invoiceDoc = salesSnapshot.docs[0];
+        const invoiceData = invoiceDoc.data();
+        console.log('بيانات الفاتورة المحملة:', invoiceData);
+        console.log('جميع مفاتيح البيانات:', Object.keys(invoiceData));
+        setEditingInvoiceId(invoiceDoc.id);
+        
+        // تحميل بيانات الفاتورة
+        const newInvoiceData = {
+          invoiceNumber: invoiceData.invoiceNumber || '',
+          entryNumber: invoiceData.entryNumber || '',
+          date: invoiceData.date || dayjs().format('YYYY-MM-DD'),
+          dueDate: invoiceData.dueDate || '',
+          paymentMethod: invoiceData.paymentMethod || '',
+          cashBox: invoiceData.cashBox || '',
+          multiplePayment: invoiceData.multiplePayment || {
+            enabled: false,
+            payments: []
+          },
+          branch: invoiceData.branch || '',
+          warehouse: invoiceData.warehouse || '',
+          customerNumber: invoiceData.customerPhone || invoiceData.customerNumber || invoiceData.phone || invoiceData.mobile || '',
+          customerName: invoiceData.customer || invoiceData.customerName || '',
+          delegate: invoiceData.delegate || invoiceData.seller || '',
+          priceRule: invoiceData.priceRule || 'بيع',
+          commercialRecord: invoiceData.commercialRecord || invoiceData.commercialReg || '',
+          taxFile: invoiceData.taxFile || invoiceData.taxFileNumber || ''
+        };
+        console.log('بيانات الفاتورة المعدلة:', newInvoiceData);
+        setInvoiceData(newInvoiceData);
+        
+        // تحميل الأصناف
+        console.log('تحميل الأصناف...', invoiceData.items);
+        if (invoiceData.items && Array.isArray(invoiceData.items)) {
+          const loadedItems = invoiceData.items.map((item: {
+            itemNumber?: string;
+            itemName?: string;
+            quantity?: number | string;
+            unit?: string;
+            price?: number | string;
+            discountPercent?: number | string;
+            discountValue?: number;
+            taxPercent?: number | string;
+            taxValue?: number;
+            total?: number;
+          }, index: number) => ({
+            itemNumber: item.itemNumber || '',
+            itemName: item.itemName || '',
+            quantity: String(item.quantity || '1'),
+            unit: item.unit || 'قطعة',
+            price: String(item.price || '0'),
+            discountPercent: String(item.discountPercent || '0'),
+            discountValue: Number(item.discountValue || 0),
+            taxPercent: String(item.taxPercent || '0'),
+            taxValue: Number(item.taxValue || 0),
+            total: Number(item.total || 0),
+            isNewItem: false
+          }));
+          console.log('الأصناف المحملة:', loadedItems);
+          setItems(loadedItems);
+        } else {
+          console.log('لا توجد أصناف في الفاتورة');
+        }
+        
+        // تحديث العنوان ليشير إلى وضع التعديل
+        setIsEditMode(true);
+        customMessage.success(`تم تحميل الفاتورة رقم ${invoiceNumber} للتعديل`);
+        
+      } else {
+        customMessage.error(`لم يتم العثور على الفاتورة رقم ${invoiceNumber}`);
+        navigate('/reports/invoice');
+      }
+      
+    } catch (error) {
+      console.error('خطأ في تحميل الفاتورة:', error);
+      customMessage.error('حدث خطأ أثناء تحميل الفاتورة');
+      navigate('/reports/invoice');
+    } finally {
+      setFetchingItems(false);
+    }
+  }, [customMessage, navigate, setFetchingItems, setItems, setInvoiceData, setEditingInvoiceId, setIsEditMode]);
+  
   useEffect(() => {
     fetchLists();
   }, [fetchLists]);
+  
+  // تحميل الفاتورة للتعديل عند وجود معامل في URL
+  useEffect(() => {
+    console.log('useEffect للتحميل - invoiceNumberParam:', invoiceNumberParam, 'isEditMode:', isEditMode);
+    if (invoiceNumberParam) {
+      console.log('شرط التحميل محقق، بدء التحميل...');
+      setIsEditMode(true);
+      loadInvoiceForEdit(invoiceNumberParam);
+    } else {
+      console.log('شرط التحميل غير محقق');
+    }
+  }, [invoiceNumberParam]);
 
   // تحديد المندوب الافتراضي بناءً على المستخدم الحالي
   useEffect(() => {
-    console.log('useEffect للمندوب الافتراضي - المندوبين:', delegates.length, 'المستخدم UID:', user?.uid, 'المندوب الحالي:', invoiceData.delegate);
-    if (delegates.length > 0 && user?.uid && !invoiceData.delegate) {
+    console.log('useEffect للمندوب الافتراضي - المندوبين:', delegates.length, 'المستخدم UID:', user?.uid, 'المندوب الحالي:', invoiceData.delegate, 'isEditMode:', isEditMode);
+    // لا تعيد تعيين المندوب في وضع التعديل
+    if (delegates.length > 0 && user?.uid && !invoiceData.delegate && !isEditMode) {
       // البحث عن المندوب المطابق للمستخدم الحالي
       const currentUserDelegate = delegates.find(delegate => delegate.uid === user.uid);
       if (currentUserDelegate) {
@@ -2269,7 +2408,7 @@ interface SavedInvoice {
         }
       }
     }
-  }, [delegates, user?.uid, invoiceData.delegate]);
+  }, [delegates, user?.uid, invoiceData.delegate, isEditMode]);
 
   // دالة للحصول على اسم المندوب من ID
   const getDelegateName = (delegateId: string) => {
@@ -3154,19 +3293,27 @@ const handlePrint = () => {
 
       <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
         <div className="flex items-center">
-          <FileText className="h-8 w-8 text-blue-600 ml-3" />
-          <h1 className="text-2xl font-bold text-gray-800">فاتورة مبيعات</h1>
+          {isEditMode ? (
+            <EditOutlined className="h-8 w-8 text-orange-600 ml-3" />
+          ) : (
+            <FileText className="h-8 w-8 text-blue-600 ml-3" />
+          )}
+          <h1 className="text-2xl font-bold text-gray-800">
+            {isEditMode ? `تعديل فاتورة مبيعات رقم ${invoiceData.invoiceNumber}` : 'فاتورة مبيعات جديدة'}
+          </h1>
         </div>
-        <p className="text-gray-600 mt-2">إدارة فاتورة المبيعات</p>
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
+        <p className="text-gray-600 mt-2">
+          {isEditMode ? 'تعديل بيانات فاتورة المبيعات' : 'إنشاء فاتورة مبيعات جديدة'}
+        </p>
+        <div className={`absolute bottom-0 left-0 w-full h-1 ${isEditMode ? 'bg-gradient-to-r from-orange-400 to-red-500' : 'bg-gradient-to-r from-blue-400 to-purple-500'}`}></div>
       </div>
 
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-                      { label: "إدارة المبيعات", to: "/management/sales" },
-
-          { label: "فاتورة مبيعات" }
+          { label: "إدارة المبيعات", to: "/management/sales" },
+          { label: "تقارير الفواتير", to: "/reports/invoice" },
+          { label: isEditMode ? `تعديل فاتورة ${invoiceData.invoiceNumber}` : "فاتورة مبيعات جديدة" }
         ]}
       />
       <Spin spinning={fetchingItems}>
@@ -3302,6 +3449,7 @@ const handlePrint = () => {
                   placeholder="رقم الفاتورة"
                   disabled
                 />
+   
               </Form.Item>
             </Col>
             <Col xs={24} sm={12} md={6}>
@@ -3420,7 +3568,8 @@ const handlePrint = () => {
                   onChange={async (value) => {
                     try {
                       setBranchCode('');
-                      const invoiceNumber = await generateInvoiceNumberAsync(value, branches);
+                      // لا تولد رقم فاتورة جديد في وضع التعديل
+                      const invoiceNumber = isEditMode ? invoiceData.invoiceNumber : await generateInvoiceNumberAsync(value, branches);
                       
                       // البحث عن المخزن المرتبط بالفرع المحدد من المخازن المفلترة
                       const filteredWarehouses = filterWarehousesForSales(warehouses, value);
@@ -3428,7 +3577,7 @@ const handlePrint = () => {
                       const selectedWarehouse = linkedWarehouse ? linkedWarehouse.id : '';
                       
                       // رسالة تشخيصية للمطور
-                      console.log('الفرع المحدد:', value);
+                      console.log('الفرع المحدد:', value, 'isEditMode:', isEditMode);
                       console.log('المخازن المفلترة:', filteredWarehouses.map(w => ({ id: w.id, name: w.nameAr || w.name, branch: w.branch })));
                       console.log('المخزن المرتبط:', linkedWarehouse);
                       console.log('معرف المخزن المحدد:', selectedWarehouse);
@@ -4568,6 +4717,7 @@ const handlePrint = () => {
             />
           </div>
 
+
           {/* Totals */}
           <Row gutter={16} justify="end" className="mb-4 ">
             <Col xs={24} sm={12} md={6}>
@@ -5383,11 +5533,23 @@ const handlePrint = () => {
 
           {/* Save Button */}
           <Row justify="center" gutter={12}>
+            {isEditMode && (
+              <Col>
+                <Button 
+                  type="default" 
+                  size="large" 
+                  onClick={() => navigate('/reports/invoice')}
+                  style={{ width: 150, backgroundColor: '#6b7280', borderColor: '#6b7280', color: '#fff' }}
+                >
+                  إلغاء
+                </Button>
+              </Col>
+            )}
             <Col>
               <Button 
                 type="primary" 
                 size="large" 
-                icon={<SaveOutlined />} 
+                icon={isEditMode ? <EditOutlined /> : <SaveOutlined />} 
                 onClick={async () => {
                   if (Number(totalsDisplay.net) <= 0) {
                     if (typeof message !== 'undefined' && message.error) {
@@ -5455,7 +5617,7 @@ const handlePrint = () => {
                 loading={loading}
                 disabled={items.length === 0}
               >
-                حفظ الفاتورة 
+                {isEditMode ? 'تحديث الفاتورة' : 'حفظ الفاتورة'}
               </Button>
             </Col>
             <Col>
@@ -6064,4 +6226,4 @@ const handlePrint = () => {
     </div>);
 };
 
-export default SalesPage;
+export default EditSalesInvoice;

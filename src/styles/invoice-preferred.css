@@ -1,0 +1,59 @@
+/* Custom styles for invoice-preferred.tsx */
+.custom-table .ant-table-thead > tr > th {
+  background: linear-gradient(135deg, #f0fdfa 0%, #ecfeff 100%);
+  border-bottom: 2px solid #059669;
+  font-weight: 600;
+  color: #047857;
+}
+
+.custom-table .ant-table-tbody > tr:hover > td {
+  background-color: rgba(16, 185, 129, 0.05) !important;
+}
+
+.even-row {
+  background-color: #ffffff;
+}
+
+.odd-row {
+  background-color: #f9fafb;
+}
+
+.custom-select .ant-select-selector {
+  border-color: #d1d5db;
+  border-radius: 6px;
+}
+
+.custom-select .ant-select-selector:hover {
+  border-color: #059669;
+}
+
+.custom-select .ant-select-focused .ant-select-selector {
+  border-color: #059669;
+  box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.1);
+}
+
+.rtl-modal .ant-modal-header {
+  text-align: right;
+  direction: rtl;
+}
+
+.rtl-modal .ant-modal-body {
+  direction: rtl;
+  text-align: right;
+}
+
+.rtl-modal .ant-modal-footer {
+  text-align: left;
+  direction: rtl;
+}
+
+@media (max-width: 768px) {
+  .custom-table {
+    font-size: 12px;
+  }
+  
+  .custom-table .ant-table-thead > tr > th,
+  .custom-table .ant-table-tbody > tr > td {
+    padding: 8px 4px;
+  }
+}
