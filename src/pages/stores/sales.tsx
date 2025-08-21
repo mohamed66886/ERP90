@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspens
 import { SearchOutlined, SaveOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons';
 import { FileText } from 'lucide-react';
 import { useAuth } from '@/contexts/useAuth';
-import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, orderBy } from 'firebase/firestore';
 import dayjs from 'dayjs';
 import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space, Card, Divider } from 'antd';
 import Breadcrumb from "../../components/Breadcrumb";
@@ -67,17 +67,24 @@ interface CompanyData {
   taxRate?: string;
 }
 
-// تعريف نوع العنصر
+// تعريف نوع العنصر - متطابق مع صفحة الأصناف
 interface InventoryItem {
-  id: string;
+  id: string; // معرف Firestore
+  numericId?: number; // الرقم المتسلسل 
   name: string;
+  type?: 'رئيسي' | 'مستوى أول' | 'مستوى ثاني';
+  parentId?: number; // معرف المستوى الأول (الصنف الأب)
   itemCode?: string;
   salePrice?: number;
+  purchasePrice?: number;
   discount?: number;
   isVatIncluded?: boolean;
-  type?: string;
   tempCodes?: boolean;
   allowNegative?: boolean;
+  minOrder?: number;
+  supplier?: string;
+  unit?: string;
+  createdAt?: string;
 }
 
 interface InvoiceItem {
@@ -176,7 +183,12 @@ const useSalesData = () => {
       const inventoryData = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as InventoryItem[];
       const filteredItems = inventoryData.filter(item => item.type === 'مستوى ثاني' && item.name?.trim());
       
+      console.log('جميع الأصناف المحملة:', inventoryData.length);
+      console.log('الأصناف من المستوى الثاني:', filteredItems.length);
+      
       setItemNames(filteredItems);
+      
+      // ملاحظة: allItems سيتم تحديثه بشكل منفصل في الكود بعد تعريفه
 
       if (!companySnapshot.empty) {
         const companyDataDoc = companySnapshot.docs[0].data();
@@ -556,38 +568,101 @@ const SalesPage: React.FC = () => {
 
   // دالة إضافة صنف جديد
   const handleAddNewItem = async () => {
-    if (!addItemForm.name.trim() || !addItemForm.salePrice.trim() || !addItemForm.unit.trim()) return;
+    // التحقق من الحقول المطلوبة
+    if (!addItemForm.parentId) {
+      message.error('يرجى اختيار المستوى الأول');
+      return;
+    }
+    
+    // التحقق من وجود المستوى الأول في قاعدة البيانات
+    console.log('فحص المستوى الأول:');
+    console.log('addItemForm.parentId:', addItemForm.parentId, 'نوع البيانات:', typeof addItemForm.parentId);
+    console.log('أصناف المستوى الأول المتاحة:', allItems.filter(i => i.type === 'مستوى أول').map(i => ({
+      id: i.id,
+      numericId: i.numericId,
+      name: i.name,
+      type: i.type,
+      idType: typeof i.id
+    })));
+    
+    const parentItem = allItems.find(item => 
+      item.id === addItemForm.parentId && item.type === 'مستوى أول'
+    );
+    console.log('نتيجة البحث عن المستوى الأول:', parentItem);
+    
+    if (!parentItem) {
+      message.error('المستوى الأول المختار غير موجود. يرجى إعادة اختيار مستوى أول صحيح.');
+      return;
+    }
+    
+    if (!addItemForm.name.trim()) {
+      message.error('يرجى إدخال اسم الصنف');
+      return;
+    }
+    if (!addItemForm.itemCode.trim()) {
+      message.error('يرجى إدخال كود الصنف');
+      return;
+    }
+    if (!addItemForm.purchasePrice.trim() || Number(addItemForm.purchasePrice) <= 0) {
+      message.error('يرجى إدخال سعر الشراء صحيح');
+      return;
+    }
+    if (!addItemForm.salePrice.trim() || Number(addItemForm.salePrice) <= 0) {
+      message.error('يرجى إدخال سعر البيع صحيح');
+      return;
+    }
+    if (!addItemForm.unit.trim()) {
+      message.error('يرجى اختيار الوحدة');
+      return;
+    }
+    
     setAddItemLoading(true);
+    
+    let newItemData; // تعريف المتغير خارج try/catch
     try {
-      // بناء بيانات الصنف الجديد
-      const newItemData = {
+      // جلب أعلى ID موجود لإنشاء ID جديد - بنفس طريقة صفحة الأصناف
+      const q = query(collection(db, 'inventory_items'), orderBy('id', 'asc'));
+      const itemsSnapshot = await getDocs(q);
+      const existingItems = itemsSnapshot.docs.map(doc => doc.data());
+      const maxId = existingItems.length > 0 ? Math.max(...existingItems.map(item => item.id || 0)) : 0;
+      const newId = maxId + 1;
+
+      // بناء بيانات الصنف الجديد مع نفس بنية صفحة الأصناف تماماً
+      newItemData = {
+        id: newId, // استخدام id وليس numericId مثل صفحة الأصناف
         name: addItemForm.name.trim(),
+        type: 'مستوى ثاني', // نوع الصنف
+        parentId: parentItem.numericId, // استخدام numericId من المستوى الأول المختار
         itemCode: addItemForm.itemCode?.trim() || '',
+        purchasePrice: addItemForm.purchasePrice ? Number(addItemForm.purchasePrice) : 0,
         salePrice: addItemForm.salePrice ? Number(addItemForm.salePrice) : 0,
+        minOrder: addItemForm.minOrder ? Number(addItemForm.minOrder) : 0,
         discount: addItemForm.discount ? Number(addItemForm.discount) : 0,
+        allowNegative: !!addItemForm.allowNegative,
         isVatIncluded: !!addItemForm.isVatIncluded,
         tempCodes: !!addItemForm.tempCodes,
-        type: 'مستوى ثاني',
-        purchasePrice: addItemForm.purchasePrice ? Number(addItemForm.purchasePrice) : 0,
-        minOrder: addItemForm.minOrder ? Number(addItemForm.minOrder) : 0,
-        allowNegative: !!addItemForm.allowNegative,
-        supplier: addItemForm.supplier || '',
-        unit: addItemForm.unit || '',
-        createdAt: new Date().toISOString()
+        supplier: addItemForm.supplier || ''
       };
 
-      // إضافة الصنف إلى قاعدة البيانات
+      console.log('بيانات الصنف الجديد قبل الحفظ:', newItemData);
+      console.log('المستوى الأول المختار (parentId):', addItemForm.parentId);
+      console.log('المستوى الأول الموجود:', parentItem?.name, 'ID:', parentItem?.numericId);
+
+      // إضافة الصنف إلى قاعدة البيانات بنفس طريقة صفحة الأصناف
       const docRef = await addDoc(collection(db, 'inventory_items'), newItemData);
+      
+      console.log('تمت إضافة الصنف الجديد بنجاح');
+      console.log('معرف الصنف الجديد:', docRef.id);
       
       // بناء بيانات الصنف مع المعرف الحقيقي
       const newItem: InventoryItem = {
-        id: docRef.id,
-        ...newItemData
+        ...newItemData,
+        id: docRef.id // استخدام معرف Firestore كـ string
       };
 
-      // تحديث القوائم المحلية فوراً
-      // setItemNames((prev: InventoryItem[]) => [...prev, newItem]); // Now handled by hook
-      setAllItems((prev: InventoryItem[]) => [...prev, newItem]);
+      // تحديث القوائم المحلية فوراً بعد إضافة الصنف
+      // setAllItems سيتم تحديثه عن طريق fetchBasicData
+      // استخدام fetchBasicData لتحديث جميع القوائم من قاعدة البيانات
       await fetchBasicData(); // Refresh data from hook
       
       // إغلاق المودال وإعادة تعيين النموذج
@@ -605,7 +680,7 @@ const SalesPage: React.FC = () => {
         supplier: '',
         unit: '',
         type: '',
-        parentId: ''
+        parentId: undefined
       });
       
       // تحديد الصنف الجديد في القائمة المنسدلة
@@ -623,7 +698,8 @@ const SalesPage: React.FC = () => {
       
     } catch (e) {
       console.error('خطأ في إضافة الصنف:', e);
-      message.error('حدث خطأ أثناء إضافة الصنف');
+      console.error('بيانات الصنف التي فشلت:', newItemData);
+      message.error('حدث خطأ أثناء إضافة الصنف: ' + (e instanceof Error ? e.message : 'خطأ غير معروف'));
     } finally {
       setAddItemLoading(false);
     }
@@ -2226,8 +2302,8 @@ interface SavedInvoice {
         };
       }).filter(item => item.name);
       
-      // حفظ جميع الأصناف للاستخدام في النماذج
-      setAllItems(allItemsData);
+      // لا نحتاج لحفظ allItems هنا - يتم ذلك في useEffect منفصل
+      // setAllItems(allItemsData);
       
       // فلترة أصناف المستوى الثاني للعرض في قائمة المبيعات (مع الموقوفة مؤقتاً للإشارة)
       const secondLevelItems = allItemsData.filter(item => item.type === 'مستوى ثاني');
@@ -2270,6 +2346,44 @@ interface SavedInvoice {
       }
     }
   }, [delegates, user?.uid, invoiceData.delegate]);
+
+  // تحديث allItems عندما يتم جلب البيانات من قاعدة البيانات
+  useEffect(() => {
+    const updateAllItems = async () => {
+      try {
+        const q = query(collection(db, 'inventory_items'), orderBy('id', 'asc'));
+        const inventorySnapshot = await getDocs(q);
+        const inventoryData = inventorySnapshot.docs.map(doc => {
+          const data = doc.data();
+          const item = { 
+            ...data, 
+            id: doc.id, // Firestore document ID (string)
+            numericId: data.id, // رقم الصنف الفعلي (number)
+            docId: doc.id // لتوافق مع صفحة الأصناف
+          };
+          console.log('تحميل صنف:', {
+            name: item.name,
+            type: item.type,
+            id: item.id,
+            numericId: item.numericId,
+            parentId: item.parentId,
+            dataId: data.id
+          });
+          return item;
+        }) as unknown as InventoryItem[];
+        setAllItems(inventoryData);
+        console.log('تم تحديث allItems:', inventoryData.length, 'صنف');
+        console.log('أصناف المستوى الأول:', inventoryData.filter(i => i.type === 'مستوى أول').length);
+      } catch (error) {
+        console.error('خطأ في تحديث allItems:', error);
+      }
+    };
+
+    // تشغيل فقط عند تحميل الصفحة أول مرة
+    if (allItems.length === 0) {
+      updateAllItems();
+    }
+  }, [allItems.length]); // تعديل للتخلص من التحذير
 
   // دالة للحصول على اسم المندوب من ID
   const getDelegateName = (delegateId: string) => {
@@ -2935,7 +3049,7 @@ const handlePrint = () => {
     supplier: '',
     unit: '',
     type: '', // مهم لظهور اختيار المستوى الأول
-    parentId: '' // مهم لربط المستوى الأول
+    parentId: undefined as string | undefined // سيكون document ID (string)
   });
 
   const handleAddItem = async () => {
@@ -4113,14 +4227,25 @@ const handlePrint = () => {
           rules={[{ required: true, message: 'يرجى اختيار المستوى الأول' }]}
         >
           <Select
-            value={addItemForm.parentId || ''}
-            onChange={v => setAddItemForm(f => ({ ...f, parentId: v }))}
+            value={addItemForm.parentId || undefined}
+            onChange={v => {
+              console.log('تم اختيار المستوى الأول:', v, 'نوع البيانات:', typeof v);
+              setAddItemForm(f => ({ ...f, parentId: v }));
+            }}
             placeholder="اختر المستوى الأول"
             style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
           >
-            {allItems.filter(i => i.type === 'مستوى أول').map(i => (
-              <Select.Option key={i.id || i.name} value={i.id}>{i.name}</Select.Option>
-            ))}
+            {allItems.filter(i => i.type === 'مستوى أول').map(i => {
+              console.log('عرض خيار المستوى الأول:', {
+                name: i.name,
+                numericId: i.numericId,
+                id: i.id,
+                type: i.type
+              });
+              return (
+                <Select.Option key={i.id || i.name} value={i.id}>{i.name}</Select.Option>
+              );
+            })}
           </Select>
         </Form.Item>
       )}
@@ -4160,7 +4285,10 @@ const handlePrint = () => {
       <Form.Item 
         label={<span style={{ color: '#ff4d4f' }}>سعر الشراء *</span>} 
         required
-        rules={[{ required: true, message: 'يرجى إدخال سعر الشراء' }]}
+        rules={[
+          { required: true, message: 'يرجى إدخال سعر الشراء' },
+          { pattern: /^[0-9]+\.?[0-9]*$/, message: 'يجب أن يكون سعر الشراء رقم موجب' }
+        ]}
       >
         <Input
           value={addItemForm.purchasePrice || ''}
@@ -4168,6 +4296,7 @@ const handlePrint = () => {
           placeholder="سعر الشراء"
           type="number"
           min={0}
+          step="0.01"
           style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
         />
       </Form.Item>
@@ -4176,7 +4305,10 @@ const handlePrint = () => {
       <Form.Item 
         label={<span style={{ color: '#ff4d4f' }}>سعر البيع *</span>} 
         required
-        rules={[{ required: true, message: 'يرجى إدخال سعر البيع' }]}
+        rules={[
+          { required: true, message: 'يرجى إدخال سعر البيع' },
+          { pattern: /^[0-9]+\.?[0-9]*$/, message: 'يجب أن يكون سعر البيع رقم موجب' }
+        ]}
       >
         <Input
           value={addItemForm.salePrice || ''}
@@ -4184,6 +4316,7 @@ const handlePrint = () => {
           placeholder="سعر البيع"
           type="number"
           min={0}
+          step="0.01"
           style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
         />
       </Form.Item>
@@ -4203,7 +4336,7 @@ const handlePrint = () => {
       </Form.Item>
     </Col>
     <Col span={8}>
-      <Form.Item label="نسبة الخصم">
+      <Form.Item label="نسبة الخصم (%)">
         <Input
           value={addItemForm.discount || ''}
           onChange={e => setAddItemForm(f => ({ ...f, discount: e.target.value }))}
@@ -4211,6 +4344,7 @@ const handlePrint = () => {
           type="number"
           min={0}
           max={100}
+          step="0.01"
           style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
         />
       </Form.Item>
@@ -4220,8 +4354,8 @@ const handlePrint = () => {
     </Col>
   </Row>
     <Form.Item>
-      <div style={{ display: 'flex', gap: 16 }}>
-        <label style={{ fontWeight: 500, marginBottom: 0, cursor: 'pointer' }}>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <label style={{ fontWeight: 500, marginBottom: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
           <input
             type="checkbox"
             checked={!!addItemForm.allowNegative}
@@ -4230,16 +4364,19 @@ const handlePrint = () => {
           />
           السماح بالسالب
         </label>
-        <label style={{ fontWeight: 500, marginBottom: 0, cursor: 'pointer' }}>
+        <label style={{ fontWeight: 500, marginBottom: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
           <input
             type="checkbox"
             checked={!!addItemForm.isVatIncluded}
             onChange={e => setAddItemForm(f => ({ ...f, isVatIncluded: e.target.checked }))}
             style={{ marginLeft: 6 }}
           />
-          شامل الضريبة
+          شامل الضريبة ({taxRate}%)
+          <span style={{ fontSize: '12px', color: '#666', marginRight: '4px' }}>
+            (السعر يتضمن الضريبة)
+          </span>
         </label>
-        <label style={{ fontWeight: 500, marginBottom: 0, cursor: 'pointer' }}>
+        <label style={{ fontWeight: 500, marginBottom: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
           <input
             type="checkbox"
             checked={!!addItemForm.tempCodes}

@@ -349,10 +349,10 @@ const InvoicePreferred: React.FC = () => {
           const quantity = Number(item.returnedQty) || 0;
           const total = price * quantity;
           const discountPercent = Number(item.discountPercent) || 0;
-          const discountValue = total * discountPercent / 100;
+          const discountValue = -(total * discountPercent / 100); // تطبيق الإشارة السالبة للمرتجعات
           const taxPercent = Number(item.taxPercent) || 0;
-          const taxValue = (total - discountValue) * taxPercent / 100;
-          const net = total - discountValue + taxValue;
+          const taxValue = -((total - (total * discountPercent / 100)) * taxPercent / 100); // تطبيق الإشارة السالبة للمرتجعات
+          const net = -(total - (total * discountPercent / 100) + ((total - (total * discountPercent / 100)) * taxPercent / 100)); // تطبيق الإشارة السالبة للمرتجعات
           const profit = (price - cost) * quantity * -1;
           // استخراج رقم العميل من جميع الحقول المحتملة مع التأكد من أنها سترينج
           const customerPhone =
@@ -645,7 +645,7 @@ const InvoicePreferred: React.FC = () => {
         row.mainCategory || '',
         sign * (row.quantity || 0),
         'قطعة',
-        Number(row.price || 0).toFixed(2),
+        Number(row.price || 0),
         Number(row.discountPercent || 0).toFixed(2) + '%',
         (sign * (row.discountValue || 0)).toFixed(2),
         (sign * afterDiscount).toFixed(2),
@@ -706,10 +706,10 @@ const InvoicePreferred: React.FC = () => {
         const sign = row.invoiceType === 'مرتجع' ? -1 : 1;
         totalQuantity += sign * (row.quantity || 0);
         const subtotal = (row.price || 0) * (row.quantity || 0);
-        totalDiscount += sign * (row.discountValue || 0);
-        totalAfterDiscount += sign * (subtotal - (row.discountValue || 0));
-        totalTax += sign * (row.taxValue || 0);
-        totalNet += sign * (row.net || 0);
+        totalDiscount += (row.discountValue || 0); // القيمة تحتوي على الإشارة الصحيحة بالفعل
+        totalAfterDiscount += sign * (subtotal - Math.abs(row.discountValue || 0));
+        totalTax += (row.taxValue || 0); // القيمة تحتوي على الإشارة الصحيحة بالفعل
+        totalNet += (row.net || 0); // القيمة تحتوي على الإشارة الصحيحة بالفعل
       });
 
       // إضافة صف فارغ قبل الإجماليات
@@ -861,18 +861,16 @@ const InvoicePreferred: React.FC = () => {
     let totalNet = 0;
     let totalAmount = 0;
 
-    tableData.forEach((row) => {
-      const sign = row.invoiceType === 'مرتجع' ? -1 : 1;
-      totalQuantity += sign * (row.quantity || 0);
-      const subtotal = (row.price || 0) * (row.quantity || 0);
-      totalAmount += sign * subtotal;
-      totalDiscount += sign * (row.discountValue || 0);
-      totalAfterDiscount += sign * (subtotal - (row.discountValue || 0));
-      totalTax += sign * (row.taxValue || 0);
-      totalNet += sign * (row.net || 0);
-    });
-
-    const printWindow = window.open('', '', 'width=1400,height=900');
+      tableData.forEach((row) => {
+        const sign = row.invoiceType === 'مرتجع' ? -1 : 1;
+        totalQuantity += sign * (row.quantity || 0);
+        const subtotal = (row.price || 0) * (row.quantity || 0);
+        totalAmount += sign * subtotal;
+        totalDiscount += (row.discountValue || 0); // القيمة تحتوي على الإشارة الصحيحة بالفعل
+        totalAfterDiscount += sign * (subtotal - Math.abs(row.discountValue || 0));
+        totalTax += (row.taxValue || 0); // القيمة تحتوي على الإشارة الصحيحة بالفعل
+        totalNet += (row.net || 0); // القيمة تحتوي على الإشارة الصحيحة بالفعل
+      });    const printWindow = window.open('', '', 'width=1400,height=900');
     printWindow?.document.write(`
        <html>
     <head>
@@ -1148,11 +1146,11 @@ const InvoicePreferred: React.FC = () => {
               '<td>' + (row.mainCategory || '-') + '</td>' +
               '<td>' + (sign * (row.quantity || 0)).toLocaleString() + '</td>' +
               '<td>قطعة</td>' +
-              '<td>' + Number(row.price || 0).toFixed(2) + '</td>' +
-              '<td>' + (sign * (row.discountValue || 0)).toFixed(2) + '</td>' +
+              '<td>' + Number(row.price || 0) + '</td>' +
+              '<td>' + (row.discountValue || 0).toFixed(2) + '</td>' +
               '<td>' + (sign * afterDiscount).toFixed(2) + '</td>' +
-              '<td>' + (sign * (row.taxValue || 0)).toFixed(2) + '</td>' +
-              '<td>' + (sign * (row.net || 0)).toFixed(2) + '</td>' +
+              '<td>' + (row.taxValue || 0).toFixed(2) + '</td>' +
+              '<td>' + (row.net || 0).toFixed(2) + '</td>' +
               '<td>' + (row.customer || '-') + '</td>' +
               '<td>' + (row.customerPhone && row.customerPhone.trim() !== '' ? row.customerPhone : 'غير متوفر') + '</td>' +
               '<td>' + (parseTime(row.createdAt) || (row.date ? new Date(row.date).toLocaleTimeString('ar-SA') : '')) + '</td>' +
@@ -1727,7 +1725,7 @@ const InvoicePreferred: React.FC = () => {
                   dataIndex: 'price',
                   key: 'price',
                   minWidth: 120,
-                  render: (price: number) => `${Number(price || 0).toFixed(2)}`,
+                  render: (price: number) => `${Number(price || 0)}`,
                   sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.price || 0) - (b.price || 0),
                 },
                 {
@@ -1743,8 +1741,7 @@ const InvoicePreferred: React.FC = () => {
                   key: 'discountValue',
                   minWidth: 120,
                   render: (discountValue: number, record: InvoiceItemRow) => {
-                    const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                    return `${(sign * (discountValue || 0)).toFixed(2)}`;
+                    return `${(discountValue || 0).toFixed(2)}`;
                   },
                   sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.discountValue || 0) - (b.discountValue || 0),
                 },
@@ -1765,8 +1762,7 @@ const InvoicePreferred: React.FC = () => {
                   key: 'taxValue',
                   minWidth: 160,
                   render: (tax: number, record: InvoiceItemRow) => {
-                    const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                    return `${(sign * (tax || 0)).toFixed(2)}`;
+                    return `${(tax || 0).toFixed(2)}`;
                   },
                   sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.taxValue || 0) - (b.taxValue || 0),
                 },
@@ -1776,8 +1772,7 @@ const InvoicePreferred: React.FC = () => {
                   key: 'net',
                   minWidth: 140,
                   render: (net: number, record: InvoiceItemRow) => {
-                    const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                    return `${(sign * (net || 0)).toFixed(2)}`;
+                    return `${(net || 0).toFixed(2)}`;
                   },
                   sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.net || 0) - (b.net || 0),
                 },
@@ -1908,10 +1903,10 @@ const InvoicePreferred: React.FC = () => {
                   totalQuantity += sign * (row.quantity || 0);
                   const subtotal = (row.price || 0) * (row.quantity || 0);
                   totalAmount += sign * subtotal;
-                  totalDiscount += sign * (row.discountValue || 0);
-                  totalAfterDiscount += sign * (subtotal - (row.discountValue || 0));
-                  totalTax += sign * (row.taxValue || 0);
-                  totalNet += sign * (row.net || 0);
+                  totalDiscount += (row.discountValue || 0); // القيمة تحتوي على الإشارة الصحيحة بالفعل
+                  totalAfterDiscount += sign * (subtotal - Math.abs(row.discountValue || 0));
+                  totalTax += (row.taxValue || 0); // القيمة تحتوي على الإشارة الصحيحة بالفعل
+                  totalNet += (row.net || 0); // القيمة تحتوي على الإشارة الصحيحة بالفعل
                 });
 
                 return (

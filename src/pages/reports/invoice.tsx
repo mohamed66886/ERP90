@@ -240,7 +240,7 @@ const Invoice: React.FC = () => {
       let filters: any[] = [];
       const params = filtersParams || {};
       if (params.branchId) filters.push(where('branch', '==', params.branchId));
-      if (params.invoiceNumber) filters.push(where('invoiceNumber', '==', params.invoiceNumber));
+      // لا نستخدم where('==') للبحث الجزئي، نجلب كل الفواتير ثم نفلتر
       if (params.dateFrom) filters.push(where('date', '>=', dayjs(params.dateFrom).format('YYYY-MM-DD')));
       if (params.dateTo) filters.push(where('date', '<=', dayjs(params.dateTo).format('YYYY-MM-DD')));
       if (params.warehouseId) filters.push(where('warehouse', '==', params.warehouseId));
@@ -254,6 +254,10 @@ const Invoice: React.FC = () => {
       snapshot.forEach(doc => {
         const data = doc.data();
         const invoiceNumber = data.invoiceNumber || '';
+        // إذا كان هناك رقم فاتورة للبحث، نفلتر هنا بالمطابقة الجزئية
+        if (params.invoiceNumber && !invoiceNumber.toLowerCase().includes(params.invoiceNumber.toLowerCase())) {
+          return;
+        }
         const entryNumber = data.entryNumber || '';
         const date = data.date || '';
         const branch = data.branch || '';
