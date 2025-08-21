@@ -1112,9 +1112,21 @@ interface CompanyData {
   const [item, setItem] = useState<InvoiceItem & { warehouseId?: string }>(initialItem);
   const [items, setItems] = useState<InvoiceItem[]>([]);
 
-  // مراقبة تغيير حالة الأصناف
+  // مراقبة تغيير حالة الأصناف وتحديث الإجماليات تلقائياً
   useEffect(() => {
     console.log('items تم تحديثها:', items);
+    // تحديث الإجماليات عند تغيير الأصناف
+    if (items.length > 0) {
+      updateTotals(items);
+    } else {
+      // إعادة تعيين الإجماليات إلى الصفر عند عدم وجود أصناف
+      setTotals({
+        afterDiscount: 0,
+        afterTax: 0,
+        total: 0,
+        tax: 0
+      });
+    }
   }, [items]);
 
   const [totals, setTotals] = useState<Totals>({
@@ -2343,8 +2355,17 @@ interface SavedInvoice {
           }));
           console.log('الأصناف المحملة:', loadedItems);
           setItems(loadedItems);
+          // تحديث الإجماليات بعد تحميل الأصناف
+          updateTotals(loadedItems);
         } else {
           console.log('لا توجد أصناف في الفاتورة');
+          // إعادة تعيين الإجماليات إلى الصفر عند عدم وجود أصناف
+          setTotals({
+            afterDiscount: 0,
+            afterTax: 0,
+            total: 0,
+            tax: 0
+          });
         }
         
         // تحديث العنوان ليشير إلى وضع التعديل
@@ -4719,29 +4740,91 @@ const handlePrint = () => {
 
 
           {/* Totals */}
-          <Row gutter={16} justify="end" className="mb-4 ">
-            <Col xs={24} sm={12} md={6}>
-              <Card size="small">
-                <div className="flex justify-between">
-                  <span style={{ color: '#2563eb', fontWeight: 600 }}>الإجمالي:</span>
-                  <span className="font-bold" style={{ color: '#2563eb' }}>{totals.total.toFixed(2)}</span>
+          <Row gutter={16} justify="end" style={{ marginBottom: 16 }}>
+            <Col xs={24} sm={12} md={8} lg={6}>
+              <Card 
+                size="small" 
+                title={
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 8,
+                    fontFamily: 'Cairo, sans-serif',
+                    fontSize: '16px',
+                    fontWeight: 700,
+                    color: '#1f2937'
+                  }}>
+                    <div style={{
+                      backgroundColor: '#059669',
+                      borderRadius: '6px',
+                      padding: '6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+
+                    </div>
+                    إجماليات الفاتورة
+                  </div>
+                }
+                style={{
+                  border: '2px solid #e5e7eb',
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+                }}
+              >
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  marginBottom: 8,
+                  padding: '4px 0'
+                }}>
+                  <span style={{ color: '#2563eb', fontWeight: 600, fontSize: '14px', fontFamily: 'Cairo, sans-serif' }}>الإجمالي:</span>
+                  <span style={{ fontWeight: 700, color: '#2563eb', fontSize: '15px', fontFamily: 'Cairo, sans-serif' }}>{totals.total.toFixed(2)} ر.س</span>
                 </div>
-                <div className="flex justify-between">
-                  <span style={{ color: '#dc2626', fontWeight: 600 }}>الخصم:</span>
-                  <span className="font-bold" style={{ color: '#dc2626' }}>{(totals.total - totals.afterDiscount).toFixed(2)}</span>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  marginBottom: 8,
+                  padding: '4px 0'
+                }}>
+                  <span style={{ color: '#dc2626', fontWeight: 600, fontSize: '14px', fontFamily: 'Cairo, sans-serif' }}>الخصم:</span>
+                  <span style={{ fontWeight: 700, color: '#dc2626', fontSize: '15px', fontFamily: 'Cairo, sans-serif' }}>{(totals.total - totals.afterDiscount).toFixed(2)} ر.س</span>
                 </div>
-                <div className="flex justify-between">
-                  <span style={{ color: '#ea580c', fontWeight: 600 }}>الإجمالي بعد الخصم:</span>
-                  <span className="font-bold" style={{ color: '#ea580c' }}>{totals.afterDiscount.toFixed(2)}</span>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  marginBottom: 8,
+                  padding: '4px 0'
+                }}>
+                  <span style={{ color: '#ea580c', fontWeight: 600, fontSize: '14px', fontFamily: 'Cairo, sans-serif' }}>الإجمالي بعد الخصم:</span>
+                  <span style={{ fontWeight: 700, color: '#ea580c', fontSize: '15px', fontFamily: 'Cairo, sans-serif' }}>{totals.afterDiscount.toFixed(2)} ر.س</span>
                 </div>
-                <div className="flex justify-between">
-                  <span style={{ color: '#9333ea', fontWeight: 600 }}>قيمة الضريبة:</span>
-                  <span className="font-bold" style={{ color: '#9333ea' }}>{totals.tax.toFixed(2)}</span>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  marginBottom: 8,
+                  padding: '4px 0'
+                }}>
+                  <span style={{ color: '#9333ea', fontWeight: 600, fontSize: '14px', fontFamily: 'Cairo, sans-serif' }}>قيمة الضريبة:</span>
+                  <span style={{ fontWeight: 700, color: '#9333ea', fontSize: '15px', fontFamily: 'Cairo, sans-serif' }}>{totals.tax.toFixed(2)} ر.س</span>
                 </div>
-                <Divider className="my-2" />
-                <div className="flex justify-between">
-                  <span style={{ color: '#059669', fontWeight: 700 }}>الإجمالي النهائي:</span>
-                  <span className="font-bold text-lg" style={{ color: '#059669' }}>{totals.afterTax.toFixed(2)}</span>
+                <Divider style={{ margin: '12px 0' }} />
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  backgroundColor: '#f0fdf4',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid #bbf7d0'
+                }}>
+                  <span style={{ color: '#059669', fontWeight: 700, fontSize: '16px', fontFamily: 'Cairo, sans-serif' }}>الإجمالي النهائي:</span>
+                  <span style={{ fontWeight: 700, fontSize: '18px', color: '#059669', fontFamily: 'Cairo, sans-serif' }}>{totals.afterTax.toFixed(2)} ر.س</span>
                 </div>
               </Card>
             </Col>

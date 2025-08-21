@@ -358,12 +358,12 @@ const Invoice: React.FC = () => {
           const price = Number(item.price) || 0;
           const cost = Number(item.cost) || 0;
           const quantity = Number(item.returnedQty) || 0;
-          const total = price * quantity;
+          const total = Number(item.total) || price * quantity;
+          const discountValue = Number(item.discountValue) || 0;
           const discountPercent = Number(item.discountPercent) || 0;
-          const discountValue = total * discountPercent / 100;
+          const taxValue = Number(item.taxValue) || 0;
           const taxPercent = Number(item.taxPercent) || 0;
-          const taxValue = (total - discountValue) * taxPercent / 100;
-          const net = total - discountValue + taxValue;
+          const net = Number(item.net) || (total - discountValue + taxValue);
           const profit = (price - cost) * quantity * -1;
           // استخراج رقم العميل من جميع الحقول المحتملة مع التأكد من أنها سترينج
           const customerPhone =
@@ -963,9 +963,81 @@ const handlePrintTable = () => {
           font-size: 9px;
           color: #000;
         }
+        /* Hide totals footer on all pages except the last one */
+        .print-last-page-only {
+          display: none;
+        }
+        /* جدول الإجماليات المنفصل */
+        .totals-container {
+          margin-top: 20px;
+          display: flex;
+          justify-content: flex-start;
+          direction: rtl;
+        }
+        .totals-table {
+          width: 300px;
+          border-collapse: collapse;
+          font-size: 12px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          border-radius: 8px;
+          overflow: hidden;
+          border: 2px solid #000;
+        }
+        .totals-table th {
+          background-color: #000;
+          color: #fff;
+          padding: 10px;
+          text-align: center;
+          font-weight: bold;
+          font-size: 14px;
+        }
+        .totals-table .total-label {
+          background-color: #f8f9fa;
+          padding: 8px 12px;
+          text-align: right;
+          font-weight: 600;
+          border-bottom: 1px solid #ddd;
+          width: 60%;
+        }
+        .totals-table .total-value {
+          background-color: #fff;
+          padding: 8px 12px;
+          text-align: left;
+          font-weight: 500;
+          border-bottom: 1px solid #ddd;
+          width: 40%;
+        }
+        .totals-table .final-total .total-label {
+          background-color: #e9ecef;
+          font-weight: bold;
+          color: #000;
+        }
+        .totals-table .final-total .total-value {
+          background-color: #f1f3f4;
+          font-weight: bold;
+          color: #000;
+          font-size: 13px;
+        }
         @media print {
           body { margin: 0; padding: 10px; }
           .no-print { display: none; }
+          /* Show totals footer only on the last page */
+          .print-last-page-only {
+            display: block;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          /* Force the totals to appear at the bottom of the last page */
+          table {
+            page-break-inside: auto;
+          }
+          tbody {
+            page-break-inside: auto;
+          }
+          .print-last-page-only {
+            page-break-before: avoid;
+            break-before: avoid;
+          }
         }
       </style>
     </head>
@@ -1074,18 +1146,40 @@ const handlePrintTable = () => {
               '</tr>';
           }).join('')}
         </tbody>
-        <tfoot>
-          <tr class="total-row">
-            <td colspan="6">الإجماليات</td>
-            <td>${totalAmount.toLocaleString()} ر.س</td>
-            <td>${totalDiscount.toLocaleString()} ر.س</td>
-            <td>${totalAfterDiscount.toLocaleString()} ر.س</td>
-            <td>${totalTax.toLocaleString()} ر.س</td>
-            <td>${totalNet.toLocaleString()} ر.س</td>
-            <td colspan="5"></td>
-          </tr>
-        </tfoot>
       </table>
+      
+      <!-- جدول الإجماليات المنفصل -->
+      <div class="print-last-page-only totals-container">
+        <table class="totals-table">
+          <thead>
+            <tr>
+              <th colspan="2">الإجماليات النهائية</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="total-label">إجمالي المبلغ:</td>
+              <td class="total-value">${totalAmount.toLocaleString()} ر.س</td>
+            </tr>
+            <tr>
+              <td class="total-label">إجمالي الخصم:</td>
+              <td class="total-value">${totalDiscount.toLocaleString()} ر.س</td>
+            </tr>
+            <tr>
+              <td class="total-label">المبلغ بعد الخصم:</td>
+              <td class="total-value">${totalAfterDiscount.toLocaleString()} ر.س</td>
+            </tr>
+            <tr>
+              <td class="total-label">إجمالي الضرائب:</td>
+              <td class="total-value">${totalTax.toLocaleString()} ر.س</td>
+            </tr>
+            <tr class="final-total">
+              <td class="total-label">الإجمالي النهائي:</td>
+              <td class="total-value">${totalNet.toLocaleString()} ر.س</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       
       <div class="print-date">
         تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')} - ${new Date().toLocaleTimeString('en-GB')}
@@ -2023,13 +2117,16 @@ const handlePrintTable = () => {
           </div>
         </div>
 
-        <Table
+        <Table  
+        style={{ direction: 'rtl' 
+
+        }}
           columns={[
             {
               title: 'رقم الفاتورة',
               dataIndex: 'invoiceNumber',
               key: 'invoiceNumber',
-              width: 120,
+              minWidth: 130,
               sorter: (a: any, b: any) => a.invoiceNumber.localeCompare(b.invoiceNumber),
               render: (text: string, record: any) => (
                 record.invoiceType === 'مرتجع' && record.id ? (
@@ -2055,7 +2152,7 @@ const handlePrintTable = () => {
               title: 'رقم القيد',
               dataIndex: 'entryNumber',
               key: 'entryNumber',
-              width: 120,
+              minWidth: 120,
               render: (text: string, record: any) => record.entryNumber || record.id || '-',
               sorter: (a: any, b: any) => (a.entryNumber || a.id || '').localeCompare(b.entryNumber || b.id || ''),
             },
@@ -2063,7 +2160,7 @@ const handlePrintTable = () => {
               title: 'التاريخ',
               dataIndex: 'date',
               key: 'date',
-              width: 120,
+              minWidth: 120,
               sorter: (a: any, b: any) => dayjs(a.date).valueOf() - dayjs(b.date).valueOf(),
               render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '',
             },
@@ -2071,28 +2168,28 @@ const handlePrintTable = () => {
               title: 'رقم العميل',
               dataIndex: 'customerPhone',
               key: 'customerPhone',
-              width: 120,
+              minWidth: 120,
               render: (phone: string) => phone && phone.trim() !== '' ? phone : 'غير متوفر',
             },
             {
               title: 'اسم العميل',
               dataIndex: 'customer',
               key: 'customer',
-              width: 180,
+              minWidth: 190,
               sorter: (a: any, b: any) => (a.customer || '').localeCompare(b.customer || ''),
             },
             {
               title: 'الفرع',
               dataIndex: 'branch',
               key: 'branch',
-              width: 120,
+              minWidth: 120,
               sorter: (a: any, b: any) => getBranchName(a.branch).localeCompare(getBranchName(b.branch)),
               render: (branch: string) => getBranchName(branch),
             },
             {
               title: 'الإجمالي',
               key: 'amount',
-              width: 120,
+              minWidth: 120,
               render: (record: any) => {
                 // حساب الإجمالي للفاتورة قبل الضريبة والخصم
                 const invoiceRows = getFilteredRows().filter(
@@ -2119,19 +2216,35 @@ const handlePrintTable = () => {
             },
             {
               title: 'الخصم',
-              dataIndex: 'discountValue',
               key: 'discountValue',
-              width: 100,
-              render: (discount: number, record: any) => {
+              minWidth: 100,
+              render: (record: any) => {
+                // حساب إجمالي الخصم للفاتورة
+                const invoiceRows = getFilteredRows().filter(
+                  (row: any) => row.invoiceNumber === record.invoiceNumber && row.invoiceType === record.invoiceType
+                );
+                const totalDiscount = invoiceRows.reduce((sum: number, row: any) => {
+                  return sum + (Number(row.discountValue) || 0);
+                }, 0);
                 const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                return `${(sign * (discount || 0)).toLocaleString()} ر.س`;
+                return `${(sign * totalDiscount).toLocaleString()} ر.س`;
               },
-              sorter: (a: any, b: any) => (a.discountValue || 0) - (b.discountValue || 0),
+              sorter: (a: any, b: any) => {
+                const getTotalDiscount = (record: any) => {
+                  const invoiceRows = getFilteredRows().filter(
+                    (row: any) => row.invoiceNumber === record.invoiceNumber && row.invoiceType === record.invoiceType
+                  );
+                  return invoiceRows.reduce((sum: number, row: any) => {
+                    return sum + (Number(row.discountValue) || 0);
+                  }, 0);
+                };
+                return getTotalDiscount(a) - getTotalDiscount(b);
+              },
             },
             {
               title: 'الإجمالي بعد الخصم',
               key: 'totalAfterDiscount',
-              width: 170,
+              minWidth: 170,
               render: (record: any) => {
                 const invoiceRows = getFilteredRows().filter(
                   (row: any) => row.invoiceNumber === record.invoiceNumber && row.invoiceType === record.invoiceType
@@ -2166,7 +2279,7 @@ const handlePrintTable = () => {
               title: 'الضرائب',
               dataIndex: 'taxValue',
               key: 'taxValue',
-              width: 100,
+              minWidth: 100,
               render: (tax: number, record: any) => {
                 const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
                 return `${(sign * (tax || 0)).toLocaleString()} ر.س`;
@@ -2177,7 +2290,7 @@ const handlePrintTable = () => {
               title: 'الإجمالي النهائي',
               dataIndex: 'net',
               key: 'net',
-              width: 140,
+              minWidth: 140,
               render: (net: number, record: any) => {
                 const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
                 return `${(sign * (net || 0)).toLocaleString()} ر.س`;
@@ -2188,7 +2301,7 @@ const handlePrintTable = () => {
               title: 'نوع الفاتورة',
               dataIndex: 'invoiceType',
               key: 'invoiceType',
-              width: 120,
+              minWidth: 120,
               sorter: (a: any, b: any) => a.invoiceType.localeCompare(b.invoiceType),
               render: (type: string) => (
                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -2202,7 +2315,7 @@ const handlePrintTable = () => {
               title: 'المخزن',
               dataIndex: 'warehouse',
               key: 'warehouse',
-              width: 120,
+              minWidth: 120,
               sorter: (a: any, b: any) => getWarehouseName(a.warehouse).localeCompare(getWarehouseName(b.warehouse)),
               render: (warehouse: string) => getWarehouseName(warehouse),
             },
@@ -2210,21 +2323,21 @@ const handlePrintTable = () => {
               title: 'طريقة الدفع',
               dataIndex: 'paymentMethod',
               key: 'paymentMethod',
-              width: 120,
+              minWidth: 120,
               render: (method: string) => method || '-',
             },
             {
               title: 'البائع',
               dataIndex: 'seller',
               key: 'seller',
-              width: 120,
+              minWidth: 120,
               sorter: (a: any, b: any) => getSalesRepName(a.seller).localeCompare(getSalesRepName(b.seller)),
               render: (seller: string) => getSalesRepName(seller),
             },
             {
               title: 'الوقت',
               key: 'time',
-              width: 100,
+              minWidth: 100,
               render: (record: any) => {
                 const parseTime = (val: any) => {
                   if (!val) return '';
@@ -2240,38 +2353,7 @@ const handlePrintTable = () => {
                 return parseTime(record.createdAt) || (record.date ? dayjs(record.date).format('hh:mm:ss A') : '');
               },
             },
-            {
-              title: 'الإجراءات',
-              key: 'actions',
-              width: 120,
-              fixed: 'right' as const,
-              render: (record: any) => (
-                <div className="flex gap-2">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
-                    onClick={() => {
-                      setSelectedInvoice(record);
-                      setShowInvoiceModal(true);
-                    }}
-                    style={{ padding: 0, minWidth: 32, color: '#2563eb' }}
-                    aria-label="عرض"
-                  />
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>}
-                    onClick={() => {
-                      setSelectedInvoice(record);
-                      handlePrint();
-                    }}
-                    style={{ padding: 0, minWidth: 32, color: '#16a34a' }}
-                    aria-label="طباعة"
-                  />
-                </div>
-              ),
-            },
+
           ]}
           dataSource={(() => {
             // تجميع البيانات بنفس طريقة الكود السابق

@@ -20,6 +20,7 @@ interface InvoiceItem {
   total: number;
   returnedQty?: string;
   previousReturns?: number;
+  cost?: number; // إضافة التكلفة
 }
 
 interface InvoiceData {
@@ -65,31 +66,28 @@ const initialTotals: InvoiceTotals = {
   taxValue: 0,
   net: 0
 };
-// دالة توليد رقم مرجع جديد بناءً على رقم الفرع والتاريخ والتسلسل اليومي
+// دالة توليد رقم مرجع جديد بناءً على رقم الفرع والسنة والتسلسل السنوي
 async function generateReferenceNumberAsync(branchId: string, branches: any[] = []): Promise<string> {
   try {
     const date = new Date();
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    const dateStr = `${y}${m}${d}`;
+    const year = date.getFullYear();
     
     // البحث عن رقم الفرع الحقيقي من بيانات الفروع
     const branchObj = branches.find(b => b.id === branchId);
     const branchNumber = branchObj?.code || branchObj?.number || branchObj?.branchNumber || '1';
     
-    // جلب عدد المرتجعات لنفس الفرع في نفس اليوم
+    // جلب عدد المرتجعات لنفس الفرع في نفس السنة
     const { getDocs, collection, query, where } = await import('firebase/firestore');
     const { db } = await import('../../lib/firebase');
     
-    // استخدام النطاق الزمني بشكل أدق
-    const startOfDay = `${y}-${m}-${d}T00:00:00.000Z`;
-    const endOfDay = `${y}-${m}-${d}T23:59:59.999Z`;
+    // استخدام النطاق الزمني للسنة الكاملة
+    const startOfYear = `${year}-01-01T00:00:00.000Z`;
+    const endOfYear = `${year}-12-31T23:59:59.999Z`;
     
     const q = query(
       collection(db, 'sales_returns'),
-      where('createdAt', '>=', startOfDay),
-      where('createdAt', '<=', endOfDay)
+      where('createdAt', '>=', startOfYear),
+      where('createdAt', '<=', endOfYear)
     );
     
     const snapshot = await getDocs(q);
@@ -102,13 +100,13 @@ async function generateReferenceNumberAsync(branchId: string, branches: any[] = 
     
     const count = branchReturns.length + 1;
     
-    return `REF-${branchNumber}-${dateStr}-${count}`;
+    return `REF-${branchNumber}-${year}-${count}`;
   } catch (error) {
     console.error('خطأ في توليد رقم المرجع:', error);
     // في حالة الخطأ، إرجاع رقم مرجع افتراضي
     const date = new Date();
-    const dateStr = date.getFullYear() + String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0');
-    return `REF-1-${dateStr}-1`;
+    const year = date.getFullYear();
+    return `REF-1-${year}-1`;
   }
 }
 
@@ -360,29 +358,66 @@ const SalesReturnPage: React.FC = () => {
               <th>قيمة الضريبة Tax Value</th>
               <th>الإجمالي Total</th>
             </tr>
-            ${items.filter(item => Number(item.returnedQty) > 0).map(item => `
+            ${items.filter(item => Number(item.returnedQty) > 0).map(item => {
+              const returnedQty = Number(item.returnedQty) || 0;
+              const price = Number(item.price) || 0;
+              const discountPercent = Number(item.discountPercent) || 0;
+              const taxPercent = Number(item.taxPercent) || 0;
+              
+              const subtotal = returnedQty * price;
+              const discountValue = (subtotal * discountPercent) / 100;
+              const taxValue = ((subtotal - discountValue) * taxPercent) / 100;
+              const total = subtotal - discountValue + taxValue;
+              
+              return `
               <tr>
                 <td>${item.itemNumber || ''}</td>
                 <td>${item.itemName || ''}</td>
-                <td>${item.returnedQty || 0}</td>
-                <td>${item.discountValue ? item.discountValue.toFixed(2) : '0.00'}</td>
-                <td>${item.taxValue ? item.taxValue.toFixed(2) : '0.00'}</td>
-                <td>${item.total ? item.total.toFixed(2) : '0.00'}</td>
+                <td>${returnedQty}</td>
+                <td>${discountValue.toFixed(2)}</td>
+                <td>${taxValue.toFixed(2)}</td>
+                <td>${total.toFixed(2)}</td>
               </tr>
-            `).join('')}
+            `;}).join('')}
             <tr style="font-weight:bold;background:#f4f8ff;">
               <td colspan="2">إجمالي المرتجع</td>
               <td>
                 ${items.filter(item => Number(item.returnedQty) > 0).reduce((acc, item) => acc + Number(item.returnedQty), 0)}
               </td>
               <td>
-                ${items.filter(item => Number(item.returnedQty) > 0).reduce((acc, item) => acc + (item.discountValue ? Number(item.discountValue) : 0), 0).toFixed(2)}
+                ${items.filter(item => Number(item.returnedQty) > 0).reduce((acc, item) => {
+                  const returnedQty = Number(item.returnedQty) || 0;
+                  const price = Number(item.price) || 0;
+                  const discountPercent = Number(item.discountPercent) || 0;
+                  const subtotal = returnedQty * price;
+                  const discountValue = (subtotal * discountPercent) / 100;
+                  return acc + discountValue;
+                }, 0).toFixed(2)}
               </td>
               <td>
-                ${items.filter(item => Number(item.returnedQty) > 0).reduce((acc, item) => acc + (item.taxValue ? Number(item.taxValue) : 0), 0).toFixed(2)}
+                ${items.filter(item => Number(item.returnedQty) > 0).reduce((acc, item) => {
+                  const returnedQty = Number(item.returnedQty) || 0;
+                  const price = Number(item.price) || 0;
+                  const discountPercent = Number(item.discountPercent) || 0;
+                  const taxPercent = Number(item.taxPercent) || 0;
+                  const subtotal = returnedQty * price;
+                  const discountValue = (subtotal * discountPercent) / 100;
+                  const taxValue = ((subtotal - discountValue) * taxPercent) / 100;
+                  return acc + taxValue;
+                }, 0).toFixed(2)}
               </td>
               <td>
-                ${items.filter(item => Number(item.returnedQty) > 0).reduce((acc, item) => acc + (item.total ? Number(item.total) : 0), 0).toFixed(2)}
+                ${items.filter(item => Number(item.returnedQty) > 0).reduce((acc, item) => {
+                  const returnedQty = Number(item.returnedQty) || 0;
+                  const price = Number(item.price) || 0;
+                  const discountPercent = Number(item.discountPercent) || 0;
+                  const taxPercent = Number(item.taxPercent) || 0;
+                  const subtotal = returnedQty * price;
+                  const discountValue = (subtotal * discountPercent) / 100;
+                  const taxValue = ((subtotal - discountValue) * taxPercent) / 100;
+                  const total = subtotal - discountValue + taxValue;
+                  return acc + total;
+                }, 0).toFixed(2)}
               </td>
             </tr>
           </table>
@@ -491,22 +526,38 @@ const SalesReturnPage: React.FC = () => {
       // حفظ كل صنف مع معرف واسم المخزن
       // فقط الأصناف التي الكمية المرتجعة لها أكبر من صفر
       const itemsWithWarehouse = items
-        .map(item => ({
-          itemNumber: item.itemNumber,
-          itemName: item.itemName,
-          quantity: item.quantity,
-          unit: item.unit,
-          price: item.price,
-          discountPercent: item.discountPercent,
-          discountValue: item.discountValue,
-          taxPercent: item.taxPercent,
-          taxValue: item.taxValue,
-          total: item.total,
-          warehouseId: originalWarehouseId,
-          warehouseName: warehouseName,
-          returnedQty: Number(item.returnedQty) || 0
-        }))
-        .filter(item => item.returnedQty > 0);
+        .map(item => {
+          const returnedQty = Number(item.returnedQty) || 0;
+          if (returnedQty <= 0) return null;
+          
+          const price = Number(item.price) || 0;
+          const discountPercent = Number(item.discountPercent) || 0;
+          const taxPercent = Number(item.taxPercent) || 0;
+          
+          // حساب القيم بناءً على الكمية المرتجعة
+          const subtotal = returnedQty * price;
+          const discountValue = (subtotal * discountPercent) / 100;
+          const taxValue = ((subtotal - discountValue) * taxPercent) / 100;
+          const total = subtotal - discountValue + taxValue;
+          
+          return {
+            itemNumber: item.itemNumber,
+            itemName: item.itemName,
+            quantity: item.quantity,
+            unit: item.unit,
+            price: item.price,
+            discountPercent: item.discountPercent,
+            discountValue: discountValue, // قيمة الخصم المحسوبة للمرتجع
+            taxPercent: item.taxPercent,
+            taxValue: taxValue, // قيمة الضريبة المحسوبة للمرتجع
+            total: total, // الإجمالي المحسوب للمرتجع
+            warehouseId: originalWarehouseId,
+            warehouseName: warehouseName,
+            returnedQty: returnedQty,
+            cost: item.cost || 0
+          };
+        })
+        .filter(item => item !== null);
 
       // إذا لم يوجد أي صنف مرتجع، لا تحفظ المرتجع
       if (itemsWithWarehouse.length === 0) {
@@ -616,6 +667,52 @@ const SalesReturnPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [parent] = useAutoAnimate();
   const [isMobile, setIsMobile] = useState(false);
+
+  // دالة لحساب إجماليات المرتجع فقط
+  const calculateReturnTotals = () => {
+    const returnedItems = items.filter(item => Number(item.returnedQty) > 0);
+    
+    let totalAmount = 0;
+    let totalDiscount = 0;
+    let totalTax = 0;
+    
+    returnedItems.forEach(item => {
+      const returnedQty = Number(item.returnedQty) || 0;
+      const price = Number(item.price) || 0;
+      const discountPercent = Number(item.discountPercent) || 0;
+      const taxPercent = Number(item.taxPercent) || 0;
+      
+      // حساب الإجمالي قبل الخصم
+      const subtotal = returnedQty * price;
+      totalAmount += subtotal;
+      
+      // حساب قيمة الخصم
+      const discountValue = (subtotal * discountPercent) / 100;
+      totalDiscount += discountValue;
+      
+      // حساب قيمة الضريبة على المبلغ بعد الخصم
+      const taxValue = ((subtotal - discountValue) * taxPercent) / 100;
+      totalTax += taxValue;
+    });
+    
+    const net = totalAmount - totalDiscount + totalTax;
+    
+    return {
+      total: totalAmount,
+      discountPercent: totalAmount > 0 ? (totalDiscount / totalAmount) * 100 : 0,
+      discountValue: totalDiscount,
+      taxValue: totalTax,
+      net: net
+    };
+  };
+
+  // تحديث الإجماليات عند تغيير الكميات المرتجعة
+  useEffect(() => {
+    if (items.length > 0) {
+      const returnTotals = calculateReturnTotals();
+      setTotals(returnTotals);
+    }
+  }, [items]);
 
   // Check for mobile view
   useEffect(() => {
@@ -749,7 +846,8 @@ const SalesReturnPage: React.FC = () => {
           taxValue: item.taxValue || 0,
           total: item.total || 0,
           returnedQty: '',
-          previousReturns: item.previousReturns || 0 // جلب المرتجعات السابقة من قاعدة البيانات
+          previousReturns: item.previousReturns || 0, // جلب المرتجعات السابقة من قاعدة البيانات
+          cost: item.cost || 0 // إضافة التكلفة
         }))
       );
       message.success('تم تحميل بيانات الفاتورة بنجاح');
@@ -820,6 +918,29 @@ const SalesReturnPage: React.FC = () => {
           />
         </motion.div>
       )
+    },
+    { 
+      title: 'الخصم المرتجع', 
+      key: 'returnedDiscountValue', 
+      width: 110,
+      render: (_: unknown, r: InvoiceItem) => {
+        const returned = Number(r.returnedQty) || 0;
+        const subtotal = Number(r.price) * returned;
+        const discountValue = subtotal * Number(r.discountPercent) / 100;
+        return discountValue.toFixed(2);
+      }
+    },
+    { 
+      title: 'الضريبة المرتجعة', 
+      key: 'returnedTaxValue', 
+      width: 110,
+      render: (_: unknown, r: InvoiceItem) => {
+        const returned = Number(r.returnedQty) || 0;
+        const subtotal = Number(r.price) * returned;
+        const discountValue = subtotal * Number(r.discountPercent) / 100;
+        const taxValue = (subtotal - discountValue) * Number(r.taxPercent) / 100;
+        return taxValue.toFixed(2);
+      }
     },
     { 
       title: 'الصافي المرتجع', 

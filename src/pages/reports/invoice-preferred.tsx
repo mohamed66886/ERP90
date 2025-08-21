@@ -1,14 +1,20 @@
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Helmet } from "react-helmet";
 import { Link } from 'react-router-dom';
 import { getDocs, query, collection } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
-import { DatePicker, Input, Select } from "antd";
+import { DatePicker, Input, Select, Table, Button, Pagination, Modal, Tag, Card, Spin, Space, message } from "antd";
 import arEG from 'antd/es/date-picker/locale/ar_EG';
+import { SearchOutlined, PrinterOutlined, FileExcelOutlined, EyeOutlined, DownOutlined, UpOutlined, FileTextOutlined, DownloadOutlined } from '@ant-design/icons';
 import { fetchBranches, Branch } from "@/lib/branches";
 import Breadcrumb from "@/components/Breadcrumb";
+import styles from './ReceiptVoucher.module.css';
+
+import { useFinancialYear } from '@/hooks/useFinancialYear';
 import dayjs from 'dayjs';
+
+const { Option } = Select;
 
 
 interface WarehouseOption {
@@ -21,9 +27,20 @@ interface PaymentMethodOption {
   name: string;
 }
 
+interface SalesRepAccount {
+  id: string;
+  name: string;
+  number: string;
+  mobile: string;
+  category?: string;
+  type?: string;
+}
+
 interface InvoiceRecord {
   key: string;
+  id?: string;
   invoiceNumber: string;
+  entryNumber?: string;
   date: string;
   branch: string;
   itemNumber: string;
@@ -56,6 +73,7 @@ interface InvoiceRecord {
 
 
 const InvoicePreferred: React.FC = () => {
+  const [timeFilter, setTimeFilter] = useState<string>("");
   const [showMore, setShowMore] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -66,6 +84,21 @@ const InvoicePreferred: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([]);
   const [seller, setSeller] = useState<string>("");
+  const [salesRepAccounts, setSalesRepAccounts] = useState<{ id: string; name: string; number: string; mobile?: string }[]>([]);
+
+  // ستايل موحد لعناصر الإدخال والدروب داون مثل صفحة أمر البيع
+  const largeControlStyle = {
+    height: 48,
+    fontSize: 18,
+    borderRadius: 8,
+    padding: '8px 16px',
+    boxShadow: '0 1px 6px rgba(0,0,0,0.07)',
+    background: '#fff',
+    border: '1.5px solid #d9d9d9',
+    transition: 'border-color 0.3s',
+  };
+  const labelStyle = { fontSize: 18, fontWeight: 500, marginBottom: 2, display: 'block' };
+  
   useEffect(() => {
     const fetchPaymentMethods = async () => {
       try {
@@ -74,28 +107,55 @@ const InvoicePreferred: React.FC = () => {
         const snap = await getDocs(collection(db, 'paymentMethods'));
         const options = snap.docs.map(doc => ({ id: doc.id, name: doc.data().name || doc.id }));
         setPaymentMethods(options);
+        console.log('Payment methods loaded:', options.length);
       } catch {
         setPaymentMethods([]);
       }
     };
     fetchPaymentMethods();
   }, []);
+  
   useEffect(() => {
     const fetchWarehouses = async () => {
       try {
         const { getDocs, collection } = await import('firebase/firestore');
         const { db } = await import('@/lib/firebase');
         const snap = await getDocs(collection(db, 'warehouses'));
-        const options = snap.docs.map(doc => ({ id: doc.id, name: doc.data().name || doc.id }));
+        const options = snap.docs.map(doc => ({ id: doc.id, name: doc.data().nameAr || doc.data().name || doc.data().nameEn || doc.id }));
         setWarehouses(options);
+        console.log('Warehouses loaded:', options.length, options);
       } catch {
         setWarehouses([]);
       }
     };
     fetchWarehouses();
   }, []);
-  const [dateFrom, setDateFrom] = useState<any>(null);
-  const [dateTo, setDateTo] = useState<any>(null);
+  
+  useEffect(() => {
+    const fetchSalesReps = async () => {
+      try {
+        const { db } = await import('@/lib/firebase');
+        const { getDocs, collection } = await import('firebase/firestore');
+        const snap = await getDocs(collection(db, 'accounts'));
+        const reps = snap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() } as SalesRepAccount))
+          .filter(acc => acc.category === 'مبيعات' || acc.type === 'مبيعات')
+          .map(acc => ({
+            id: acc.id,
+            name: acc.name || acc.id,
+            number: acc.number || acc.id,
+            mobile: acc.mobile || ''
+          }));
+        setSalesRepAccounts(reps);
+        console.log('Sales reps loaded:', reps.length, reps);
+      } catch {
+        setSalesRepAccounts([]);
+      }
+    };
+    fetchSalesReps();
+  }, []);
+  const [dateFrom, setDateFrom] = useState<dayjs.Dayjs | null>(null);
+  const [dateTo, setDateTo] = useState<dayjs.Dayjs | null>(null);
   const [invoiceNumber, setInvoiceNumber] = useState<string>("");
   const [customerName, setCustomerName] = useState<string>("");
   const [customerPhoneFilter, setCustomerPhoneFilter] = useState<string>("");
@@ -114,27 +174,39 @@ const InvoicePreferred: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(30); // عدد الصفوف في كل صفحة
 
-  // Debug: طباعة النتائج المفلترة في الكونسول كلما تغيرت
-  useEffect(() => {
-    console.log('DEBUG - filteredInvoices:', filteredInvoices);
-  }, [filteredInvoices]);
+  // السنة المالية من السياق
+  const { currentFinancialYear } = useFinancialYear();
 
-  // Debug: طباعة الفواتير بعد الجلب
+  // دالة لفلترة التواريخ المسموحة في DatePicker حسب السنة المالية
+  const disabledDate = (current: dayjs.Dayjs) => {
+    if (!currentFinancialYear) return false;
+    
+    const startDate = dayjs(currentFinancialYear.startDate);
+    const endDate = dayjs(currentFinancialYear.endDate);
+    
+    return current.isBefore(startDate, 'day') || current.isAfter(endDate, 'day');
+  };
+
+  // تعيين التواريخ الافتراضية حسب السنة المالية
   useEffect(() => {
-    console.log('DEBUG - invoices:', invoices);
-  }, [invoices]);
+    if (currentFinancialYear) {
+      setDateFrom(dayjs(currentFinancialYear.startDate));
+      setDateTo(dayjs(currentFinancialYear.endDate));
+    }
+  }, [currentFinancialYear]);
   useEffect(() => {
     fetchBranches().then(data => {
       setBranches(data);
       setBranchesLoading(false);
     });
   }, []);
+  
   // تعديل: جعل fetchInvoices تقبل فلاتر كوسائط (للاستخدام عند البحث فقط)
   const fetchInvoices = async (filtersParams?: {
     branchId?: string;
     invoiceNumber?: string;
-    dateFrom?: any;
-    dateTo?: any;
+    dateFrom?: dayjs.Dayjs | null;
+    dateTo?: dayjs.Dayjs | null;
     warehouseId?: string;
     customerName?: string;
     customerPhone?: string;
@@ -178,6 +250,7 @@ const InvoicePreferred: React.FC = () => {
         const seller = data.delegate || data.seller || '';
         const paymentMethod = data.paymentMethod || '';
         const invoiceType = data.type || '';
+        console.log('DEBUG - Processing invoice:', doc.id, 'seller from data:', seller, 'data.delegate:', data.delegate, 'data.seller:', data.seller);
         const items = Array.isArray(data.items) ? data.items : [];
         items.forEach((item: any, idx: number) => {
           const price = Number(item.price) || 0;
@@ -241,6 +314,7 @@ const InvoicePreferred: React.FC = () => {
             itemData: item,
             createdAt: data.createdAt || undefined
           });
+          console.log('DEBUG - Pushed salesRecord with seller:', seller, 'for item:', item.itemName);
         });
       });
       let qReturn = collection(db, 'sales_returns');
@@ -373,15 +447,13 @@ const InvoicePreferred: React.FC = () => {
 
   // جلب كل البيانات عند تحميل الصفحة فقط (بدون فلاتر)
   useEffect(() => {
-    console.log('DEBUG - useEffect (initial load) calling fetchInvoices');
     fetchInvoices();
-    // eslint-disable-next-line
   }, []);
 
   // عند تغيير invoices (بعد الجلب)، اعرض كل البيانات مباشرة في الجدول
   useEffect(() => {
     // لكل فاتورة، إذا كان فيها أصناف (itemData.items)، أنشئ صف لكل صنف
-    let allRows: InvoiceItemRow[] = [];
+    const allRows: InvoiceItemRow[] = [];
     invoices.forEach(inv => {
       if (inv.itemData && Array.isArray(inv.itemData.items)) {
         inv.itemData.items.forEach((item: any) => {
@@ -414,11 +486,10 @@ const InvoicePreferred: React.FC = () => {
     });
     setFilteredInvoices(allRows);
   }, [invoices]);
-  // دالة تعرض البيانات المفلترة للعرض فقط حسب الفلاتر الإضافية
-  const getFilteredRows = () => {
+  // دالة تعرض البيانات المفلترة للعرض فقط حسب الفلاتر الإضافية - محسنة بـ useMemo
+  const filteredRows = useMemo(() => {
     // إذا لم يتم اختيار أي فلتر، أرجع كل البيانات
     if (!invoiceTypeFilter && !paymentMethod && !seller) {
-      console.log('DEBUG - getFilteredRows (no filters):', filteredInvoices);
       return filteredInvoices;
     }
     let filtered = filteredInvoices;
@@ -437,23 +508,25 @@ const InvoicePreferred: React.FC = () => {
     if (seller) {
       filtered = filtered.filter(inv => inv.seller === seller);
     }
-    console.log('DEBUG - getFilteredRows (with filters):', filtered);
     return filtered;
-  };
+  }, [filteredInvoices, invoiceTypeFilter, paymentMethod, seller]);
 
-  // دالة للحصول على البيانات المقسمة على صفحات
-  const getPaginatedRows = () => {
-    const allRows = getFilteredRows();
+  // دالة للحصول على البيانات المقسمة على صفحات - محسنة بـ useMemo
+  const paginatedRows = useMemo(() => {
     const startIndex = (currentPage - 1) * pageSize;
     const endIndex = startIndex + pageSize;
-    return allRows.slice(startIndex, endIndex);
-  };
+    return filteredRows.slice(startIndex, endIndex);
+  }, [filteredRows, currentPage, pageSize]);
 
-  // حساب إجمالي عدد الصفحات
-  const getTotalPages = () => {
-    const allRows = getFilteredRows();
-    return Math.ceil(allRows.length / pageSize);
-  };
+  // حساب إجمالي عدد الصفحات - محسنة بـ useMemo
+  const totalPages = useMemo(() => {
+    return Math.ceil(filteredRows.length / pageSize);
+  }, [filteredRows.length, pageSize]);
+
+  // دالة للتوافق مع الكود القديم
+  const getFilteredRows = () => filteredRows;
+  const getPaginatedRows = () => paginatedRows;
+  const getTotalPages = () => totalPages;
 
   // إعادة تعيين الصفحة الحالية إلى 1 عند تغيير الفلاتر
   useEffect(() => {
@@ -461,7 +534,6 @@ const InvoicePreferred: React.FC = () => {
   }, [invoiceTypeFilter, paymentMethod, seller, filteredInvoices]);
   // عند الضغط على زر البحث: جلب البيانات مع الفلاتر
   const handleSearch = () => {
-    console.log('DEBUG - handleSearch calling fetchInvoices');
     fetchInvoices({
       branchId,
       invoiceNumber,
@@ -472,20 +544,61 @@ const InvoicePreferred: React.FC = () => {
       customerPhone: customerPhoneFilter,
       itemName,
       itemNumber: itemNumberFilter
-    }).then((result) => {
+    }).then(() => {
       // بعد جلب النتائج، إذا كان هناك اسم عميل محدد ونتيجة واحدة فقط، ضع رقم العميل تلقائياً
-      // نستخدم النتائج الجديدة مباشرة
-      if (customerName && Array.isArray(result)) {
-        const filtered = result.filter(inv => inv.customer && inv.customer === customerName);
+      if (customerName && Array.isArray(invoices)) {
+        const filtered = invoices.filter(inv => inv.customer && inv.customer === customerName);
         if (filtered.length === 1 && filtered[0].customerPhone) {
           setCustomerPhoneFilter(filtered[0].customerPhone);
         }
       }
     });
   };
+  
   const getBranchName = (branchId: string) => {
     const branch = branches.find(b => b.id === branchId);
     return branch ? branch.name : branchId;
+  };
+
+  // دالة لجلب اسم المخزن من القائمة
+  const getWarehouseName = (warehouseId: string) => {
+    if (!warehouseId || warehouseId.trim() === '') return 'غير محدد';
+    const warehouse = warehouses.find(w => w.id === warehouseId);
+    const result = warehouse ? warehouse.name : warehouseId;
+    console.log('getWarehouseName:', warehouseId, '->', result, 'warehouses count:', warehouses.length);
+    return result;
+  };
+
+  // دالة لجلب اسم البائع من القائمة
+  const getSalesRepName = (salesRepId: string) => {
+    // إذا كان salesRepId فارغ أو undefined، أرجع قيمة افتراضية
+    if (!salesRepId || salesRepId.trim() === '') return 'غير محدد';
+    
+    // ابحث في قائمة حسابات البائعين أولاً
+    const foundRep = salesRepAccounts.find(rep => 
+      rep.id === salesRepId || 
+      rep.name === salesRepId || 
+      rep.name.toLowerCase().includes(salesRepId.toLowerCase()) ||
+      salesRepId.toLowerCase().includes(rep.name.toLowerCase()) ||
+      rep.number === salesRepId
+    );
+    
+    if (foundRep) {
+      console.log('getSalesRepName found in salesRepAccounts:', salesRepId, '->', foundRep.name);
+      return foundRep.name;
+    }
+    
+    // في حالة عدم العثور عليه في الحسابات، ابحث في البائعين الموجودين في الفواتير
+    const uniqueSellers = Array.from(new Set(invoices.map(inv => inv.seller).filter(s => !!s && s !== '')));
+    const foundSeller = uniqueSellers.find(seller => 
+      seller === salesRepId || 
+      seller.toLowerCase().includes(salesRepId.toLowerCase()) || 
+      salesRepId.toLowerCase().includes(seller.toLowerCase())
+    );
+    
+    const result = foundSeller || salesRepId;
+    console.log('getSalesRepName:', salesRepId, '->', result, 'salesRepAccounts count:', salesRepAccounts.length);
+    return result;
   };
   const handleExport = async () => {
     let ExcelJS = (window as any).ExcelJS;
@@ -502,96 +615,62 @@ const InvoicePreferred: React.FC = () => {
       });
       ExcelJS = (window as any).ExcelJS;
     }
-    // استخراج كل الأصناف (items) من الفواتير المفلترة
-    const allItems = invoices
-      .filter(inv => {
-        // نفس الفلاتر المستخدمة في الجدول
-        if (invoiceTypeFilter) {
-          if (invoiceTypeFilter === 'فاتورة' && inv.isReturn) return false;
-          if (invoiceTypeFilter === 'مرتجع' && !inv.isReturn) return false;
-          if (invoiceTypeFilter !== 'فاتورة' && invoiceTypeFilter !== 'مرتجع' && inv.invoiceType !== invoiceTypeFilter) return false;
-        }
-        if (paymentMethod && inv.paymentMethod !== paymentMethod) return false;
-        if (seller && inv.seller !== seller) return false;
-        return true;
-      })
-      .flatMap(inv => inv.itemData && Array.isArray(inv.itemData.items) ? inv.itemData.items.map((item, idx) => ({
-        ...inv,
-        // استخدم بيانات الصنف
-        itemNumber: item.itemNumber || '',
-        itemName: item.itemName || '',
-        mainCategory: inv.mainCategory || '',
-        quantity: Number(item.quantity) || Number(item.returnedQty) || 0,
-        price: Number(item.price) || 0,
-        discountValue: Number(item.discountValue) || 0,
-        discountPercent: Number(item.discountPercent) || 0,
-        taxValue: Number(item.taxValue) || 0,
-        taxPercent: Number(item.taxPercent) || 0,
-        net: Number(item.net) || 0,
-        unit: item.unit || '',
-        createdAt: item.createdAt || inv.createdAt,
-        isReturn: inv.isReturn,
-        invoiceType: inv.invoiceType,
-        customerPhone: inv.customerPhone,
-        customer: inv.customer,
-        warehouse: item.warehouseId || inv.warehouse,
-        // إجمالي بعد الخصم للصنف
-        totalAfterDiscount: ((Number(item.price) || 0) * (Number(item.quantity) || Number(item.returnedQty) || 0)) - (Number(item.discountValue) || 0)
-      })) : [inv]);
 
-    const exportData = allItems.map(inv => {
-      const sign = inv.invoiceType === 'مرتجع' ? -1 : 1;
-      const parseTime = (val) => {
+    // استخدام نفس البيانات المعروضة في الجدول
+    const tableData = getFilteredRows();
+
+    const exportData = tableData.map(row => {
+      const sign = row.invoiceType === 'مرتجع' ? -1 : 1;
+      const parseTime = (val: unknown) => {
         if (!val) return '';
-        if (typeof val === 'object' && val.seconds) {
-          return dayjs(val.seconds * 1000).format('hh:mm:ss A');
+        if (typeof val === 'object' && val !== null && 'seconds' in val) {
+          return dayjs((val as { seconds: number }).seconds * 1000).format('YYYY-MM-DD HH:mm:ss');
         }
         if (typeof val === 'string') {
           const d = dayjs(val);
-          if (d.isValid()) return d.format('hh:mm:ss A');
+          if (d.isValid()) return d.format('YYYY-MM-DD HH:mm:ss');
         }
         return '';
       };
-      const price = Number(inv.price) || 0;
-      const quantity = Number(inv.quantity) || 0;
-      const discountValue = Number(inv.discountValue) || 0;
-      // إجمالي بعد الخصم للصنف
-      let totalAfterDiscount = typeof inv.totalAfterDiscount !== 'undefined'
-        ? inv.totalAfterDiscount
-        : (price * quantity) - discountValue;
-      if (totalAfterDiscount < 0) totalAfterDiscount = 0;
-      totalAfterDiscount = sign * totalAfterDiscount;
+
+      const subtotal = (row.price || 0) * (row.quantity || 0);
+      const afterDiscount = subtotal - (row.discountValue || 0);
+
       return [
-        // إذا كان مرتجع استخدم رقم المرتجع (referenceNumber) إن وجد
-        (inv.isReturn && inv.itemData && inv.itemData.referenceNumber) ? inv.itemData.referenceNumber : inv.invoiceNumber,
-        dayjs(inv.date).format('YYYY-MM-DD'),
-        inv.invoiceType,
-        inv.itemNumber,
-        inv.itemName,
-        inv.mainCategory || '',
-        inv.quantity,
-        inv.unit || inv.itemData?.unit || '',
-        inv.price,
-        inv.discountPercent + '%',
-        (sign * discountValue).toFixed(2),
-        totalAfterDiscount.toFixed(2),
-        (sign * inv.taxValue).toFixed(2),
-        (sign * inv.net).toFixed(2),
-        inv.customer,
-        (inv.customerPhone && inv.customerPhone.trim() !== '' ? inv.customerPhone : 'غير متوفر'),
-        parseTime(inv.createdAt) || parseTime(inv.itemData?.createdAt) || (inv.date ? dayjs(inv.date).format('hh:mm:ss A') : ''),
-        inv.taxPercent + '%',
-        'ريال سعودي',
-        getWarehouseName(inv.warehouse)
+        row.invoiceNumber || '',
+        row.date ? dayjs(row.date).format('YYYY-MM-DD') : '',
+        row.invoiceType || '',
+        row.itemNumber || '',
+        row.itemName || '',
+        row.mainCategory || '',
+        sign * (row.quantity || 0),
+        'قطعة',
+        Number(row.price || 0).toFixed(2),
+        Number(row.discountPercent || 0).toFixed(2) + '%',
+        (sign * (row.discountValue || 0)).toFixed(2),
+        (sign * afterDiscount).toFixed(2),
+        (sign * (row.taxValue || 0)).toFixed(2),
+        (sign * (row.net || 0)).toFixed(2),
+        row.customer || '',
+        (row.customerPhone && row.customerPhone.trim() !== '' ? row.customerPhone : 'غير متوفر'),
+        parseTime(row.createdAt) || (row.date ? dayjs(row.date).format('YYYY-MM-DD HH:mm:ss') : ''),
+        Number(row.taxPercent || 15).toFixed(2) + '%',
+        'ر.س',
+        getWarehouseName(row.warehouse) || '',
+        getBranchName(row.branch) || '',
+        row.paymentMethod || '-'
       ];
     });
+
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('تقرير الفواتير المفضلة');
+    const sheet = workbook.addWorksheet('تقرير الفواتير التفصيلي');
+    
+    // تحديد الأعمدة بنفس ترتيب الجدول
     sheet.columns = [
       { header: 'رقم الفاتورة', key: 'invoiceNumber', width: 20 },
       { header: 'تاريخ الفاتورة', key: 'date', width: 15 },
       { header: 'نوع الفاتورة', key: 'type', width: 12 },
-      { header: 'كود الصنف', key: 'itemNumber', width: 14 },
+      { header: 'كود الصنف', key: 'itemNumber', width: 20 },
       { header: 'اسم الصنف', key: 'itemName', width: 50 },
       { header: 'الفئة', key: 'mainCategory', width: 15 },
       { header: 'الكمية', key: 'quantity', width: 10 },
@@ -600,16 +679,85 @@ const InvoicePreferred: React.FC = () => {
       { header: 'نسبة الخصم', key: 'discountPercent', width: 12 },
       { header: 'قيمة الخصم', key: 'discountValue', width: 14 },
       { header: 'الإجمالي بعد الخصم', key: 'totalAfterDiscount', width: 18 },
-      { header: 'قيمة الضريبة المضافة', key: 'taxValue', width: 16 },
+      { header: 'قيمة الضريبة', key: 'taxValue', width: 16 },
       { header: 'الصافي', key: 'net', width: 12 },
       { header: 'اسم العميل', key: 'customer', width: 45 },
       { header: 'رقم العميل', key: 'customerPhone', width: 18 },
-      { header: 'وقت الإنشاء', key: 'createdAt', width: 14 },
+      { header: 'وقت الإنشاء', key: 'createdAt', width: 18 },
       { header: 'نسبة الضريبة', key: 'taxPercent', width: 12 },
       { header: 'العملة', key: 'currency', width: 12 },
       { header: 'المخزن', key: 'warehouse', width: 15 },
+      { header: 'الفرع', key: 'branch', width: 15 },
+      { header: 'طريقة الدفع', key: 'paymentMethod', width: 15 }
     ];
+    
     sheet.addRows(exportData);
+
+    // إضافة صف الإجماليات
+    if (exportData.length > 0) {
+      // حساب الإجماليات
+      let totalQuantity = 0;
+      let totalDiscount = 0;
+      let totalAfterDiscount = 0;
+      let totalTax = 0;
+      let totalNet = 0;
+
+      tableData.forEach((row) => {
+        const sign = row.invoiceType === 'مرتجع' ? -1 : 1;
+        totalQuantity += sign * (row.quantity || 0);
+        const subtotal = (row.price || 0) * (row.quantity || 0);
+        totalDiscount += sign * (row.discountValue || 0);
+        totalAfterDiscount += sign * (subtotal - (row.discountValue || 0));
+        totalTax += sign * (row.taxValue || 0);
+        totalNet += sign * (row.net || 0);
+      });
+
+      // إضافة صف فارغ قبل الإجماليات
+      sheet.addRow([]);
+      
+      // إضافة صف الإجماليات
+      const summaryRow = sheet.addRow([
+        'الإجماليات',
+        '',
+        '',
+        '',
+        '',
+        '',
+        totalQuantity.toLocaleString(),
+        '',
+        '',
+        '',
+        totalDiscount.toFixed(2),
+        totalAfterDiscount.toFixed(2),
+        totalTax.toFixed(2),
+        totalNet.toFixed(2),
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        ''
+      ]);
+
+      // تنسيق صف الإجماليات
+      summaryRow.eachCell(cell => {
+        cell.font = { bold: true, color: { argb: 'FF000000' } };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFEB3B' }
+        };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = {
+          top: { style: 'thick', color: { argb: 'FF000000' } },
+          bottom: { style: 'thick', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FFAAAAAA' } },
+          right: { style: 'thin', color: { argb: 'FFAAAAAA' } },
+        };
+      });
+    }
     sheet.getRow(1).eachCell(cell => {
       cell.font = { bold: true, color: { argb: 'FF305496' } };
       cell.fill = {
@@ -654,18 +802,13 @@ const InvoicePreferred: React.FC = () => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `تقرير_الفواتير_المفضلة_${dayjs().format('YYYYMMDD_HHmmss')}.xlsx`;
+    a.download = `تقرير_الفواتير_التفصيلي_${dayjs().format('YYYYMMDD_HHmmss')}.xlsx`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     }, 100);
-  };
-  // دالة لجلب اسم المخزن من القائمة
-  const getWarehouseName = (warehouseId: string) => {
-    const warehouse = warehouses.find(w => w.id === warehouseId);
-    return warehouse ? warehouse.name : warehouseId;
   };
 
 
@@ -695,64 +838,8 @@ const InvoicePreferred: React.FC = () => {
     fetchCompany();
   }, []);
 
-  // دالة طباعة محتوى المودال فقط
+  // دالة طباعة جدول التقرير
   const handlePrint = () => {
-    // Professional print template
-    if (!selectedInvoice) return;
-    // تجهيز بيانات الفاتورة للطباعة بشكل صحيح
-    let invoice = { ...selectedInvoice };
-    // إذا كان هناك itemData.items (كما في جدول التقارير)، استخدمها للطباعة
-    if (selectedInvoice && selectedInvoice.itemData && Array.isArray(selectedInvoice.itemData.items)) {
-      invoice.items = selectedInvoice.itemData.items;
-    } else if (selectedInvoice && Array.isArray(selectedInvoice.items)) {
-      invoice.items = selectedInvoice.items;
-    } else if (selectedInvoice && selectedInvoice.itemData && typeof selectedInvoice.itemData === 'object') {
-      // إذا كان المستخدم ضغط على صف صنف واحد (itemData مفرد)
-      invoice.items = [selectedInvoice.itemData];
-    } else {
-      invoice.items = [];
-    }
-    // تجهيز بيانات العميل للطباعة
-    invoice.customerName = selectedInvoice.customerName || selectedInvoice.customer || '';
-    invoice.customerNumber = selectedInvoice.customerPhone || selectedInvoice.customerMobile || selectedInvoice.customerNumber || selectedInvoice.phone || selectedInvoice.mobile || selectedInvoice.phoneNumber || '';
-    invoice.taxFile = selectedInvoice.taxFile || companyData.taxFile || '';
-    invoice.customerAddress = selectedInvoice.customerAddress || '';
-    // تجهيز اسم البائع للطباعة
-    invoice.delegate = selectedInvoice.delegate || selectedInvoice.seller || selectedInvoice.salesman || '';
-
-    // حساب الإجماليات إذا لم تكن موجودة أو ناقصة
-    if (!invoice.totals || typeof invoice.totals !== 'object') {
-      invoice.totals = {};
-    }
-    const items = Array.isArray(invoice.items) ? invoice.items : [];
-    // إجمالي قبل الخصم
-    let total = 0;
-    // إجمالي الخصم
-    let totalDiscount = 0;
-    // إجمالي بعد الخصم
-    let afterDiscount = 0;
-    // إجمالي الضريبة
-    let totalTax = 0;
-    // الإجمالي النهائي
-    let afterTax = 0;
-    items.forEach((it) => {
-      const price = Number(it.price) || 0;
-      const quantity = Number(it.quantity) || 0;
-      const discountValue = Number(it.discountValue) || 0;
-      const taxValue = Number(it.taxValue) || 0;
-      const subtotal = price * quantity;
-      total += subtotal;
-      totalDiscount += discountValue;
-      totalTax += taxValue;
-      afterDiscount += (subtotal - discountValue);
-      afterTax += (subtotal - discountValue + taxValue);
-    });
-    // إذا لم تكن القيم موجودة في totals، احسبها
-    invoice.totals.total = typeof invoice.totals.total === 'number' && !isNaN(invoice.totals.total) ? invoice.totals.total : total;
-    invoice.totals.afterDiscount = typeof invoice.totals.afterDiscount === 'number' && !isNaN(invoice.totals.afterDiscount) ? invoice.totals.afterDiscount : afterDiscount;
-    invoice.totals.afterTax = typeof invoice.totals.afterTax === 'number' && !isNaN(invoice.totals.afterTax) ? invoice.totals.afterTax : afterTax;
-    invoice.totals.totalDiscount = typeof invoice.totals.totalDiscount === 'number' && !isNaN(invoice.totals.totalDiscount) ? invoice.totals.totalDiscount : totalDiscount;
-    invoice.totals.totalTax = typeof invoice.totals.totalTax === 'number' && !isNaN(invoice.totals.totalTax) ? invoice.totals.totalTax : totalTax;
     // تأكد من تحميل بيانات الشركة قبل الطباعة
     if (!companyData || !companyData.arabicName) {
       if (typeof window !== 'undefined' && (window as any).toast) {
@@ -762,413 +849,422 @@ const InvoicePreferred: React.FC = () => {
       }
       return;
     }
-    let qrDataUrl = '';
-    if (typeof window !== 'undefined' && (window as any).generateInvoiceQR) {
-      try { qrDataUrl = (window as any).generateInvoiceQR(invoice); } catch { qrDataUrl = ''; }
-    } else {
-      qrDataUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=' + encodeURIComponent(invoice.invoiceNumber || '');
-    }
-    const printWindow = window.open('', '', 'width=900,height=1200');
+
+    // استخدام نفس البيانات المعروضة في الجدول
+    const tableData = getFilteredRows();
+
+    // حساب الإجماليات من بيانات الجدول
+    let totalQuantity = 0;
+    let totalDiscount = 0;
+    let totalAfterDiscount = 0;
+    let totalTax = 0;
+    let totalNet = 0;
+    let totalAmount = 0;
+
+    tableData.forEach((row) => {
+      const sign = row.invoiceType === 'مرتجع' ? -1 : 1;
+      totalQuantity += sign * (row.quantity || 0);
+      const subtotal = (row.price || 0) * (row.quantity || 0);
+      totalAmount += sign * subtotal;
+      totalDiscount += sign * (row.discountValue || 0);
+      totalAfterDiscount += sign * (subtotal - (row.discountValue || 0));
+      totalTax += sign * (row.taxValue || 0);
+      totalNet += sign * (row.net || 0);
+    });
+
+    const printWindow = window.open('', '', 'width=1400,height=900');
     printWindow?.document.write(`
-        <html>
-        <head>
-          <title>فاتورة ضريبية | Tax Invoice</title>
-          <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
-          <style>
-            @page { size: A4; margin: 10mm; }
-            body {
-              font-family: 'Tajawal', sans-serif;
-              direction: rtl;
-              padding: 5mm;
-              color: #000;
-              font-size: 12px;
-              line-height: 1.4;
-            }
-            .header {
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              margin-bottom: 5mm;
-              border-bottom: 1px solid #000;
-              padding-bottom: 3mm;
-            }
-            .header-section {
-              flex: 1;
-              min-width: 0;
-              padding: 0 8px;
-              box-sizing: border-box;
-            }
-            .header-section.center {
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              justify-content: center;
-              flex: 0 0 120px;
-              max-width: 120px;
-              min-width: 100px;
-            }
-            .logo {
-              width: 150px;
-              height: auto;
-              margin-bottom: 8px;
-            }
-            .company-info-ar {
-              text-align: right;
-              font-size: 13px;
-              font-weight: 500;
-              line-height: 1.5;
-            }
-            .company-info-en {
-              text-align: left;
-              font-family: Arial, sans-serif;
-              direction: ltr;
-              font-size: 12px;
-              font-weight: 500;
-              line-height: 1.5;
-            }
-            .info-row-table {
-              border: 1px solid #bbb;
-              border-radius: 4px;
-              margin-bottom: 0;
-              width: 100%;
-              border-collapse: collapse;
-              font-size: 12px;
-              margin-top: 0;
-            }
-            .info-row-table td {
-              border: none;
-              padding: 2px 8px;
-              vertical-align: middle;
-              font-weight: 500;
-            }
-            .info-row-table .label {
-              color: #444;
-              font-weight: bold;
-              min-width: 80px;
-              text-align: right;
-            }
-            .info-row-table .value {
-              color: #222;
-              text-align: left;
-            }
-            .info-row-container {
-              display: flex;
-              flex-direction: row;
-              justify-content: space-between;
-              align-items: flex-start;
-              margin-bottom: 10px;
-              gap: 16px;
-            }
-            .info-row-table.left {
-              direction: rtl;
-            }
-            .info-row-table.right {
-              direction: rtl;
-            }
-            .qr-center {
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              justify-content: center;
-              min-width: 100px;
-              max-width: 120px;
-              flex: 0 0 120px;
-            }
-            .qr-code {
-              width: 80px;
-              height: 80px;
-              border: 1px solid #ddd;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              font-family: Arial;
-              font-size: 8px;
-              text-align: center;
-              margin-top: 4px;
-            }
-            .invoice-title { text-align: center; font-size: 16px; font-weight: bold; margin: 5mm 0; border: 1px solid #000; padding: 2mm; background-color: #f3f3f3; }
-            .customer-info { margin-bottom: 5mm; border: 1px solid #ddd; padding: 3mm; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 5mm; font-size: 11px; }
-            th, td { border: 1px solid #000; padding: 2mm; text-align: center; }
-            th {
-              background-color: #305496;
-              color: #fff;
-              font-weight: bold;
-              font-size: 12.5px;
-              letter-spacing: 0.5px;
-            }
-            .totals { margin-top: 5mm; border-top: 1px solid #000; padding-top: 3mm; font-weight: bold; }
-            .policy { font-size: 10px; border: 1px solid #ddd; padding: 3mm; /*margin-top: 5mm;*/ }
-            .policy-title { font-weight: bold; margin-bottom: 2mm; }
-            .signature { margin-top: 5mm; display: flex; justify-content: space-between; }
-            .signature-box { width: 45%; border-top: 1px solid #000; padding-top: 3mm; }
-            .footer { margin-top: 5mm; text-align: center; font-size: 10px; }
-            /* Ensure totals and policy are always side by side on print */
-            .totals-policy-row {
-              display: flex;
-              flex-direction: row;
-              flex-wrap: nowrap !important;
-              justify-content: flex-end;
-              align-items: flex-start;
-              gap: 24px;
-              margin-top: 5mm;
-            }
-            @media print {
-              .totals-policy-row {
-                display: flex !important;
-                flex-direction: row !important;
-                flex-wrap: nowrap !important;
-                justify-content: flex-end !important;
-                align-items: flex-start !important;
-                gap: 24px !important;
-                margin-top: 5mm !important;
+       <html>
+    <head>
+      <title>طباعة تقرير التفصيلي</title>
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700&display=swap');
+        @page { 
+          size: A4 landscape; 
+          margin: 15mm; 
+        }
+        body { 
+          font-family: 'Tajawal', Arial, sans-serif; 
+          direction: rtl; 
+          padding: 10px; 
+          font-size: 11px;
+          line-height: 1.3;
+          margin: 0;
+        }
+        .company-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 15px;
+          border-bottom: 1px solid #000;
+          padding-bottom: 10px;
+        }
+        .header-section {
+          flex: 1;
+          min-width: 0;
+          padding: 0 8px;
+          box-sizing: border-box;
+        }
+        .header-section.center {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          flex: 0 0 120px;
+          max-width: 120px;
+          min-width: 100px;
+        }
+        .logo {
+          width: 100px;
+          height: auto;
+          margin-bottom: 8px;
+        }
+        .company-info-ar {
+          text-align: right;
+          font-size: 11px;
+          font-weight: 500;
+          line-height: 1.4;
+        }
+        .company-info-en {
+          text-align: left;
+          font-family: Arial, sans-serif;
+          direction: ltr;
+          font-size: 10px;
+          font-weight: 500;
+          line-height: 1.4;
+        }
+        .header {
+          text-align: center;
+          margin-bottom: 20px;
+          border-bottom: 2px solid #000;
+          padding-bottom: 10px;
+        }
+        .header h1 {
+          color: #000;
+          margin: 0;
+          font-size: 20px;
+          font-weight: 700;
+        }
+        .header p {
+          color: #000;
+          margin: 3px 0 0 0;
+          font-size: 12px;
+        }
+        table { 
+          width: 100%; 
+          border-collapse: collapse; 
+          margin-bottom: 20px;
+          font-size: 10px;
+        }
+        th, td { 
+          border: 1px solid #d1d5db; 
+          padding: 4px 2px; 
+          text-align: center;
+          vertical-align: middle;
+          font-size: 9px;
+        }
+        th { 
+          background-color: #bbbbbc !important;
+          color: #fff;
+          font-weight: 600;
+          font-size: 9px;
+          padding: 6px 4px;
+        }
+        tbody tr:nth-child(even) {
+          background-color: #f5f5f5;
+        }
+        tbody tr:hover {
+          background-color: #e5e5e5;
+        }
+
+        .return-invoice {
+          color: #000;
+          font-weight: 600;
+        }
+        .normal-invoice {
+          color: #000;
+          font-weight: 600;
+        }
+        .print-date {
+          text-align: left;
+          margin-top: 15px;
+          font-size: 9px;
+          color: #000;
+        }
+        /* Hide totals footer on all pages except the last one */
+        .print-last-page-only {
+          display: none;
+        }
+        /* جدول الإجماليات المنفصل */
+        .totals-container {
+          margin-top: 20px;
+          display: flex;
+          justify-content: flex-start;
+          direction: rtl;
+        }
+        .totals-table {
+          width: 300px;
+          font-size: 12px;
+          border-radius: 8px;
+          overflow: hidden;
+        }
+        .totals-table th {
+          background-color: #000;
+          color: #fff;
+          padding: 10px;
+          text-align: center;
+          font-size: 14px;
+        }
+        .totals-table .total-label {
+          background-color: #f8f9fa;
+          padding: 8px 12px;
+          text-align: right;
+          width: 60%;
+        }
+        .totals-table .total-value {
+          background-color: #fff;
+          padding: 8px 12px;
+          text-align: left;
+          width: 40%;
+        }
+        .totals-table .final-total .total-label {
+          background-color: #e9ecef;
+          color: #000;
+        }
+        .totals-table .final-total .total-value {
+          background-color: #f1f3f4;
+          color: #000;
+          font-size: 13px;
+        }
+        @media print {
+          body { margin: 0; padding: 10px; }
+          .no-print { display: none; }
+          /* Show totals footer only on the last page */
+          .print-last-page-only {
+            display: block;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          /* Force the totals to appear at the bottom of the last page */
+          table {
+            page-break-inside: auto;
+          }
+          tbody {
+            page-break-inside: auto;
+          }
+          .print-last-page-only {
+            page-break-before: avoid;
+            break-before: avoid;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <!-- Company Header Section -->
+      <div class="company-header">
+        <div class="header-section company-info-ar">
+          <div>${companyData.arabicName || ''}</div>
+          <div>${companyData.companyType || ''}</div>
+          <div>السجل التجاري: ${companyData.commercialRegistration || ''}</div>
+          <div>الملف الضريبي: ${companyData.taxFile || ''}</div>
+          <div>العنوان: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+          <div>الرمز البريدي: ${companyData.postalCode || ''}</div>
+          <div>الهاتف: ${companyData.phone || ''}</div>
+          <div>الجوال: ${companyData.mobile || ''}</div>
+        </div>
+        <div class="header-section center">
+          <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
+        </div>
+        <div class="header-section company-info-en">
+          <div>${companyData.englishName || ''}</div>
+          <div>${companyData.companyType || ''}</div>
+          <div>Commercial Reg.: ${companyData.commercialRegistration || ''}</div>
+          <div>Tax File: ${companyData.taxFile || ''}</div>
+          <div>Address: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+          <div>Postal Code: ${companyData.postalCode || ''}</div>
+          <div>Phone: ${companyData.phone || ''}</div>
+          <div>Mobile: ${companyData.mobile || ''}</div>
+        </div>
+      </div>
+      
+      <div class="header">
+        <h1>تقرير فواتير المبيعات التفصيلي</h1>
+        <p class="font-weight-bold">نظام إدارة الموارد ERP90</p>
+        ${dateFrom && dateTo ? `
+        <div style="margin-top: 10px; font-size: 14px;  color: #333;">
+          الفترة: من ${dateFrom.format('DD/MM/YYYY')} إلى ${dateTo.format('DD/MM/YYYY')}
+        </div>
+        ` : ''}
+      </div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 70px;">رقم الفاتورة</th>
+            <th style="width: 70px;">التاريخ</th>
+            <th style="width: 70px;">نوع الفاتورة</th>
+            <th style="width: 80px;">كود الصنف</th>
+            <th style="width: 120px;">اسم الصنف</th>
+            <th style="width: 80px;">الفئة</th>
+            <th style="width: 50px;">الكمية</th>
+            <th style="width: 50px;">الوحدة</th>
+            <th style="width: 60px;">سعر الوحدة</th>
+            <th style="width: 70px;">قيمة الخصم</th>
+            <th style="width: 80px;">بعد الخصم</th>
+            <th style="width: 70px;">قيمة الضريبة</th>
+            <th style="width: 70px;">الصافي</th>
+            <th style="width: 120px;">اسم العميل</th>
+            <th style="width: 80px;">رقم العميل</th>
+            <th style="width: 80px;">وقت الإنشاء</th>
+            <th style="width: 65px;">الفرع</th>
+            <th style="width: 65px;">المخزن</th>
+            <th style="width: 70px;">طريقة الدفع</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableData.map(row => {
+            const sign = row.invoiceType === 'مرتجع' ? -1 : 1;
+            const subtotal = (row.price || 0) * (row.quantity || 0);
+            const afterDiscount = subtotal - (row.discountValue || 0);
+            
+            const parseTime = (val) => {
+              if (!val) return '';
+              if (typeof val === 'object' && val.seconds) {
+                return new Date(val.seconds * 1000).toLocaleTimeString('ar-SA');
               }
-              .policy { margin-top: 0 !important; }
-            }
-          </style>
-        </head>
-        <body>
-          <!-- Header Section: Arabic (right), Logo (center), English (left) -->
-          <div class="header">
-            <div class="header-section company-info-ar">
-              <div>${companyData.arabicName || ''}</div>
-              <div>${companyData.companyType || ''}</div>
-              <div>السجل التجاري: ${companyData.commercialRegistration || ''}</div>
-              <div>الملف الضريبي: ${companyData.taxFile || ''}</div>
-              <div>العنوان: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
-              <div>الرمز البريدي: ${companyData.postalCode || ''}</div>
-              <div>الهاتف: ${companyData.phone || ''}</div>
-              <div>الجوال: ${companyData.mobile || ''}</div>
-            </div>
-            <div class="header-section center">
-              <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
-            </div>
-            <div class="header-section company-info-en">
-              <div>${companyData.englishName || ''}</div>
-              <div>${companyData.companyType || ''}</div>
-              <div>Commercial Reg.: ${companyData.commercialRegistration || ''}</div>
-              <div>Tax File: ${companyData.taxFile || ''}</div>
-              <div>Address: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
-              <div>Postal Code: ${companyData.postalCode || ''}</div>
-              <div>Phone: ${companyData.phone || ''}</div>
-              <div>Mobile: ${companyData.mobile || ''}</div>
-            </div>
-          </div>
-          <!-- Info Row Section: Invoice info (right), QR (center), Customer info (left) -->
-          <div class="info-row-container">
-            <table class="info-row-table right">
-              <tr><td class="label">طريقة الدفع</td><td class="value">${invoice.paymentMethod || ''}</td></tr>
-              <tr><td class="label">رقم الفاتورة</td><td class="value">${invoice.invoiceNumber || ''}</td></tr>
-              <tr><td class="label">تاريخ الفاتورة</td><td class="value">${invoice.date || ''}</td></tr>
-              <tr><td class="label">تاريخ الاستحقاق</td><td class="value">${invoice.dueDate || ''}</td></tr>
-            </table>
-            <div class="qr-center">
-              <div style="font-size:13px;font-weight:bold;margin-bottom:4px;">
-                ${(() => {
-                  const branch = (typeof branches !== 'undefined' && Array.isArray(branches))
-                    ? branches.find(b => b.id === invoice.branch)
-                    : null;
-                  return branch ? (branch.name || branch.id) : (invoice.branch || '');
-                })()}
-              </div>
-              <div class="qr-code">
-                <img src="${qrDataUrl}" alt="QR Code" style="width:80px;height:80px;" /><br>
-               </div>
-            </div>
-            <table class="info-row-table left">
-              <tr><td class="label">اسم العميل</td><td class="value">${invoice.customerName || ''}</td></tr>
-              <tr><td class="label">رقم الجوال</td><td class="value">${invoice.customerNumber || ''}</td></tr>
-              <tr><td class="label">م.ض</td><td class="value">${invoice.taxFile || ''}</td></tr>
-              <tr><td class="label">عنوان العميل</td><td class="value">${invoice.customerAddress || ''}</td></tr>
-            </table>
-          </div>
-          <!-- Items Table -->
-          <table>
-            <thead>
-              <tr>
-                <th>الرقم</th>
-                <th>كود الصنف</th>
-                <th>اسم الصنف</th>
-                <th>الكمية</th>
-                <th>السعر</th>
-                <th>نسبة الخصم %</th>
-                <th>مبلغ الخصم</th>
-                <th>الإجمالي قبل الضريبة</th>
-                <th>قيمة الضريبة</th>
-                <th>الإجمالي شامل الضريبة</th>
-                <th>المخزن</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${(invoice.items || []).map((it, idx) => {
-                const subtotal = Number(it.price) * Number(it.quantity);
-                const discountValue = Number(it.discountValue) || 0;
-                const taxValue = Number(it.taxValue) || 0;
-                const afterDiscount = subtotal - discountValue;
-                const net = afterDiscount + taxValue;
-                const warehouseId = it.warehouseId || invoice.warehouse;
-                const warehouseObj = Array.isArray(warehouses) ? warehouses.find((w: any) => w.id === warehouseId) : null;
-                const warehouseName = warehouseObj ? (warehouseObj.name || warehouseObj.id) : (warehouseId || '');
-                return `<tr>
-                  <td>${idx + 1}</td>
-                  <td>${it.itemNumber || ''}</td>
-                  <td>${it.itemName || ''}</td>
-                  <td>${it.quantity || ''}</td>
-                  <td>${Number(it.price).toFixed(2)}</td>
-                  <td>${it.discountPercent || '0'}</td>
-                  <td>${discountValue.toFixed(2)}</td>
-                  <td>${afterDiscount.toFixed(2)}</td>
-                  <td>${taxValue.toFixed(2)}</td>
-                  <td>${net.toFixed(2)}</td>
-                  <td>${warehouseName}</td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-            <!-- Summary Row -->
-            <tfoot>
-              <tr style="background:#f3f3f3; font-weight:bold;">
-                <td colspan="6" style="text-align:right; font-weight:bold; color:#000;">الإجماليات:</td>
-                <td style="color:#dc2626; font-weight:bold;">
-                  ${(() => {
-                    // إجمالي الخصم
-                    if (!invoice.items) return '0.00';
-                    let total = 0;
-                    invoice.items.forEach((it) => { total += Number(it.discountValue) || 0; });
-                    return total.toFixed(2);
-                  })()}
-                </td>
-                <td style="color:#ea580c; font-weight:bold;">
-                  ${(() => {
-                    // إجمالي قبل الضريبة
-                    if (!invoice.items) return '0.00';
-                    let total = 0;
-                    invoice.items.forEach((it) => {
-                      const subtotal = Number(it.price) * Number(it.quantity);
-                      const discountValue = Number(it.discountValue) || 0;
-                      total += subtotal - discountValue;
-                    });
-                    return total.toFixed(2);
-                  })()}
-                </td>
-                <td style="color:#9333ea; font-weight:bold;">
-                  ${(() => {
-                    // إجمالي الضريبة
-                    if (!invoice.items) return '0.00';
-                    let total = 0;
-                    invoice.items.forEach((it) => { total += Number(it.taxValue) || 0; });
-                    return total.toFixed(2);
-                  })()}
-                </td>
-                <td style="color:#059669; font-weight:bold;">
-                  ${(() => {
-                    // إجمالي النهائي
-                    if (!invoice.items) return '0.00';
-                    let total = 0;
-                    invoice.items.forEach((it) => {
-                      const subtotal = Number(it.price) * Number(it.quantity);
-                      const discountValue = Number(it.discountValue) || 0;
-                      const taxValue = Number(it.taxValue) || 0;
-                      total += (subtotal - discountValue + taxValue);
-                    });
-                    return total.toFixed(2);
-                  })()}
-                </td>
-                <td></td>
-              </tr>
-            </tfoot>
-          </table>
-          <!-- Totals and Policies Section side by side -->
-          <div class="totals-policy-row">
-           <div style="flex: 1 1 340px; min-width: 260px; max-width: 600px;">
-              <div class="policy">
-                <div class="policy-title">سياسة الاستبدال والاسترجاع:</div>
-                <div>1- يستوجب أن يكون المنتج بحالته الأصلية بدون أي استعمال وبكامل اكسسواراته وبالتعبئة الأصلية.</div>
-                <div>2- البضاعة المباعة ترد أو تستبدل خلال ثلاثة أيام من تاريخ استلام العميل للمنتج مع إحضار أصل الفاتورة وتكون البضاعة بحالة سليمة ومغلقة.</div>
-                <div>3- يتحمل العميل قيمة التوصيل في حال إرجاع الفاتورة ويتم إعادة المبلغ خلال 3 أيام عمل.</div>
-                <div>4- ${companyData.arabicName || 'الشركة'} غير مسؤولة عن تسليم البضاعة بعد 10 أيام من تاريخ الفاتورة.</div>
-                <div class="policy-title" style="margin-top: 3mm;">سياسة التوصيل:</div>
-                <div>1- توصيل الطلبات من 5 أيام إلى 10 أيام عمل.</div>
-                <div>2- الحد المسموح به للتوصيل هو الدور الأرضي كحد أقصى، وفي حال رغبة العميل بالتوصيل لأعلى من الحد المسموح به، يتم ذلك بواسطة العميل.</div>
-                <div>3- يتم التوصيل حسب جدول المواعيد المحدد من ${companyData.arabicName || 'الشركة'}، كما أن ${companyData.arabicName || 'الشركة'} غير مسؤولة عن أي أضرار ناتجه بسبب التأخير او تأجيل موعد التوصيل.</div>
-                <div>4- يستوجب فحص المنتج أثناء استلامه مع التوقيع باستلامه، وعدم الفحص يسقط حق العميل في المطالبة بالاسترجاع او الاستبدال في حال وجود كسر.</div>
-                <div>5- لايوجد لدينا تركيب الضمان هو ضمان ${companyData.arabicName || 'الشركة'}، كما أن الضمان لا يشمل سوء الاستخدام الناتج من العميل.</div>
-              </div>
-            </div>
-            <div style="flex: 0 0 320px; max-width: 340px; min-width: 220px;">
-              <table style="border:1.5px solid #000; border-radius:6px; font-size:13px; min-width:220px; max-width:320px; margin-left:0; margin-right:0; border-collapse:collapse; box-shadow:none; width:100%;">
-                <tbody>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">إجمالى الفاتورة</td>
-                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.total?.toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">مبلغ الخصم</td>
-                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.total - invoice.totals?.afterDiscount).toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى بعد الخصم</td>
-                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.afterDiscount?.toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الضريبة (${invoice.items && invoice.items[0] ? (invoice.items[0].taxPercent || 0) : 0}%)</td>
-                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.afterTax - invoice.totals?.afterDiscount).toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى النهايي</td>
-                    <td style="text-align:left; font-weight:700; border:1px solid #000; background:#fff;">${invoice.totals?.afterTax?.toFixed(2)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-           
-          </div>
-          <!-- Signature Section -->
-          <div class="signature">
-            <div class="signature-box">
-              <div>اسم العميل: ${invoice.customerName || ''}</div>
-              <div>التوقيع: ___________________</div>
-            </div>
-            <div class="signature-box" style="position:relative;">
-              <div>البائع: ${invoice.delegate || ''}</div>
-              <div>التاريخ: ${invoice.date || ''}</div>
-              <!-- Decorative Stamp -->
-              <div style="
-                margin-top:18px;
-                display:flex;
-                justify-content:center;
-                align-items:center;
-                width:160px;
-                height:60px;
-                border:2.5px dashed #888;
-                border-radius:50%;
-                box-shadow:0 2px 8px 0 rgba(0,0,0,0.08);
-                opacity:0.85;
-                background: repeating-linear-gradient(135deg, #f8f8f8 0 8px, #fff 8px 16px);
-                font-family: 'Cairo', 'Tajawal', Arial, sans-serif;
-                font-size:15px;
-                font-weight:bold;
-                color:#222;
-                letter-spacing:1px;
-                text-align:center;
-                position:absolute;
-                left:50%;
-                transform:translateX(-50%);
-                bottom:-80px;
-                z-index:2;
-              ">
-                <div style="width:100%;">
-                  <div style="font-size:16px; font-weight:700;">${companyData.arabicName || 'الشركة'}</div>
-                  <div style="font-size:13px; font-weight:500; margin-top:2px;">${companyData.phone ? 'هاتف: ' + companyData.phone : ''}</div>
-                </div>
-              </div>
+              if (typeof val === 'string') {
+                const d = new Date(val);
+                if (!isNaN(d.getTime())) return d.toLocaleTimeString('ar-SA');
+              }
+              return '';
+            };
+
+            return '<tr>' +
+              '<td>' + (row.invoiceNumber || '-') + '</td>' +
+              '<td>' + (row.date ? new Date(row.date).toLocaleDateString('ar-SA') : '') + '</td>' +
+              '<td class="' + (row.invoiceType === 'مرتجع' ? 'return-invoice' : 'normal-invoice') + '">' + (row.invoiceType || 'فاتورة') + '</td>' +
+              '<td>' + (row.itemNumber || '-') + '</td>' +
+              '<td>' + (row.itemName || '-') + '</td>' +
+              '<td>' + (row.mainCategory || '-') + '</td>' +
+              '<td>' + (sign * (row.quantity || 0)).toLocaleString() + '</td>' +
+              '<td>قطعة</td>' +
+              '<td>' + Number(row.price || 0).toFixed(2) + '</td>' +
+              '<td>' + (sign * (row.discountValue || 0)).toFixed(2) + '</td>' +
+              '<td>' + (sign * afterDiscount).toFixed(2) + '</td>' +
+              '<td>' + (sign * (row.taxValue || 0)).toFixed(2) + '</td>' +
+              '<td>' + (sign * (row.net || 0)).toFixed(2) + '</td>' +
+              '<td>' + (row.customer || '-') + '</td>' +
+              '<td>' + (row.customerPhone && row.customerPhone.trim() !== '' ? row.customerPhone : 'غير متوفر') + '</td>' +
+              '<td>' + (parseTime(row.createdAt) || (row.date ? new Date(row.date).toLocaleTimeString('ar-SA') : '')) + '</td>' +
+              '<td>' + (row.branch ? getBranchName(row.branch) : '-') + '</td>' +
+              '<td>' + (row.warehouse ? getWarehouseName(row.warehouse) : '-') + '</td>' +
+              '<td>' + (row.paymentMethod || '-') + '</td>' +
+              '</tr>';
+          }).join('')}
+        </tbody>
+      </table>
+      
+      <!-- جدول الإجماليات المنفصل -->
+      <div class="print-last-page-only totals-container">
+        <table class="totals-table">
+          <thead>
+            <tr>
+              <th colspan="2">الإجماليات النهائية</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="total-label">إجمالي المبلغ:</td>
+              <td class="total-value">${totalAmount.toLocaleString()} ر.س</td>
+            </tr>
+            <tr>
+              <td class="total-label">إجمالي الخصم:</td>
+              <td class="total-value">${totalDiscount.toLocaleString()} ر.س</td>
+            </tr>
+            <tr>
+              <td class="total-label">المبلغ بعد الخصم:</td>
+              <td class="total-value">${totalAfterDiscount.toLocaleString()} ر.س</td>
+            </tr>
+            <tr>
+              <td class="total-label">إجمالي الضرائب:</td>
+              <td class="total-value">${totalTax.toLocaleString()} ر.س</td>
+            </tr>
+            <tr class="final-total">
+              <td class="total-label">الإجمالي النهائي:</td>
+              <td class="total-value">${totalNet.toLocaleString()} ر.س</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <div class="print-date">
+        تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')} - ${new Date().toLocaleTimeString('en-GB')}
+      </div>
+      
+      <!-- Signature Section at the end of the page -->
+      <div style="
+        margin-top: 50px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 0 20px;
+        page-break-inside: avoid;
+      ">
+        <div style="
+          flex: 1;
+          text-align: right;
+          font-size: 14px;
+          font-weight: 500;
+        ">
+          <div style="margin-bottom: 8px;">المسؤول المالي: ___________________</div>
+          <div>التوقيع: ___________________</div>
+        </div>
+        <div style="
+          flex: 1;
+          text-align: center;
+          position: relative;
+        ">
+          <!-- Decorative Company Stamp -->
+          <div style="
+            margin-top: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 180px;
+            height: 70px;
+            border: 3px dashed #000;
+            border-radius: 50%;
+            box-shadow: 0 3px 10px 0 rgba(0,0,0,0.12);
+            opacity: 0.9;
+            background: repeating-linear-gradient(135deg, #f8f8f8 0 10px, #fff 10px 20px);
+            font-family: 'Tajawal', Arial, sans-serif;
+            font-size: 16px;
+            font-weight: bold;
+            color: #000;
+            letter-spacing: 1px;
+            text-align: center;
+            margin-left: auto;
+            margin-right: auto;
+            z-index: 2;
+          ">
+            <div style="width: 100%;">
+              <div style="font-size: 18px; font-weight: 700; line-height: 1.2;">${companyData.arabicName || 'الشركة'}</div>
+              <div style="font-size: 14px; font-weight: 500; margin-top: 4px; line-height: 1.1;">${companyData.phone ? 'هاتف: ' + companyData.phone : ''}</div>
             </div>
           </div>
-          <!-- Footer -->
-          <div class="footer">
-            ${companyData.website ? `لزيارة متجرنا الإلكتروني / Visit our e-shop: ${companyData.website}` : ''}
-          </div>
-        </body>
-        </html>
+        </div>
+        <div style="
+          flex: 1;
+          text-align: left;
+          font-size: 14px;
+          font-weight: 500;
+        ">
+          <div style="margin-bottom: 8px;">مدير المبيعات: ___________________</div>
+          <div>التاريخ: ${new Date().toLocaleDateString('ar-SA')}</div>
+        </div>
+      </div>
+    </body>
+    </html>
       `);
     printWindow?.document.close();
     printWindow?.focus();
@@ -1177,26 +1273,22 @@ const InvoicePreferred: React.FC = () => {
   return (
     <>
       <Helmet>
-        <title>تقرير الفواتير التفصيلي | ERP90 Dashboard</title>
-        <meta name="description" content="تقرير الفواتير المفضلة، عرض وتحليل الفواتير، ERP90 Dashboard" />
-        <meta name="keywords" content="ERP, تقرير الفواتير, فواتير, مبيعات, تحليل, Preferred Invoices, Sales, Report, Customer" />
+        <title>تقرير فواتير المبيعات التفصيلي | ERP90 Dashboard</title>
+        <meta name="description" content="تقرير فواتير المبيعات، عرض وطباعة فواتير العملاء، ERP90 Dashboard" />
+        <meta name="keywords" content="ERP, فواتير, مبيعات, تقرير, عملاء, ضريبة, طباعة, Sales, Invoice, Report, Tax, Customer" />
       </Helmet>
-      <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50">
-
-      <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
-        <div className="flex items-center">
-          {/* Invoice Icon */}
-          <svg className="h-8 w-8 text-green-600 ml-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" strokeWidth="2" fill="none" />
-            <line x1="8" y1="8" x2="16" y2="8" stroke="currentColor" strokeWidth="2" />
-            <line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" strokeWidth="2" />
-            <line x1="8" y1="16" x2="12" y2="16" stroke="currentColor" strokeWidth="2" />
-          </svg>
-          <h1 className="text-2xl font-bold text-gray-800">تقرير فواتير المبيعات التفصيلي</h1>
+      <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50" dir="rtl">
+ 
+        {/* العنوان الرئيسي */}
+        <div className="p-3 sm:p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+          <div className="flex items-center">
+            <FileTextOutlined className="h-5 w-5 sm:h-8 sm:w-8 text-emerald-600 ml-1 sm:ml-3" />
+            <h1 className="text-lg sm:text-2xl font-bold text-gray-800">تقرير فواتير المبيعات التفصيلي</h1>
+          </div>
+          <p className="text-xs sm:text-base text-gray-600 mt-2">إدارة وعرض تقارير فواتير المبيعات التفصيلي</p>
+          <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 to-green-500"></div>
         </div>
-        <p className="text-gray-600 mt-2">تقرير تفصيلي لجميع فواتير المبيعات </p>
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 to-blue-500"></div>
-      </div>
+
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
@@ -1208,91 +1300,85 @@ const InvoicePreferred: React.FC = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
-        className="w-full bg-white p-4 rounded-lg border border-blue-100 flex flex-col gap-4 shadow-sm relative"
+        className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm relative"
       >
-        <div className="flex items-center">
-          <div className="border-r-4 border-blue-500 pr-4 mr-4 h-10 flex items-center">
-            <span className="text-lg font-semibold text-gray-700">خيارات البحث</span>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-2">
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">من تاريخ</label>
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-green-500"></div>
+        
+        <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
+          <SearchOutlined className="text-emerald-600" /> خيارات البحث
+        </h3>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="flex flex-col">
+            <span style={labelStyle}>من تاريخ</span>
             <DatePicker 
-              style={{ width: '100%' }}
-              locale={arEG}
               value={dateFrom}
               onChange={setDateFrom}
+              placeholder="اختر التاريخ"
+              style={largeControlStyle}
+              size="large"
               format="YYYY-MM-DD"
-            />
-          </motion.div>
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.1 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">إلى تاريخ</label>
-            <DatePicker 
-              style={{ width: '100%' }}
               locale={arEG}
+              disabledDate={disabledDate}
+            />
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>إلى تاريخ</span>
+            <DatePicker 
               value={dateTo}
               onChange={setDateTo}
+              placeholder="اختر التاريخ"
+              style={largeControlStyle}
+              size="large"
               format="YYYY-MM-DD"
+              locale={arEG}
+              disabledDate={disabledDate}
             />
-          </motion.div>
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.2 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">رقم الفاتورة</label>
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>رقم الفاتورة</span>
             <Input 
-              style={{ width: '100%' }}
-              placeholder="رقم الفاتورة"
               value={invoiceNumber}
               onChange={e => setInvoiceNumber(e.target.value)}
-            />
-          </motion.div>
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">الفرع</label>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="اختر الفرع"
-              value={branchId || undefined}
-              onChange={value => setBranchId(value)}
-              loading={branchesLoading}
+              placeholder="ادخل رقم الفاتورة"
+              style={largeControlStyle}
+              size="large"
               allowClear
+            />
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>الفرع</span>
+            <Select
+              value={branchId}
+              onChange={setBranchId}
+              placeholder="اختر الفرع"
+              style={{ width: '100%', ...largeControlStyle }}
+              size="large"
+                            className={styles.noAntBorder}
+              
+              optionFilterProp="label"
+              allowClear
+              showSearch
+              loading={branchesLoading}
+              filterOption={(input, option) =>
+                (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+              }
             >
-              <Option value="">اختر الفرع</Option>
               {branches.map(branch => (
-                <Option key={branch.id} value={branch.id}>{branch.name}</Option>
+                <Option key={branch.id} value={branch.id}>
+                  {branch.name}
+                </Option>
               ))}
             </Select>
-          </motion.div>
-          {/* خيارات تصفية إضافية */}
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">اسم العميل</label>
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>اسم العميل</span>
             <Select
               showSearch
-              style={{ width: '100%' }}
-              placeholder="اسم العميل"
               value={customerName || undefined}
               onChange={value => {
                 setCustomerName(value);
@@ -1308,26 +1394,26 @@ const InvoicePreferred: React.FC = () => {
                   setCustomerPhoneFilter('');
                 }
               }}
+              placeholder="اختر اسم العميل"
+              style={{ width: '100%', ...largeControlStyle }}
+              size="large"
+              optionFilterProp="label"
+                            className={styles.noAntBorder}
+              
               allowClear
-              filterOption={(input, option) => (option?.children ?? '').toLowerCase().includes(input.toLowerCase())}
+              filterOption={(input, option) => (option?.children as string)?.toLowerCase().includes(input.toLowerCase())}
             >
-              <Select.Option value="">الكل</Select.Option>
+              <Option value="">الكل</Option>
               {Array.from(new Set(invoices.map(inv => inv.customer).filter(s => !!s && s !== ''))).map(s => (
-                <Select.Option key={s} value={s}>{s}</Select.Option>
+                <Option key={s} value={s}>{s}</Option>
               ))}
             </Select>
-          </motion.div>
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">رقم العميل</label>
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>رقم العميل</span>
             <Select
               showSearch
-              style={{ width: '100%' }}
-              placeholder="رقم العميل"
               value={customerPhoneFilter || undefined}
               onChange={value => {
                 setCustomerPhoneFilter(value);
@@ -1343,84 +1429,35 @@ const InvoicePreferred: React.FC = () => {
                   setCustomerName('');
                 }
               }}
+              placeholder="اختر رقم العميل"
+              style={{ width: '100%', ...largeControlStyle }}
+              size="large"
+              optionFilterProp="label"
+                            className={styles.noAntBorder}
+              
               allowClear
-              filterOption={(input, option) => (option?.children ?? '').toLowerCase().includes(input.toLowerCase())}
+              filterOption={(input, option) => (option?.children as string)?.toLowerCase().includes(input.toLowerCase())}
             >
-              <Select.Option value="">الكل</Select.Option>
+              <Option value="">الكل</Option>
               {Array.from(new Set(invoices.map(inv => inv.customerPhone).filter(s => !!s && s !== ''))).map(s => (
-                <Select.Option key={s} value={s}>{s}</Select.Option>
+                <Option key={s} value={s}>{s}</Option>
               ))}
             </Select>
-          </motion.div>
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">اسم الصنف</label>
-            <Select
-              showSearch
-              style={{ width: '100%' }}
-              placeholder="اسم الصنف"
-              value={itemName || undefined}
-              onChange={value => {
-                setItemName(value);
-                // عند اختيار اسم الصنف، ابحث عن أول كود صنف مطابق واملأه تلقائياً
-                if (value) {
-                  const found = invoices.find(inv => inv.itemName === value && inv.itemNumber && inv.itemNumber.trim() !== '');
-                  if (found) {
-                    setItemNumberFilter(found.itemNumber);
-                  } else {
-                    setItemNumberFilter('');
-                  }
-                } else {
-                  setItemNumberFilter('');
-                }
-              }}
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>الوقت</span>
+            <Input
+              value={timeFilter || ''}
+              onChange={e => setTimeFilter(e.target.value)}
+              placeholder="hh:mm:ss"
+              style={largeControlStyle}
+              size="large"
               allowClear
-              filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-              options={[
-                { label: 'الكل', value: '' },
-                ...Array.from(new Set(invoices.map(inv => inv.itemName).filter(s => !!s && s !== ''))).map(s => ({ label: s, value: s }))
-              ]}
             />
-          </motion.div>
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.7 }}
-            className="flex flex-col"
-          >
-            <label className="text-sm mb-1 text-gray-600">كود الصنف</label>
-            <Select
-              showSearch
-              style={{ width: '100%' }}
-              placeholder="كود الصنف"
-              value={itemNumberFilter || undefined}
-              onChange={value => {
-                setItemNumberFilter(value);
-                // عند اختيار كود الصنف، ابحث عن أول اسم صنف مطابق واملأه تلقائياً
-                if (value) {
-                  const found = invoices.find(inv => inv.itemNumber === value && inv.itemName && inv.itemName.trim() !== '');
-                  if (found) {
-                    setItemName(found.itemName);
-                  } else {
-                    setItemName('');
-                  }
-                } else {
-                  setItemName('');
-                }
-              }}
-              allowClear
-              filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-              options={[
-                { label: 'الكل', value: '' },
-                ...Array.from(new Set(invoices.map(inv => inv.itemNumber).filter(s => !!s && s !== ''))).map(s => ({ label: s, value: s }))
-              ]}
-            />
-          </motion.div>
+          </div>
         </div>
+        
         <AnimatePresence>
           {showMore && (
             <motion.div 
@@ -1430,821 +1467,574 @@ const InvoicePreferred: React.FC = () => {
               transition={{ duration: 0.3 }}
               className="overflow-hidden"
             >
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0 }}
-                  className="flex flex-col"
-                >
-                  <label className="text-sm mb-1 text-gray-600">المخزن</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-4">
+                <div className="flex flex-col">
+                  <span style={labelStyle}>المخزن</span>
                   <Select
-                    style={{ width: '100%' }}
-                    placeholder="اختر المخزن"
                     value={warehouseId || undefined}
-                    onChange={value => setWarehouseId(value)}
+                    onChange={setWarehouseId}
+                    placeholder="اختر المخزن"
+                    style={{ width: '100%', ...largeControlStyle }}
+                    size="large"
+                    optionFilterProp="label"
+                                  className={styles.noAntBorder}
+                    
                     allowClear
+                    showSearch
+                    filterOption={(input, option) =>
+                      (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+                    }
                   >
-                    <Option value="">اختر المخزن</Option>
                     {warehouses.map(w => (
                       <Option key={w.id} value={w.id}>{w.name}</Option>
                     ))}
                   </Select>
-                </motion.div>
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 }}
-                  className="flex flex-col"
-                >
-                  <label className="text-sm mb-1 text-gray-600">طريقة الدفع</label>
+                </div>
+                
+                <div className="flex flex-col">
+                  <span style={labelStyle}>طريقة الدفع</span>
                   <Select
-                    style={{ width: '100%' }}
-                    placeholder="اختر طريقة الدفع"
                     value={paymentMethod || undefined}
-                    onChange={value => setPaymentMethod(value)}
+                    onChange={setPaymentMethod}
+                    placeholder="اختر طريقة الدفع"
+                                  className={styles.noAntBorder}
+                    
+                    style={{ width: '100%', ...largeControlStyle }}
+                    size="large"
+                    optionFilterProp="label"
                     allowClear
                   >
-                    <Option value="">اختر طريقة الدفع</Option>
                     {paymentMethods.map(m => (
                       <Option key={m.id} value={m.name}>{m.name}</Option>
                     ))}
                   </Select>
-                </motion.div>
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                  className="flex flex-col"
-                >
-                  <label className="text-sm mb-1 text-gray-600">نوع الفاتورة</label>
+                </div>
+                
+                <div className="flex flex-col">
+                  <span style={labelStyle}>نوع الفاتورة</span>
                   <Select
-                    style={{ width: '100%' }}
-                    placeholder="الكل"
                     value={invoiceTypeFilter}
                     onChange={v => setInvoiceTypeFilter(v)}
+                    placeholder="اختر نوع الفاتورة"
+                    style={{ width: '100%', ...largeControlStyle }}
+                    className={styles.noAntBorder}
+                    size="large"
                     allowClear
                   >
                     <Option value="">الكل</Option>
+                    
                     <Option value="فاتورة">فاتورة</Option>
                     <Option value="مرتجع">مرتجع</Option>
                   </Select>
-                </motion.div>
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 }}
-                  className="flex flex-col"
-                >
-                  <label className="text-sm mb-1 text-gray-600">البائع</label>
-                  <Select
-                    style={{ width: '100%' }}
-                    placeholder="اختر البائع"
-                    value={seller || undefined}
-                    onChange={value => setSeller(value)}
+                </div>
+                
+
+                
+                <div className="flex flex-col">
+                  <span style={labelStyle}>اسم الصنف</span>
+                  <Input 
+                    value={itemName}
+                    onChange={e => setItemName(e.target.value)}
+                    placeholder="ادخل اسم الصنف"
+                    style={largeControlStyle}
+                    size="large"
                     allowClear
-                  >
-                    <Option value="">اختر البائع</Option>
-                    {Array.from(new Set(invoices.map(inv => inv.seller).filter(s => !!s && s !== ''))).map(s => (
-                      <Option key={s} value={s}>{s}</Option>
-                    ))}
-                  </Select>
-                </motion.div>
+                  />
+                </div>
+                
+                <div className="flex flex-col">
+                  <span style={labelStyle}>رقم الصنف</span>
+                  <Input 
+                    value={itemNumberFilter}
+                    onChange={e => setItemNumberFilter(e.target.value)}
+                    placeholder="ادخل رقم الصنف"
+                    style={largeControlStyle}
+                    size="large"
+                    allowClear
+                  />
+                </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
-        <div className="flex items-center gap-4 mt-4">
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={handleSearch}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors flex items-center justify-center"
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                جاري البحث...
-              </>
-            ) : "بحث"}
-          </motion.button>
-          <span className="text-gray-500 text-sm">
-            نتائج البحث: {getFilteredRows().length} - عرض الصفحة {currentPage} من {getTotalPages()}
-          </span>
+        
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 sm:justify-between">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button 
+              type="primary" 
+              onClick={handleSearch}
+              loading={isLoading}
+              size="large"
+              className="bg-emerald-600 hover:bg-emerald-700 border-emerald-600 hover:border-emerald-700"
+              icon={<SearchOutlined />}
+            >
+              بحث
+            </Button>
+            
+            <Button 
+              onClick={() => setShowMore(!showMore)}
+              size="large"
+              icon={showMore ? <UpOutlined /> : <DownOutlined />}
+            >
+              {showMore ? 'إخفاء الخيارات' : 'خيارات أكثر'}
+            </Button>
+          </div>
+          
+
         </div>
-        <motion.div
-          whileHover={{ scale: 1.05 }}
-          className="absolute left-4 top-4 flex items-center gap-2 cursor-pointer text-blue-600 select-none"
-          onClick={() => setShowMore((prev) => !prev)}
-        >
-          <span className="text-sm font-medium">{showMore ? "إخفاء الخيارات الإضافية" : "عرض خيارات أكثر"}</span>
-          <motion.svg
-            animate={{ rotate: showMore ? 180 : 0 }}
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2.5}
-            stroke="currentColor"
-            className="w-4 h-4 transition-transform"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </motion.svg>
-        </motion.div>
       </motion.div>
+
+      {/* الجدول */}
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, delay: 0.2 }}
-        className="w-full bg-white p-4 rounded-lg border border-blue-100 flex flex-col gap-4 shadow-sm"
+        className="bg-white p-4 rounded-lg shadow-sm border border-emerald-100 relative"
       >
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="border-r-4 border-blue-500 pr-4 mr-4 h-10 flex items-center">
-            <span className="text-lg font-semibold text-gray-700">نتائج البحث</span>
-          </div>
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-green-500"></div>
+        
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
           <div className="flex items-center gap-2">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg shadow-md hover:bg-green-700 transition-colors flex items-center gap-1"
+            <FileTextOutlined className="text-emerald-600" />
+            <h3 className="text-lg font-semibold text-gray-700">نتائج البحث</h3>
+            <Tag color="emerald" className="text-sm">
+              {getFilteredRows().length} نتيجة
+            </Tag>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Button
+              type="primary"
+              icon={<DownloadOutlined />}
               onClick={handleExport}
-              disabled={filteredInvoices.length === 0}
+              disabled={getFilteredRows().length === 0}
+              className="bg-green-600 hover:bg-green-700 border-green-600 hover:border-green-700"
+              size="large"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              تصدير
-            </motion.button>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors flex items-center gap-1"
+              تصدير إكسل
+            </Button>
+            <Button
+              type="primary"
+              icon={<PrinterOutlined />}
+              className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
+              size="large"
+              onClick={handlePrint}
+              disabled={getFilteredRows().length === 0}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-              </svg>
               طباعة
-            </motion.button>
+            </Button>
           </div>
         </div>
-        <div className="overflow-x-auto mt-4">
-          <div className="min-w-full inline-block align-middle">
-            <div className="overflow-hidden border rounded-lg">
-              <table className="min-w-full border border-gray-300">
-                <thead className="bg-blue-600">
-                  <tr>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300 w-56 min-w-[14rem]">رقم الفاتورة</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300 w-44 min-w-[10rem]">تاريخ الفاتورة</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">نوع الفاتورة</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">كود الصنف</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">اسم الصنف</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">الفئة</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">الكمية</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">الوحدة</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">سعر الوحدة</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">نسبة الخصم</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">قيمة الخصم</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">الإجمالي بعد الخصم</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">قيمة الضريبة المضافة</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">الصافي</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300 w-64 min-w-[15rem] ">اسم العميل</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">رقم العميل</th>
 
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">وقت الإنشاء</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">نسبة الضريبة</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">العملة</th>
-                    <th className="px-4 py-3 text-xs font-medium text-white text-center border border-gray-300">المخزن</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white">
-
-                  {getPaginatedRows().length > 0 ? (
-                    <>
-                      {getPaginatedRows().map((inv, idx) => {
-                        const sign = inv.invoiceType === 'مرتجع' ? -1 : 1;
-                        return (
-                          <tr
-                            key={inv.invoiceNumber + '-' + inv.invoiceType + '-' + inv.itemNumber + '-' + idx}
-                            className={
-                              `${idx % 2 === 0 ? 'bg-blue-50' : 'bg-transparent'} transition-colors duration-150 hover:bg-blue-100 cursor-pointer`
-                            }
-                          >
-                            <td className="px-4 py-2 text-center border border-gray-300 w-40 min-w-[10rem]">
-                              <Link
-                                to={`/edit/editsales?invoice=${encodeURIComponent(inv.invoiceNumber)}`}
-                                className="text-blue-700 underline hover:text-blue-900"
-                              >
-                                {inv.invoiceNumber}
-                              </Link>
-                            </td>
-                            <td className="px-4 py-2 text-center border border-gray-300 w-44 min-w-[10rem]">{dayjs(inv.date).format('YYYY-MM-DD')}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300 w-23 min-w-[6rem]">{inv.invoiceType}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300 w-30 min-w-[8rem]">{inv.itemNumber}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300 w-55 min-w-[14rem]">{inv.itemName}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300 w-44 min-w-[8rem]">{inv.mainCategory || ''}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300">{inv.quantity}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300">{inv.unit || ''}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300">{inv.price}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300">{inv.discountPercent}%</td>
-                            <td className="px-4 py-2 text-center border border-gray-300">{(sign * (inv.discountValue || 0)).toFixed(2)}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300">{(sign * (inv.totalAfterDiscount ?? ((inv.price || 0) * (inv.quantity || 0) - (inv.discountValue || 0)))).toFixed(2)}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300">{(sign * (inv.taxValue || 0)).toFixed(2)}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300">{(sign * (inv.net || 0)).toFixed(2)}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300">{inv.customer}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300">{inv.customerPhone && inv.customerPhone.trim() !== '' ? inv.customerPhone : 'غير متوفر'}</td>
-                            <td className="px-4 py-2 text-center border border-gray-300 w-44 min-w-[8rem]">{
-                              (() => {
-                                const parseTime = (val: { seconds?: number } | string | undefined | null) => {
-                                  if (!val) return '';
-                                  if (typeof val === 'object' && val.seconds) {
-                                    return dayjs(val.seconds * 1000).format('hh:mm:ss A');
-                                  }
-                                  if (typeof val === 'string') {
-                                    const d = dayjs(val);
-                                    if (d.isValid()) return d.format('hh:mm:ss A');
-                                  }
-                                  return '';
-                                };
-                                return (
-                                  parseTime(inv.createdAt) ||
-                                  (inv.date ? dayjs(inv.date).format('hh:mm:ss A') : '')
-                                );
-                              })()
-                            }</td>
-                            <td className="px-4 py-2 text-center border border-gray-300">{inv.taxPercent}%</td>
-                            <td className="px-4 py-2 text-center border border-gray-300 w-44 min-w-[10rem]">ريال سعودي</td>
-                            <td className="px-4 py-2 text-center border border-gray-300 w-44 min-w-[10rem]">{getWarehouseName(inv.warehouse)}</td>
-                          </tr>
-                        );
-                      })}
-                      {/* صف الإجمالي */}
-                      {
-                        (() => {
-                          const rows = getFilteredRows(); // استخدم كل البيانات المفلترة، ليس فقط المعروضة في الصفحة
-                          let totalDiscount = 0, totalAfterDiscount = 0, totalTax = 0, totalNet = 0;
-                          rows.forEach(inv => {
-                            const sign = inv.invoiceType === 'مرتجع' ? -1 : 1;
-                            totalDiscount += sign * (inv.discountValue || 0);
-                            totalAfterDiscount += sign * (inv.totalAfterDiscount ?? ((inv.price || 0) * (inv.quantity || 0) - (inv.discountValue || 0)));
-                            totalTax += sign * (inv.taxValue || 0);
-                            totalNet += sign * (inv.net || 0);
-                          });
-                          return (
-                            <tr className=" font-bold">
-                              <td className="px-4 py-2 text-center border border-gray-300" colSpan={10}>الإجمالي</td>
-                              <td className="px-4 py-2 text-center border border-gray-300">{totalDiscount.toFixed(2)}</td>
-                              <td className="px-4 py-2 text-center border border-gray-300">{totalAfterDiscount.toFixed(2)}</td>
-                              <td className="px-4 py-2 text-center border border-gray-300">{totalTax.toFixed(2)}</td>
-                              <td className="px-4 py-2 text-center border border-gray-300">{totalNet.toFixed(2)}</td>
-                              <td className="px-4 py-2 text-center border border-gray-300" colSpan={5}></td>
-                            </tr>
-                          );
-                        })()
-                      }
-                    </>
-                  ) : (
-                    <tr>
-                      <td 
-                        className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 text-center border border-gray-300" 
-                        colSpan={19}
-                      >
-                        {isLoading ? (
-                          <div className="flex justify-center items-center py-8">
-                            <div className="animate-pulse flex space-x-4">
-                              <div className="flex-1 space-y-4 py-1">
-                                <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto"></div>
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-gray-400">لا توجد بيانات</div>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+        {isLoading ? (
+          <div className="flex justify-center items-center py-20">
+            <Spin size="large" />
           </div>
-        </div>
-        
-        {/* Pagination Controls */}
-        {getFilteredRows().length > 0 && (
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.1 }}
-            className="flex flex-col sm:flex-row justify-between items-center mt-6 gap-4"
-          >
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <span>عرض</span>
-              <span className="font-semibold">
-                {Math.min((currentPage - 1) * pageSize + 1, getFilteredRows().length)} - {Math.min(currentPage * pageSize, getFilteredRows().length)}
-              </span>
-              <span>من</span>
-              <span className="font-semibold">{getFilteredRows().length}</span>
-              <span>نتيجة</span>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              {/* Previous Button */}
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  currentPage === 1
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </motion.button>
-
-              {/* Page Numbers */}
-              <div className="flex items-center gap-1">
-                {(() => {
-                  const totalPages = getTotalPages();
-                  const pages = [];
-                  
-                  // Show first page
-                  if (totalPages > 0) {
-                    pages.push(
-                      <motion.button
-                        key={1}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setCurrentPage(1)}
-                        className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                          currentPage === 1
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
+        ) : (
+          <>
+            <Table  
+              style={{ direction: 'rtl' }}
+              columns={[
+                {
+                  title: 'رقم الفاتورة',
+                  dataIndex: 'invoiceNumber',
+                  key: 'invoiceNumber',
+                  minWidth: 130,
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => a.invoiceNumber.localeCompare(b.invoiceNumber),
+                  render: (text: string, record: InvoiceItemRow) => (
+                    record.invoiceType === 'مرتجع' && record.id ? (
+                      <Link
+                        to={`/edit/edit-return/${record.id}`}
+                        className="text-red-700 underline hover:text-red-900"
                       >
-                        1
-                      </motion.button>
-                    );
-                  }
-
-                  // Show ellipsis if needed
-                  if (currentPage > 3) {
-                    pages.push(
-                      <span key="dots1" className="px-2 text-gray-400">...</span>
-                    );
-                  }
-
-                  // Show pages around current page
-                  const start = Math.max(2, currentPage - 1);
-                  const end = Math.min(totalPages - 1, currentPage + 1);
-                  
-                  for (let i = start; i <= end; i++) {
-                    if (i !== 1 && i !== totalPages) {
-                      pages.push(
-                        <motion.button
-                          key={i}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => setCurrentPage(i)}
-                          className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                            currentPage === i
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {i}
-                        </motion.button>
-                      );
-                    }
-                  }
-
-                  // Show ellipsis if needed
-                  if (currentPage < totalPages - 2) {
-                    pages.push(
-                      <span key="dots2" className="px-2 text-gray-400">...</span>
-                    );
-                  }
-
-                  // Show last page
-                  if (totalPages > 1) {
-                    pages.push(
-                      <motion.button
-                        key={totalPages}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setCurrentPage(totalPages)}
-                        className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                          currentPage === totalPages
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
+                        {text}
+                      </Link>
+                    ) : (
+                      <Link
+                        to={`/stores/edit-sales-invoice?invoice=${encodeURIComponent(text)}`}
+                        className="text-blue-700 underline hover:text-blue-900"
+                        target="_blank"
+                        rel="noopener noreferrer"
                       >
-                        {totalPages}
-                      </motion.button>
-                    );
-                  }
-
-                  return pages;
-                })()}
-              </div>
-
-              {/* Next Button */}
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, getTotalPages()))}
-                disabled={currentPage === getTotalPages()}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  currentPage === getTotalPages()
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </motion.button>
-            </div>
-          </motion.div>
-        )}
-      </motion.div>
-    {/* مودال تفاصيل الفاتورة */}
-{
-  showInvoiceModal && selectedInvoice && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 backdrop-blur-sm">
-      {/* Modal Container with Slide-in Animation */}
-      <div 
-        className="bg-white rounded-xl shadow-2xl p-8 max-w-[95vw] w-[950px] md:w-[1150px] lg:w-[1300px] mx-2 md:mx-8 relative"
-        style={{ fontFamily: "Tajawal", maxHeight: '90vh', overflowY: 'auto' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Close Button with Hover Animation */}
-        <button
-          className="absolute left-4 top-4 text-gray-500 hover:text-red-600 text-2xl font-bold transition-colors duration-200 transform hover:scale-110"
-          onClick={() => setShowInvoiceModal(false)}
-          title="إغلاق"
-        >
-          ×
-        </button>
-        
-        {/* Modal Content - جميع الحقول مقفولة للعرض فقط */}
-        <div ref={printRef} className="space-y-6">
-          {/* Header with Fade-in Animation */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.1 }}
-          >
-            <h2 className="text-2xl font-bold text-blue-800 mb-1">تفاصيل الفاتورة</h2>
-            <div className="h-1 w-20 bg-blue-500 rounded-full"></div>
-          </motion.div>
-          {/* معلومات الفاتورة - حقول إدخال قابلة للتعديل */}
-          <motion.div 
-            className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
-          >
-            <div className="flex flex-col gap-2">
-              <label className="text-sm text-gray-600">رقم الفاتورة</label>
-              <input type="text" className="bg-gray-100 rounded px-3 py-2 text-gray-800" value={selectedInvoice.invoiceNumber} readOnly />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm text-gray-600">تاريخ الفاتورة</label>
-              <input type="text" className="bg-gray-100 rounded px-3 py-2 text-gray-800" value={dayjs(selectedInvoice.date).format("YYYY-MM-DD")} readOnly />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm text-gray-600">نوع الفاتورة</label>
-              <div className="bg-gray-100 rounded px-3 py-2">
-                <Select value={selectedInvoice.invoiceType} disabled style={{ width: '100%' }}>
-                  <Select.Option value="مبيعات">مبيعات</Select.Option>
-                  <Select.Option value="مرتجع">مرتجع</Select.Option>
-                </Select>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm text-gray-600">اسم العميل</label>
-              <div className="bg-gray-100 rounded px-3 py-2">
-                <Select showSearch value={selectedInvoice.customer} disabled style={{ width: '100%' }}>
-                  {Array.from(new Set(filteredInvoices.map(inv => inv.customer).filter(s => !!s && s !== ''))).map(s => (
-                    <Select.Option key={s} value={s}>{s}</Select.Option>
-                  ))}
-                </Select>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm text-gray-600">رقم العميل</label>
-              <input type="text" className="bg-gray-100 rounded px-3 py-2 text-gray-800" value={selectedInvoice.customerPhone || "غير متوفر"} readOnly />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm text-gray-600">المخزن</label>
-              <div className="bg-gray-100 rounded px-3 py-2">
-                <Select value={selectedInvoice.warehouse} disabled style={{ width: '100%' }}>
-                  {Array.from(new Set(filteredInvoices.map(inv => inv.warehouse).filter(s => !!s && s !== ''))).map(s => (
-                    <Select.Option key={s} value={s}>{getWarehouseName(s)}</Select.Option>
-                  ))}
-                </Select>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm text-gray-600">البائع</label>
-              <div className="bg-gray-100 rounded px-3 py-2">
-                <Select value={selectedInvoice.seller} disabled style={{ width: '100%' }}>
-                  {Array.from(new Set(filteredInvoices.map(inv => inv.seller).filter(s => !!s && s !== ''))).map(s => (
-                    <Select.Option key={s} value={s}>{s}</Select.Option>
-                  ))}
-                </Select>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm text-gray-600">طريقة الدفع</label>
-              <div className="bg-gray-100 rounded px-3 py-2">
-                <Select value={selectedInvoice.paymentMethod} disabled style={{ width: '100%' }}>
-                  {Array.from(new Set(filteredInvoices.map(inv => inv.paymentMethod).filter(s => !!s && s !== ''))).map(s => (
-                    <Select.Option key={s} value={s}>{s}</Select.Option>
-                  ))}
-                </Select>
-              </div>
-            </div>
-          </motion.div>
-          
-          {/* Invoice Information Grid */}
-          <motion.div 
-            className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
-          >
-            <div className="flex justify-between">
-              <span className="font-semibold text-gray-600">رقم الفاتورة:</span>
-              <span className="text-gray-800">{selectedInvoice.invoiceNumber}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="font-semibold text-gray-600">تاريخ الفاتورة:</span>
-              <span className="text-gray-800">{dayjs(selectedInvoice.date).format("YYYY-MM-DD")}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="font-semibold text-gray-600">نوع الفاتورة:</span>
-              <span className="text-gray-800">{selectedInvoice.invoiceType}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="font-semibold text-gray-600">اسم العميل:</span>
-              <span className="text-gray-800">{selectedInvoice.customer}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="font-semibold text-gray-600">رقم العميل:</span>
-              <span className="text-gray-800">{selectedInvoice.customerPhone || "غير متوفر"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="font-semibold text-gray-600">المخزن:</span>
-              <span className="text-gray-800">{getWarehouseName(selectedInvoice.warehouse)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="font-semibold text-gray-600">البائع:</span>
-              <span className="text-gray-800">{selectedInvoice.seller || "-"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="font-semibold text-gray-600">طريقة الدفع:</span>
-              <span className="text-gray-800">{selectedInvoice.paymentMethod || "-"}</span>
-            </div>
-          </motion.div>
-          
-          {/* Items Table with Staggered Animation */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-          >
-            <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-blue-50">
-                  <motion.tr
-                    initial={{ y: 10, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.4 }}
-                  >
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">كود الصنف</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">اسم الصنف</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">الفئة</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">الكمية</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">الوحدة</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">سعر الوحدة</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">الخصم</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">الصافي</th>
-                  </motion.tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredInvoices
-                    .filter(
-                      (row) =>
-                        row.invoiceNumber === selectedInvoice.invoiceNumber &&
-                        row.invoiceType === selectedInvoice.invoiceType
+                        {text}
+                      </Link>
                     )
-                    .map((row, idx) => {
-                      const price = Number(row.price) || 0;
-                      const quantity = Number(row.quantity) || 0;
-                      const discountValue = Number(row.discountValue) || 0;
-                      const discountPercent = Number(row.discountPercent) || 0;
-                      const totalAfterDiscount =
-                        typeof row.totalAfterDiscount !== "undefined"
-                          ? row.totalAfterDiscount
-                          : price * quantity - discountValue;
-                      const taxValue = Number(row.taxValue) || 0;
-                      const net = Number(row.net) || 0;
-                      const sign = row.invoiceType === "مرتجع" ? -1 : 1;
-                      
-                      return (
-                        <motion.tr
-                          key={idx}
-                          className={idx % 2 === 0 ? "bg-gray-50" : "bg-white"}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.5 + idx * 0.05 }}
-                          whileHover={{ scale: 1.01, backgroundColor: "rgba(59, 130, 246, 0.05)" }}
-                        >
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{row.itemNumber || ""}</td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{row.itemName || ""}</td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{row.mainCategory || ""}</td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{quantity}</td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{row.unit || ""}</td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{price.toFixed(2)}</td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-                            <div className="flex flex-col">
-                              <span>{discountPercent}%</span>
-                              <span className="text-red-500">{(sign * discountValue).toFixed(2)}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-blue-600">
-                            {(sign * net).toFixed(2)}
-                          </td>
-                        </motion.tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
-          </motion.div>
-          
-          {/* Totals Summary with Slide-up Animation */}
-          <motion.div
-            className="flex flex-col items-end"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8 }}
-          >
-            <div className="w-full md:w-1/3 bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
-              {(() => {
-                const allRows = filteredInvoices.filter(
-                  (row) =>
-                    row.invoiceNumber === selectedInvoice.invoiceNumber &&
-                    row.invoiceType === selectedInvoice.invoiceType
-                );
-                
-                let total = 0,
-                  totalDiscount = 0,
-                  afterDiscount = 0,
-                  totalTax = 0,
-                  finalTotal = 0;
-                
-                allRows.forEach((row) => {
-                  const sign = row.invoiceType === "مرتجع" ? -1 : 1;
-                  const price = Number(row.price) || 0;
-                  const quantity = Number(row.quantity) || 0;
-                  const discountValue = Number(row.discountValue) || 0;
-                  const taxValue = Number(row.taxValue) || 0;
-                  const subtotal = price * quantity;
-                  const totalAfterDiscount =
-                    typeof row.totalAfterDiscount !== "undefined"
-                      ? row.totalAfterDiscount
-                      : subtotal - discountValue;
-                  
-                  total += sign * subtotal;
-                  totalDiscount += sign * discountValue;
-                  afterDiscount += sign * (totalAfterDiscount < 0 ? 0 : totalAfterDiscount);
-                  totalTax += sign * taxValue;
-                  finalTotal += sign * ((totalAfterDiscount < 0 ? 0 : totalAfterDiscount) + taxValue);
-                });
-                
-                return (
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="font-semibold">الإجمالي:</span>
-                      <span>{total.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-red-500">
-                      <span className="font-semibold">الخصم:</span>
-                      <span>-{totalDiscount.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="font-semibold">بعد الخصم:</span>
-                      <span>{afterDiscount.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="font-semibold">الضريبة:</span>
-                      <span>{totalTax.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between pt-2 border-t border-gray-200 font-bold text-lg text-blue-700">
-                      <span>الإجمالي النهائي:</span>
-                      <span>{finalTotal.toFixed(2)}</span>
+                  ),
+                },
+                {
+                  title: 'تاريخ الفاتورة',
+                  dataIndex: 'date',
+                  key: 'date',
+                  minWidth: 120,
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => dayjs(a.date).valueOf() - dayjs(b.date).valueOf(),
+                  render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '',
+                },
+                {
+                  title: 'نوع الفاتورة',
+                  dataIndex: 'invoiceType',
+                  key: 'invoiceType',
+                  minWidth: 120,
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => a.invoiceType.localeCompare(b.invoiceType),
+                  render: (type: string) => (
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      type === 'مرتجع' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                    }`}>
+                      {type}
+                    </span>
+                  ),
+                },
+                {
+                  title: 'كود الصنف',
+                  dataIndex: 'itemNumber',
+                  key: 'itemNumber',
+                  minWidth: 120,
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.itemNumber || '').localeCompare(b.itemNumber || ''),
+                },
+                {
+                  title: 'اسم الصنف',
+                  dataIndex: 'itemName',
+                  key: 'itemName',
+                  minWidth: 190,
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.itemName || '').localeCompare(b.itemName || ''),
+                },
+                {
+                  title: 'الفئة',
+                  dataIndex: 'mainCategory',
+                  key: 'mainCategory',
+                  minWidth: 140,
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.mainCategory || '').localeCompare(b.mainCategory || ''),
+                },
+                {
+                  title: 'الكمية',
+                  dataIndex: 'quantity',
+                  key: 'quantity',
+                  minWidth: 100,
+                  render: (quantity: number, record: InvoiceItemRow) => {
+                    const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                    return `${(sign * (quantity || 0)).toLocaleString()}`;
+                  },
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.quantity || 0) - (b.quantity || 0),
+                },
+                {
+                  title: 'الوحدة',
+                  dataIndex: 'unit',
+                  key: 'unit',
+                  minWidth: 80,
+                  render: () => 'قطعة',
+                },
+                {
+                  title: 'سعر الوحدة',
+                  dataIndex: 'price',
+                  key: 'price',
+                  minWidth: 120,
+                  render: (price: number) => `${Number(price || 0).toFixed(2)}`,
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.price || 0) - (b.price || 0),
+                },
+                {
+                  title: 'نسبة الخصم',
+                  dataIndex: 'discountPercent',
+                  key: 'discountPercent',
+                  minWidth: 100,
+                  render: (discountPercent: number) => `${Number(discountPercent || 0).toFixed(2)}%`,
+                },
+                {
+                  title: 'قيمة الخصم',
+                  dataIndex: 'discountValue',
+                  key: 'discountValue',
+                  minWidth: 120,
+                  render: (discountValue: number, record: InvoiceItemRow) => {
+                    const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                    return `${(sign * (discountValue || 0)).toFixed(2)}`;
+                  },
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.discountValue || 0) - (b.discountValue || 0),
+                },
+                {
+                  title: 'الإجمالي بعد الخصم',
+                  key: 'afterDiscount',
+                  minWidth: 140,
+                  render: (record: InvoiceItemRow) => {
+                    const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                    const subtotal = (record.price || 0) * (record.quantity || 0);
+                    const afterDiscount = subtotal - (record.discountValue || 0);
+                    return `${(sign * afterDiscount).toFixed(2)}`;
+                  },
+                },
+                {
+                  title: 'قيمة الضريبة ',
+                  dataIndex: 'taxValue',
+                  key: 'taxValue',
+                  minWidth: 160,
+                  render: (tax: number, record: InvoiceItemRow) => {
+                    const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                    return `${(sign * (tax || 0)).toFixed(2)}`;
+                  },
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.taxValue || 0) - (b.taxValue || 0),
+                },
+                {
+                  title: 'الصافي',
+                  dataIndex: 'net',
+                  key: 'net',
+                  minWidth: 140,
+                  render: (net: number, record: InvoiceItemRow) => {
+                    const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
+                    return `${(sign * (net || 0)).toFixed(2)}`;
+                  },
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.net || 0) - (b.net || 0),
+                },
+                {
+                  title: 'اسم العميل',
+                  dataIndex: 'customer',
+                  key: 'customer',
+                  minWidth: 190,
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.customer || '').localeCompare(b.customer || ''),
+                },
+                {
+                  title: 'رقم العميل',
+                  dataIndex: 'customerPhone',
+                  key: 'customerPhone',
+                  minWidth: 120,
+                  render: (phone: string) => phone && phone.trim() !== '' ? phone : 'غير متوفر',
+                },
+                {
+                  title: 'وقت الإنشاء',
+                  key: 'time',
+                  minWidth: 160,
+                  render: (record: InvoiceItemRow) => {
+                    const parseTime = (val: unknown) => {
+                      if (!val) return '';
+                      if (typeof val === 'object' && val !== null && 'seconds' in val) {
+                        return dayjs((val as { seconds: number }).seconds * 1000).format('YYYY-MM-DD HH:mm:ss');
+                      }
+                      if (typeof val === 'string') {
+                        const d = dayjs(val);
+                        if (d.isValid()) return d.format('YYYY-MM-DD HH:mm:ss');
+                      }
+                      return '';
+                    };
+                    return parseTime(record.createdAt) || (record.date ? dayjs(record.date).format('YYYY-MM-DD HH:mm:ss') : '');
+                  },
+                },
+                {
+                  title: 'نسبة الضريبة',
+                  dataIndex: 'taxPercent',
+                  key: 'taxPercent',
+                  minWidth: 120,
+                  render: (taxPercent: number) => `${Number(taxPercent || 15).toFixed(2)}%`,
+                },
+                {
+                  title: 'العملة',
+                  key: 'currency',
+                  minWidth: 80,
+                  render: () => 'ر.س',
+                },
+                {
+                  title: 'المخزن',
+                  dataIndex: 'warehouse',
+                  key: 'warehouse',
+                  minWidth: 120,
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => getWarehouseName(a.warehouse).localeCompare(getWarehouseName(b.warehouse)),
+                  render: (warehouse: string) => {
+                    const warehouseName = getWarehouseName(warehouse);
+                    console.log('Rendering warehouse:', warehouse, '->', warehouseName);
+                    return warehouseName;
+                  },
+                },
+                {
+                  title: 'الفرع',
+                  dataIndex: 'branch',
+                  key: 'branch',
+                  minWidth: 120,
+                  sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => getBranchName(a.branch).localeCompare(getBranchName(b.branch)),
+                  render: (branch: string) => getBranchName(branch),
+                },
+                {
+                  title: 'طريقة الدفع',
+                  dataIndex: 'paymentMethod',
+                  key: 'paymentMethod',
+                  minWidth: 120,
+                  render: (method: string) => method || '-',
+                },
+               
+       
+              ]}
+              dataSource={getFilteredRows()}
+              rowKey="key"
+              pagination={{
+                current: currentPage,
+                pageSize: pageSize,
+                total: getFilteredRows().length,
+                showSizeChanger: true,
+                showQuickJumper: true,
+                showTotal: (total, range) => `${range[0]}-${range[1]} من ${total} عنصر`,
+                pageSizeOptions: ['10', '20', '50', '100'],
+                onChange: (page) => {
+                  setCurrentPage(page);
+                },
+                position: ['bottomCenter'],
+                className: 'mt-4'
+              }}
+              loading={isLoading}
+              scroll={{ x: 1400 }}
+              size="small"
+              bordered
+              className="[&_.ant-table-thead_>_tr_>_th]:bg-gray-400 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-gray-400 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
+              locale={{
+                emptyText: isLoading ? (
+                  <div className="flex justify-center items-center py-8">
+                    <div className="animate-pulse flex space-x-4">
+                      <div className="flex-1 space-y-4 py-1">
+                        <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto"></div>
+                      </div>
                     </div>
                   </div>
+                ) : (
+                  <div className="text-gray-400">لا توجد بيانات</div>
+                )
+              }}
+              summary={() => {
+                if (getFilteredRows().length === 0) return null;
+                
+                // حساب الإجماليات
+                const allRows = getFilteredRows();
+                let totalQuantity = 0;
+                let totalAmount = 0;
+                let totalDiscount = 0;
+                let totalAfterDiscount = 0;
+                let totalTax = 0;
+                let totalNet = 0;
+
+                allRows.forEach((row: InvoiceItemRow) => {
+                  const sign = row.invoiceType === 'مرتجع' ? -1 : 1;
+                  totalQuantity += sign * (row.quantity || 0);
+                  const subtotal = (row.price || 0) * (row.quantity || 0);
+                  totalAmount += sign * subtotal;
+                  totalDiscount += sign * (row.discountValue || 0);
+                  totalAfterDiscount += sign * (subtotal - (row.discountValue || 0));
+                  totalTax += sign * (row.taxValue || 0);
+                  totalNet += sign * (row.net || 0);
+                });
+
+                return (
+                  <Table.Summary fixed>
+                    <Table.Summary.Row className="">
+                      <Table.Summary.Cell index={0} className=" font-bold">الإجماليات</Table.Summary.Cell>
+                      <Table.Summary.Cell index={1}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={2}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={3}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={4}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={5}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={6} className=" font-bold">
+                        {totalQuantity.toLocaleString()}
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={7}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={8}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={9}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={10} className=" font-bold text-red-600">
+                        {totalDiscount.toFixed(2)}
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={11} className=" font-bold text-blue-600">
+                        {totalAfterDiscount.toFixed(2)}
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={12} className=" font-bold text-orange-600">
+                        {totalTax.toFixed(2)}
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={13} className=" font-bold text-green-600">
+                        {totalNet.toFixed(2)}
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={14}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={15}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={16}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={17}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={18}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={19}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={20}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={21}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={22}></Table.Summary.Cell>
+                      <Table.Summary.Cell index={23}></Table.Summary.Cell>
+                    </Table.Summary.Row>
+                  </Table.Summary>
                 );
-              })()}
-            </div>
-          </motion.div>
-          
-          {/* Additional Info with Fade Animation */}
-          <motion.div
-            className="flex flex-wrap justify-between text-sm text-gray-600 mt-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 1 }}
-          >
-            <div className="flex items-center space-x-2">
-              <span className="font-semibold">وقت الإنشاء:</span>
-              <span>
-                {(() => {
-                  const parseTime = (val: { seconds?: number } | string | undefined | null) => {
-                    if (!val) return "";
-                    if (typeof val === "object" && val.seconds) {
-                      return dayjs(val.seconds * 1000).format("hh:mm:ss A");
-                    }
-                    if (typeof val === "string") {
-                      const d = dayjs(val);
-                      if (d.isValid()) return d.format("hh:mm:ss A");
-                    }
-                    return "";
-                  };
-                  return (
-                    parseTime(selectedInvoice.createdAt) ||
-                    (selectedInvoice.date
-                      ? dayjs(selectedInvoice.date).format("hh:mm:ss A")
-                      : "")
-                  );
-                })()}
-              </span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <span className="font-semibold">نسبة الضريبة:</span>
-              <span>{selectedInvoice.taxPercent}%</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <span className="font-semibold">العملة:</span>
-              <span>ريال سعودي</span>
-            </div>
-          </motion.div>
-        </div>
-        
-        {/* Action Buttons with Staggered Animation */}
-        <motion.div 
-          className="flex justify-end space-x-3 mt-6"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.1 }}
+              }}
+            />
+          </>
+        )}
+      </motion.div>
+
+      {/* مودال تفاصيل الفاتورة */}
+      {showInvoiceModal && selectedInvoice && (
+        <Modal
+          title="تفاصيل الفاتورة"
+          open={showInvoiceModal}
+          onCancel={() => setShowInvoiceModal(false)}
+          width={1000}
+          footer={[
+            <Button key="close" onClick={() => setShowInvoiceModal(false)}>
+              إغلاق
+            </Button>,
+            <Button key="print" type="primary" onClick={handlePrint}>
+              طباعة
+            </Button>
+          ]}
         >
-          <motion.button
-            className="px-6 py-2 bg-yellow-500 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-600 transition-colors duration-200 flex items-center"
-            onClick={() => {/* TODO: handleEditInvoice */}}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5h2m-1 0v14m-7-7h14" />
-            </svg>
-            تعديل
-          </motion.button>
-          <motion.button
-            className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors duration-200 flex items-center"
-            onClick={handlePrint}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-            </svg>
-            طباعة
-          </motion.button>
-          <motion.button
-            className="px-6 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-300 transition-colors duration-200 flex items-center"
-            onClick={() => setShowInvoiceModal(false)}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            إغلاق
-          </motion.button>
-        </motion.div>
-      </div>
-    </div>
-  )
-}
+          <div ref={printRef} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-gray-600">رقم الفاتورة:</label>
+                <p className="text-base">{selectedInvoice.invoiceNumber}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-600">التاريخ:</label>
+                <p className="text-base">{selectedInvoice.date}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-600">العميل:</label>
+                <p className="text-base">{selectedInvoice.customer}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-600">رقم العميل:</label>
+                <p className="text-base">{selectedInvoice.customerPhone}</p>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-600">المخزن:</label>
+                <p className="text-base">{getWarehouseName(selectedInvoice.warehouse)}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-600">طريقة الدفع:</label>
+                <p className="text-base">{selectedInvoice.paymentMethod}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-600">نوع الفاتورة:</label>
+                <p className="text-base">{selectedInvoice.invoiceType}</p>
+              </div>
+            </div>
+            
+            <div className="mt-6">
+              <h4 className="text-lg font-semibold mb-4">تفاصيل الأصناف</h4>
+              <table className="w-full border-collapse border border-gray-300">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="border border-gray-300 px-4 py-2 text-center">كود الصنف</th>
+                    <th className="border border-gray-300 px-4 py-2 text-center">اسم الصنف</th>
+                    <th className="border border-gray-300 px-4 py-2 text-center">الكمية</th>
+                    <th className="border border-gray-300 px-4 py-2 text-center">السعر</th>
+                    <th className="border border-gray-300 px-4 py-2 text-center">الإجمالي</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="border border-gray-300 px-4 py-2 text-center">{selectedInvoice.itemNumber}</td>
+                    <td className="border border-gray-300 px-4 py-2 text-center">{selectedInvoice.itemName}</td>
+                    <td className="border border-gray-300 px-4 py-2 text-center">{selectedInvoice.quantity}</td>
+                    <td className="border border-gray-300 px-4 py-2 text-center">{selectedInvoice.price?.toFixed(2)}</td>
+                    <td className="border border-gray-300 px-4 py-2 text-center">{selectedInvoice.net?.toFixed(2)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
     </>
   );
