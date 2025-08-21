@@ -9,6 +9,8 @@ import { useFinancialYear } from '@/hooks/useFinancialYear';
 import { fetchBranches, Branch } from '@/lib/branches';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Helmet } from "react-helmet";
+import styles from './ReceiptVoucher.module.css';
+
 
 const { Option } = Select;
 const { Title } = Typography;
@@ -45,15 +47,38 @@ const BranchSales: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(true);
+
+  // ستايل موحد لعناصر الإدخال والدروب داون مثل صفحة أمر البيع
+  const largeControlStyle = {
+    height: 48,
+    fontSize: 18,
+    borderRadius: 8,
+    padding: '8px 16px',
+    boxShadow: '0 1px 6px rgba(0,0,0,0.07)',
+    background: '#fff',
+    border: '1.5px solid #d9d9d9',
+    transition: 'border-color 0.3s',
+  };
+  const labelStyle = { fontSize: 18, fontWeight: 500, marginBottom: 2, display: 'block' };
   
   // خيارات البحث
   const [dateFrom, setDateFrom] = useState<Dayjs | null>(null);
   const [dateTo, setDateTo] = useState<Dayjs | null>(null);
   const [branchIds, setBranchIds] = useState<string[]>([]);
-  const [invoiceType, setInvoiceType] = useState<string>("all"); // all, sales or returns
+  const [invoiceType, setInvoiceType] = useState<string>("sales"); // all, sales or returns
 
   // السنة المالية من السياق
   const { currentFinancialYear } = useFinancialYear();
+
+  // دالة لفلترة التواريخ المسموحة في DatePicker حسب السنة المالية
+  const disabledDate = (current: dayjs.Dayjs) => {
+    if (!currentFinancialYear) return false;
+    
+    const startDate = dayjs(currentFinancialYear.startDate);
+    const endDate = dayjs(currentFinancialYear.endDate);
+    
+    return current.isBefore(startDate, 'day') || current.isAfter(endDate, 'day');
+  };
 
   // تعيين التواريخ الافتراضية حسب السنة المالية
   useEffect(() => {
@@ -355,6 +380,476 @@ const BranchSales: React.FC = () => {
     }, 100);
   };
 
+  // بيانات الشركة
+  const [companyData, setCompanyData] = useState<any>({});
+  useEffect(() => {
+    const fetchCompany = async () => {
+      try {
+        const { db } = await import('@/lib/firebase');
+        const { query, collection, getDocs } = await import('firebase/firestore');
+        const q = query(collection(db, "companies"));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+          const docData = snapshot.docs[0];
+          setCompanyData({ ...docData.data() });
+          console.log('تم جلب بيانات الشركة بنجاح:', docData.data());
+        } else {
+          console.log('مجموعة الشركات فارغة');
+        }
+      } catch (error) {
+        console.error('خطأ في جلب بيانات الشركة:', error);
+      }
+    };
+    fetchCompany();
+  }, []);
+
+  // دالة الطباعة
+  const handlePrint = async () => {
+    // التأكد من تحميل بيانات الشركة قبل الطباعة
+    let currentCompanyData = companyData;
+    
+    // إذا لم تكن بيانات الشركة محملة، جلبها مرة أخرى
+    if (!currentCompanyData || Object.keys(currentCompanyData).length === 0) {
+      console.log('بيانات الشركة غير محملة، جاري الجلب...');
+      try {
+        const { db } = await import('@/lib/firebase');
+        const { query, collection, getDocs } = await import('firebase/firestore');
+        const q = query(collection(db, "companies"));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+          const docData = snapshot.docs[0];
+          currentCompanyData = { ...docData.data() };
+          setCompanyData(currentCompanyData);
+          console.log('تم جلب بيانات الشركة:', currentCompanyData);
+        } else {
+          console.log('مجموعة الشركات فارغة، استخدام القيم الافتراضية');
+          currentCompanyData = {
+            arabicName: 'اسم الشركة',
+            englishName: 'Company Name',
+            companyType: '',
+            commercialRegistration: 'غير متوفر',
+            taxFile: 'غير متوفر',
+            city: '',
+            region: '',
+            street: '',
+            district: '',
+            buildingNumber: '',
+            postalCode: '',
+            phone: '',
+            mobile: '',
+            logoUrl: 'https://via.placeholder.com/100x50?text=Company+Logo'
+          };
+        }
+      } catch (error) {
+        console.error('خطأ في جلب بيانات الشركة:', error);
+        currentCompanyData = {
+          arabicName: 'اسم الشركة',
+          englishName: 'Company Name',
+          companyType: '',
+          commercialRegistration: 'غير متوفر',
+          taxFile: 'غير متوفر',
+          city: '',
+          region: '',
+          street: '',
+          district: '',
+          buildingNumber: '',
+          postalCode: '',
+          phone: '',
+          mobile: '',
+          logoUrl: 'https://via.placeholder.com/100x50?text=Company+Logo'
+        };
+      }
+    } else {
+      console.log('بيانات الشركة محملة مسبقاً:', currentCompanyData);
+    }
+
+    // حساب الإجماليات
+    const totalSales = filteredSales.reduce((sum, branch) => sum + branch.totalSales, 0);
+    const totalDiscount = filteredSales.reduce((sum, branch) => sum + branch.totalDiscount, 0);
+    const totalTax = filteredSales.reduce((sum, branch) => sum + branch.totalTax, 0);
+    const totalNet = filteredSales.reduce((sum, branch) => sum + branch.netTotal, 0);
+    const totalInvoices = filteredSales.reduce((sum, branch) => sum + branch.invoiceCount, 0);
+    const avgSales = filteredSales.length > 0 ? totalSales / filteredSales.length : 0;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    // التأكد من وجود البيانات المطلوبة
+    const safeCompanyData = {
+      arabicName: currentCompanyData?.arabicName || 'اسم الشركة',
+      englishName: currentCompanyData?.englishName || 'Company Name',
+      companyType: currentCompanyData?.companyType || '',
+      commercialRegistration: currentCompanyData?.commercialRegistration || 'غير متوفر',
+      taxFile: currentCompanyData?.taxFile || 'غير متوفر',
+      city: currentCompanyData?.city || '',
+      region: currentCompanyData?.region || '',
+      street: currentCompanyData?.street || '',
+      district: currentCompanyData?.district || '',
+      buildingNumber: currentCompanyData?.buildingNumber || '',
+      postalCode: currentCompanyData?.postalCode || '',
+      phone: currentCompanyData?.phone || '',
+      mobile: currentCompanyData?.mobile || '',
+      logoUrl: currentCompanyData?.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'
+    };
+
+    console.log('البيانات المستخدمة في الطباعة:', safeCompanyData);
+
+    printWindow.document.write(`
+      <html>
+      <head>
+        <title>طباعة تقرير مبيعات الفروع</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700&display=swap');
+          @page { 
+            size: A4 landscape; 
+            margin: 15mm; 
+          }
+          body { 
+            font-family: 'Tajawal', Arial, sans-serif; 
+            direction: rtl; 
+            padding: 10px; 
+            font-size: 11px;
+            line-height: 1.3;
+            margin: 0;
+          }
+          .company-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #000;
+            padding-bottom: 10px;
+          }
+          .header-section {
+            flex: 1;
+            min-width: 0;
+            padding: 0 8px;
+            box-sizing: border-box;
+          }
+          .header-section.center {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 120px;
+            max-width: 120px;
+            min-width: 100px;
+          }
+          .logo {
+            width: 100px;
+            height: auto;
+            margin-bottom: 8px;
+          }
+          .company-info-ar {
+            text-align: right;
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 1.4;
+          }
+          .company-info-en {
+            text-align: left;
+            font-family: Arial, sans-serif;
+            direction: ltr;
+            font-size: 10px;
+            font-weight: 500;
+            line-height: 1.4;
+          }
+          .header {
+            text-align: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #000;
+            padding-bottom: 10px;
+          }
+          .header h1 {
+            color: #000;
+            margin: 0;
+            font-size: 20px;
+            font-weight: 700;
+          }
+          .header p {
+            color: #000;
+            margin: 3px 0 0 0;
+            font-size: 12px;
+          }
+          table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-bottom: 20px;
+            font-size: 10px;
+          }
+          th, td { 
+            border: 1px solid #d1d5db; 
+            padding: 4px 2px; 
+            text-align: center;
+            vertical-align: middle;
+            font-size: 9px;
+          }
+          th { 
+            background-color: #bbbbbc !important;
+            color: #fff;
+            font-weight: 600;
+            font-size: 9px;
+            padding: 6px 4px;
+          }
+          tbody tr:nth-child(even) {
+            background-color: #f5f5f5;
+          }
+          tbody tr:hover {
+            background-color: #e5e5e5;
+          }
+          .print-date {
+            text-align: left;
+            margin-top: 15px;
+            font-size: 9px;
+            color: #000;
+          }
+          .print-last-page-only {
+            display: none;
+          }
+          .totals-container {
+            margin-top: 20px;
+            display: flex;
+            justify-content: flex-start;
+            direction: rtl;
+          }
+          .totals-table {
+            width: 300px;
+            font-size: 12px;
+            overflow: hidden;
+          }
+          .totals-table th {
+            background-color: #000;
+            color: #fff;
+            padding: 10px;
+            text-align: center;
+            font-size: 14px;
+          }
+          .totals-table .total-label {
+            background-color: #f8f9fa;
+            padding: 8px 12px;
+            text-align: right;
+            width: 60%;
+          }
+          .totals-table .total-value {
+            background-color: #fff;
+            padding: 8px 12px;
+            text-align: left;
+            width: 40%;
+          }
+          .totals-table .final-total .total-label {
+            background-color: #e9ecef;
+            color: #000;
+          }
+          .totals-table .final-total .total-value {
+            background-color: #f1f3f4;
+            color: #000;
+            font-size: 13px;
+          }
+          @media print {
+            body { margin: 0; padding: 10px; }
+            .no-print { display: none; }
+            .print-last-page-only {
+              display: block;
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
+            table {
+              page-break-inside: auto;
+            }
+            tbody {
+              page-break-inside: auto;
+            }
+            .print-last-page-only {
+              page-break-before: avoid;
+              break-before: avoid;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <!-- Company Header Section -->
+        <div class="company-header">
+          <div class="header-section company-info-ar">
+            <div>${safeCompanyData.arabicName}</div>
+            <div>${safeCompanyData.companyType}</div>
+            <div>السجل التجاري: ${safeCompanyData.commercialRegistration}</div>
+            <div>الملف الضريبي: ${safeCompanyData.taxFile}</div>
+            <div>العنوان: ${safeCompanyData.city} ${safeCompanyData.region} ${safeCompanyData.street} ${safeCompanyData.district} ${safeCompanyData.buildingNumber}</div>
+            <div>الرمز البريدي: ${safeCompanyData.postalCode}</div>
+            <div>الهاتف: ${safeCompanyData.phone}</div>
+            <div>الجوال: ${safeCompanyData.mobile}</div>
+          </div>
+          <div class="header-section center">
+            <img src="${safeCompanyData.logoUrl}" class="logo" alt="Company Logo">
+          </div>
+          <div class="header-section company-info-en">
+            <div>${safeCompanyData.englishName}</div>
+            <div>${safeCompanyData.companyType}</div>
+            <div>Commercial Reg.: ${safeCompanyData.commercialRegistration}</div>
+            <div>Tax File: ${safeCompanyData.taxFile}</div>
+            <div>Address: ${safeCompanyData.city} ${safeCompanyData.region} ${safeCompanyData.street} ${safeCompanyData.district} ${safeCompanyData.buildingNumber}</div>
+            <div>Postal Code: ${safeCompanyData.postalCode}</div>
+            <div>Phone: ${safeCompanyData.phone}</div>
+            <div>Mobile: ${safeCompanyData.mobile}</div>
+          </div>
+        </div>
+        
+        <div class="header">
+          <h1>تقرير مبيعات الفروع</h1>
+          <p class="font-weight-bold">نظام إدارة الموارد ERP90</p>
+          ${dateFrom && dateTo ? `
+          <div style="margin-top: 10px; font-size: 14px; color: #333;">
+            الفترة: من ${dateFrom.format('DD/MM/YYYY')} إلى ${dateTo.format('DD/MM/YYYY')}
+          </div>
+          ` : ''}
+        </div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 200px;">الفرع</th>
+              <th style="width: 140px;">إجمالي المبيعات</th>
+              <th style="width: 140px;">إجمالي الخصم</th>
+              <th style="width: 140px;">إجمالي الضريبة</th>
+              <th style="width: 140px;">الصافي</th>
+              <th style="width: 120px;">عدد الفواتير</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredSales.map(branch => `
+              <tr>
+                <td>${branch.branchName || '-'}</td>
+                <td>${(branch.totalSales || 0).toLocaleString()} ر.س</td>
+                <td>${(branch.totalDiscount || 0).toLocaleString()} ر.س</td>
+                <td>${(branch.totalTax || 0).toLocaleString()} ر.س</td>
+                <td>${(branch.netTotal || 0).toLocaleString()} ر.س</td>
+                <td>${(branch.invoiceCount || 0).toLocaleString()}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        
+        <!-- جدول الإجماليات المنفصل -->
+        <div class="print-last-page-only totals-container">
+          <table class="totals-table">
+            <thead>
+              <tr>
+                <th colspan="2">الإجماليات النهائية</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="total-label">عدد الفروع:</td>
+                <td class="total-value">${filteredSales.length.toLocaleString()} فرع</td>
+              </tr>
+              <tr>
+                <td class="total-label">إجمالي المبيعات:</td>
+                <td class="total-value">${totalSales.toLocaleString()} ر.س</td>
+              </tr>
+              <tr>
+                <td class="total-label">إجمالي الخصم:</td>
+                <td class="total-value">${totalDiscount.toLocaleString()} ر.س</td>
+              </tr>
+              <tr>
+                <td class="total-label">إجمالي الضريبة:</td>
+                <td class="total-value">${totalTax.toLocaleString()} ر.س</td>
+              </tr>
+              <tr>
+                <td class="total-label">إجمالي الفواتير:</td>
+                <td class="total-value">${totalInvoices.toLocaleString()} فاتورة</td>
+              </tr>
+              <tr>
+                <td class="total-label">متوسط مبيعات الفرع:</td>
+                <td class="total-value">${avgSales.toLocaleString()} ر.س</td>
+              </tr>
+              <tr class="final-total">
+                <td class="total-label">إجمالي الصافي:</td>
+                <td class="total-value">${totalNet.toLocaleString()} ر.س</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        
+        <div class="print-date">
+          تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')} - ${new Date().toLocaleTimeString('en-GB')}
+        </div>
+        
+        <!-- Signature Section at the end of the page -->
+        <div style="
+          margin-top: 50px;
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          padding: 0 20px;
+          page-break-inside: avoid;
+        ">
+          <div style="
+            flex: 1;
+            text-align: right;
+            font-size: 14px;
+            font-weight: 500;
+          ">
+            <div style="margin-bottom: 8px;">المسؤول المالي: ___________________</div>
+            <div>التوقيع: ___________________</div>
+          </div>
+          <div style="
+            flex: 1;
+            text-align: center;
+            position: relative;
+          ">
+            <!-- Decorative Company Stamp -->
+            <div style="
+              margin-top: 10px;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              width: 180px;
+              height: 70px;
+              border: 3px dashed #000;
+              border-radius: 50%;
+              box-shadow: 0 3px 10px 0 rgba(0,0,0,0.12);
+              opacity: 0.9;
+              background: repeating-linear-gradient(135deg, #f8f8f8 0 10px, #fff 10px 20px);
+              font-family: 'Tajawal', Arial, sans-serif;
+              font-size: 16px;
+              font-weight: bold;
+              color: #000;
+              letter-spacing: 1px;
+              text-align: center;
+              margin-left: auto;
+              margin-right: auto;
+              z-index: 2;
+            ">
+              <div style="width: 100%;">
+                <div style="font-size: 18px; font-weight: 700; line-height: 1.2;">${safeCompanyData.arabicName}</div>
+                <div style="font-size: 14px; font-weight: 500; margin-top: 4px; line-height: 1.1;">${safeCompanyData.phone ? 'هاتف: ' + safeCompanyData.phone : ''}</div>
+              </div>
+            </div>
+          </div>
+          <div style="
+            flex: 1;
+            text-align: left;
+            font-size: 14px;
+            font-weight: 500;
+          ">
+            <div style="margin-bottom: 8px;">مدير المبيعات: ___________________</div>
+            <div>التاريخ: ${new Date().toLocaleDateString('ar-SA')}</div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+    
+    // انتظار تحميل الصور والخطوط قبل الطباعة
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 1000);
+  };
+
   // ألوان الرسم البياني
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#387908', '#00ff00'];
 
@@ -364,45 +859,71 @@ const BranchSales: React.FC = () => {
       title: 'الفرع',
       dataIndex: 'branchName',
       key: 'branchName',
-      width: 150,
+      
+      minWidth: 150,
+      sorter: (a: BranchSalesRecord, b: BranchSalesRecord) => a.branchName.localeCompare(b.branchName),
+      render: (text: string) => (
+        <span className="font-medium text-gray-800">{text}</span>
+      ),
     },
     {
       title: 'إجمالي المبيعات',
       dataIndex: 'totalSales',
       key: 'totalSales',
-      width: 120,
-      render: (value: number) => `${value.toFixed(2)} ر.س`,
+      minWidth: 140,
+      render: (value: number) => (
+        <span className="font-semibold text-green-600">
+          {value.toLocaleString()} ر.س
+        </span>
+      ),
       sorter: (a: BranchSalesRecord, b: BranchSalesRecord) => a.totalSales - b.totalSales,
     },
     {
       title: 'إجمالي الخصم',
       dataIndex: 'totalDiscount',
       key: 'totalDiscount',
-      width: 120,
-      render: (value: number) => `${value.toFixed(2)} ر.س`,
+      minWidth: 140,
+      render: (value: number) => (
+        <span className="font-semibold text-orange-600">
+          {value.toLocaleString()} ر.س
+        </span>
+      ),
       sorter: (a: BranchSalesRecord, b: BranchSalesRecord) => a.totalDiscount - b.totalDiscount,
     },
     {
       title: 'إجمالي الضريبة',
       dataIndex: 'totalTax',
       key: 'totalTax',
-      width: 120,
-      render: (value: number) => `${value.toFixed(2)} ر.س`,
+      minWidth: 140,
+      render: (value: number) => (
+        <span className="font-semibold text-blue-600">
+          {value.toLocaleString()} ر.س
+        </span>
+      ),
       sorter: (a: BranchSalesRecord, b: BranchSalesRecord) => a.totalTax - b.totalTax,
     },
     {
       title: 'الصافي',
       dataIndex: 'netTotal',
       key: 'netTotal',
-      width: 120,
-      render: (value: number) => `${value.toFixed(2)} ر.س`,
+      minWidth: 140,
+      render: (value: number) => (
+        <span className="font-bold text-purple-600">
+          {value.toLocaleString()} ر.س
+        </span>
+      ),
       sorter: (a: BranchSalesRecord, b: BranchSalesRecord) => a.netTotal - b.netTotal,
     },
     {
       title: 'عدد الفواتير',
       dataIndex: 'invoiceCount',
       key: 'invoiceCount',
-      width: 100,
+      minWidth: 120,
+      render: (value: number) => (
+        <span className="font-medium text-gray-700 bg-gray-100 px-2 py-1 rounded">
+          {value}
+        </span>
+      ),
       sorter: (a: BranchSalesRecord, b: BranchSalesRecord) => a.invoiceCount - b.invoiceCount,
     },
   ];
@@ -446,23 +967,51 @@ const BranchSales: React.FC = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
-        className="w-full bg-white p-2 sm:p-4 rounded-lg border border-blue-100 flex flex-col gap-4 shadow-sm relative"
+        className="w-full bg-white p-4 sm:p-6 rounded-lg border border-blue-100 flex flex-col gap-6 shadow-sm relative"
       >
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
         
-        <h3 className="text-lg font-semibold text-gray-700 mb-2 flex items-center gap-2">
-          <SearchOutlined className="text-blue-600 text-lg" /> خيارات البحث
+        <h3 className="text-xl font-semibold text-gray-700 mb-3 flex items-center gap-2">
+          <SearchOutlined className="text-blue-600 text-xl" /> خيارات البحث
         </h3>
-        
-        <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">الفرع</label>
+
+        {/* الصف الأول */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle} className="text-gray-700">من تاريخ</label>
+            <DatePicker
+              value={dateFrom}
+              onChange={setDateFrom}
+              placeholder="اختر التاريخ"
+              className="w-full"
+              style={largeControlStyle}
+              format="YYYY-MM-DD"
+              disabledDate={disabledDate}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle} className="text-gray-700">إلى تاريخ</label>
+            <DatePicker
+              value={dateTo}
+              onChange={setDateTo}
+              placeholder="اختر التاريخ"
+              className="w-full"
+              style={largeControlStyle}
+              format="YYYY-MM-DD"
+              disabledDate={disabledDate}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle} className="text-gray-700">الفرع</label>
             <Select
               mode="multiple"
               value={branchIds}
               onChange={setBranchIds}
               placeholder="اختر الفروع"
-              className="w-full"
+              className={styles.noAntBorder}
+              style={largeControlStyle}
               allowClear
               loading={branchesLoading}
               showSearch
@@ -500,58 +1049,42 @@ const BranchSales: React.FC = () => {
             </Select>
           </div>
 
-          <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">نوع الفاتورة</label>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle} className="text-gray-700">نوع الفاتورة</label>
             <Select
               value={invoiceType}
+
               onChange={setInvoiceType}
-              className="w-full"
+              className={styles.noAntBorder}
+              style={largeControlStyle}
             >
               <Option value="sales">فواتير المبيعات</Option>
               <Option value="returns">مردودات المبيعات</Option>
+              <Option value="all">الكل</Option>
             </Select>
-          </div>
-
-          <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">من تاريخ</label>
-            <DatePicker
-              value={dateFrom}
-              onChange={setDateFrom}
-              placeholder="اختر التاريخ"
-              className="w-full"
-              format="YYYY-MM-DD"
-            />
-          </div>
-
-          <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">إلى تاريخ</label>
-            <DatePicker
-              value={dateTo}
-              onChange={setDateTo}
-              placeholder="اختر التاريخ"
-              className="w-full"
-              format="YYYY-MM-DD"
-            />
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 flex-wrap w-full">
+        <div className="flex items-center gap-4 mt-4">
           <Button
             type="primary"
             icon={<SearchOutlined />}
             onClick={handleSearch}
             loading={isLoading}
             className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
+            size="large"
           >
-            بحث
+            {isLoading ? "جاري البحث..." : "بحث"}
           </Button>
 
-
-
-
+          <Button
+            onClick={() => setShowMore(!showMore)}
+            className="bg-gray-100 hover:bg-gray-200 border-gray-300 text-gray-700"
+            size="large"
+          >
+            {showMore ? 'إخفاء الخيارات المتقدمة' : 'عرض الخيارات المتقدمة'}
+          </Button>
         </div>
-
-        {/* تم حذف الخيارات المتقدمة */}
       </motion.div>
 
       {/* تم حذف كروت الإحصائيات الإجمالية بناءً على طلب المستخدم */}
@@ -561,13 +1094,16 @@ const BranchSales: React.FC = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, delay: 0.2 }}
-        className="w-full bg-white p-2 sm:p-4 rounded-lg border border-blue-100 flex flex-col gap-4 shadow-sm overflow-x-auto"
+        className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm overflow-x-auto relative"
       >
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-blue-500"></div>
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-green-500"></div>
         
-        <div className="flex justify-between items-center">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
-            <TableOutlined className="text-blue-600 text-lg" /> نتائج البحث
+            <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            نتائج البحث ({filteredSales.length} فرع)
             {branchIds.length > 0 && (
               <span className="text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded">
                 ({branchIds.length} فرع محدد)
@@ -579,45 +1115,84 @@ const BranchSales: React.FC = () => {
               </span>
             )}
           </h3>
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            إجمالي: {filteredSales.length} فرع
-            {filteredSales.length > 0 && (
-              <>
-                <Button
-                  icon={<DownloadOutlined />}
-                  onClick={handleExport}
-                  className="bg-green-600 hover:bg-green-700 border-green-600 text-white ml-2 px-5 py-2 text-base font-bold"
-                  size="middle"
-                >
-                  تصدير Excel
-                </Button>
-                <Button
-                  icon={<PrinterOutlined style={{ fontSize: 18, color: '#2563eb' }} />}
-                  onClick={() => window.print()}
-                  className="bg-blue-100 hover:bg-blue-200 border-blue-200 text-blue-700 ml-2 px-5 py-2 text-base font-bold"
-                  size="middle"
-                  style={{ boxShadow: 'none' }}
-                >
-                  طباعة
-                </Button>
-              </>
-            )}
+          <div className="flex items-center gap-2">
+            <Button
+              type="primary"
+              icon={<DownloadOutlined />}
+              onClick={handleExport}
+              disabled={filteredSales.length === 0}
+              className="bg-green-600 hover:bg-green-700 border-green-600 hover:border-green-700"
+              size="large"
+            >
+              تصدير إكسل
+            </Button>
+            <Button
+              type="primary"
+              icon={<PrinterOutlined />}
+              className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
+              size="large"
+              onClick={handlePrint}
+            >
+              طباعة
+            </Button>
           </div>
         </div>
 
         <div className="w-full overflow-x-auto">
           <Table
+            style={{ direction: 'rtl' }}
             columns={columns}
             dataSource={filteredSales}
             loading={isLoading}
             size="small"
-            scroll={{ x: 800 }}
+            scroll={{ x: 1200 }}
+            bordered
+            rowClassName={(record, index) => 
+              index % 2 === 0 ? 'bg-gray-50' : 'bg-white'
+            }
+            className="[&_.ant-table-thead_>_tr_>_th]:bg-gray-400 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-gray-400 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
             pagination={{
               total: filteredSales.length,
-              pageSize: 10,
+              pageSize: 30,
               showSizeChanger: true,
               showQuickJumper: true,
-              showTotal: (total, range) => `${range[0]}-${range[1]} من ${total} فرع`,
+              showTotal: (total, range) => 
+                `عرض ${range[0]}-${range[1]} من أصل ${total} فرع`,
+              pageSizeOptions: ['30', '50', '100'],
+              className: 'text-lg'
+            }}
+            summary={() => {
+              // حساب الإجماليات
+              const totalSales = filteredSales.reduce((sum, branch) => sum + branch.totalSales, 0);
+              const totalDiscount = filteredSales.reduce((sum, branch) => sum + branch.totalDiscount, 0);
+              const totalTax = filteredSales.reduce((sum, branch) => sum + branch.totalTax, 0);
+              const totalNet = filteredSales.reduce((sum, branch) => sum + branch.netTotal, 0);
+              const totalInvoices = filteredSales.reduce((sum, branch) => sum + branch.invoiceCount, 0);
+
+              return (
+                <Table.Summary fixed>
+                  <Table.Summary.Row className=" font-bold">
+                    <Table.Summary.Cell index={0} className=" font-bold text-gray-800">
+                      الإجماليات
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={1} className=" font-bold text-green-600">
+                      {totalSales.toLocaleString()} ر.س
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={2} className=" font-bold text-orange-600">
+                      {totalDiscount.toLocaleString()} ر.س
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={3} className=" font-bold text-blue-600">
+                      {totalTax.toLocaleString()} ر.س
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={4} className=" font-bold text-purple-600">
+                      {totalNet.toLocaleString()} ر.س
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={5} className=" font-bold text-gray-700">
+                      {totalInvoices.toLocaleString()}
+                    </Table.Summary.Cell>
+                  </Table.Summary.Row>
+                </Table.Summary>
+              );
             }}
             locale={{
               emptyText: branchIds.length > 0 
@@ -638,12 +1213,12 @@ const BranchSales: React.FC = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.4 }}
-          className="w-full bg-white p-2 sm:p-4 rounded-lg border border-blue-100 flex flex-col gap-4 shadow-sm overflow-x-auto"
+          className="w-full bg-white p-4 sm:p-6 rounded-lg border border-blue-100 flex flex-col gap-6 shadow-sm overflow-x-auto relative"
         >
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-pink-500"></div>
           
-          <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
-            <BarChartOutlined className="text-purple-600 text-lg" /> الرسوم البيانية
+          <h3 className="text-xl font-semibold text-gray-700 flex items-center gap-3">
+            <BarChartOutlined className="text-purple-600 text-xl" /> الرسوم البيانية
           </h3>
 
           <div className="w-full overflow-x-auto">
