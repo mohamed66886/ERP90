@@ -1055,7 +1055,7 @@ const BranchSales: React.FC = () => {
               value={invoiceType}
 
               onChange={setInvoiceType}
-              className={styles.noAntBorder}
+              className="w-full styles.noAntBorder "
               style={largeControlStyle}
             >
               <Option value="sales">فواتير المبيعات</Option>

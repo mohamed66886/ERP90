@@ -48,7 +48,6 @@ import PerformanceEvaluationPage from "./management/PerformanceEvaluationPage";
 import {
   FinancialManagement,
   HumanResources,
-  WarehouseManagement,
   ProjectManagement,
   SalesManagement,
   PurchaseManagement,
@@ -56,6 +55,7 @@ import {
 } from "../pages/management";
 
 import { Player } from '@lottiefiles/react-lottie-player';
+import WarehouseManagement from "./WarehouseManagement";
 
 // Accounting Pages
 import AccountsSettlementPage from "./accounting/AccountsSettlementPage";
@@ -221,6 +221,8 @@ const Index = () => {
               <Route path="/stores/sales-order/new" element={<AddSalesOrderPage />} />
 
               <Route path="/edit/editsales" element={<EditSalesPage />} />
+              {/* صفحة إدارة المخازن الجديدة */}
+              <Route path="/management/warehouse" element={<WarehouseManagement />} />
               <Route path="/edit/edit-return/:id" element={<EditReturnPage />} />
               <Route path="/help" element={<HelpPage />} />
               <Route path="/admin/admins" element={<Managers />} />

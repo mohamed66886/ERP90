@@ -273,14 +273,14 @@ const Header = ({
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.3 }}
               >
-                <Link to="/dashboard" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0 bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-800 dark:to-blue-900">
+                <Link to="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
+                  <div className="w-8 h-8 sm:w-[3.5rem] sm:h-10 rounded-lg flex items-center justify-center  flex-shrink-0 bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-800 dark:to-blue-900">
                     {logoUrl ? (
                       <img
                         src={logoUrl}
                         alt="شعار الشركة"
-                        width={40}
-                        height={40}
+                        width={60}
+                        height={60}
                         className="object-contain rounded-md dark:brightness-90"
                         loading="eager"
                       />

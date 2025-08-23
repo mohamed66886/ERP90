@@ -75,6 +75,9 @@ interface User {
 }
 
 const AdvancedWarehouseManagement: React.FC = () => {
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -533,7 +536,7 @@ const AdvancedWarehouseManagement: React.FC = () => {
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "المخازن", to: "/stores" },
+          { label: "المخازن", to: "/management/warehouse" },
           { label: "إدارة المخازن المتقدمة" },
         ]}
       />

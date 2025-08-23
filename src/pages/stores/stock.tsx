@@ -7,8 +7,12 @@ import { Button } from "../../components/ui/button";
 import { DatePicker, Select, Spin } from "antd";
 import { motion, AnimatePresence } from "framer-motion";
 import { PrinterOutlined, ExportOutlined } from '@ant-design/icons';
+import { Package } from "lucide-react";
 
 const StockPage = () => {
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
   const [suppliers, setSuppliers] = useState([]);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   // الأصناف مستوى ثالث (مستوى ثاني)
@@ -293,52 +297,20 @@ const StockPage = () => {
 
 
     <div className="p-4 space-y-6 font-['Tajawal'] bg-gray-50 min-h-screen">
-      <div className="p-4 font-['Tajawal'] bg-white rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] animate-[bounce_2s_infinite] relative overflow-hidden">
+    <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
         <div className="flex items-center">
-          <h1 className="text-2xl font-bold text-gray-800">مخزون المخازن</h1>
-          {/* إيموجي متحركة باي باي */}
-          <span className="animate-[wave_2s_infinite] text-3xl mr-3">👋</span>
+          <Package className="h-8 w-8 text-orange-600 ml-3" />
+          <h1 className="text-2xl font-bold text-gray-800">جرد المخازن </h1>
         </div>
-        {/* تأثيرات إضافية */}
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500 animate-[pulse_3s_infinite]"></div>
+        <p className="text-gray-600 mt-2">  جرد النظام المخزني والمستودعات</p>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-orange-400 to-purple-500"></div>
       </div>
 
-<style>{`
-  @keyframes bounce {
-    0%, 100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-5px);
-    }
-  }
-  
-  @keyframes wave {
-    0%, 100% {
-      transform: rotate(0deg);
-    }
-    25% {
-      transform: rotate(20deg);
-    }
-    75% {
-      transform: rotate(-20deg);
-    }
-  }
-  
-  @keyframes pulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-  }
-`}</style>
       {/* Breadcrumb Navigation */}
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "المخازن", to: "/stores" },
+          { label: "المخازن", to: "/management/warehouse" },
           { label: "المخزون" }
         ]}
       />

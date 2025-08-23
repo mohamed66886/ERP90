@@ -47,6 +47,8 @@ const gridLabels = [
 
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+// استيراد مكونات الرسم البياني للفروع
+import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 
 // جلب طرق الدفع من قاعدة البيانات
 const usePaymentMethods = () => {
@@ -66,18 +68,211 @@ const usePaymentMethods = () => {
 };
 
 const DailySales: React.FC = () => {
+  // قائمة المندوبين لجلب الأسماء الصحيحة
+  const [salesReps, setSalesReps] = useState<any[]>([]);
+  // جلب قائمة المندوبين من قاعدة البيانات مرة واحدة فقط
+  useEffect(() => {
+    (async () => {
+      try {
+        const { getDocs, collection } = await import('firebase/firestore');
+        const { db } = await import('@/lib/firebase');
+        const repsSnap = await getDocs(collection(db, 'salesRepresentatives'));
+        setSalesReps(repsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      } catch {}
+    })();
+  }, []);
+  // بيانات رسم بياني مبيعات المناديب
+  const [repChartData, setRepChartData] = useState<Array<{
+    repName: string;
+    totalSales: number;
+    invoiceCount: number;
+  }>>([]);
+  // بيانات رسم بياني مبيعات الأصناف
+  const [itemChartData, setItemChartData] = useState<Array<{
+    itemName: string;
+    totalQty: number;
+    totalSales: number;
+  }>>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(true);
-  const [salesInvoices, setSalesInvoices] = useState<any[]>([]);
-  const [salesReturns, setSalesReturns] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [dateFrom, setDateFrom] = useState<any>(null);
-  const [dateTo, setDateTo] = useState<any>(null);
-  const [timeFrom, setTimeFrom] = useState<any>(null);
-  const [timeTo, setTimeTo] = useState<any>(null);
+  const [salesInvoices, setSalesInvoices] = useState<Record<string, unknown>[]>([]);
+  const [salesReturns, setSalesReturns] = useState<Record<string, unknown>[]>([]);
+  const [branchSales, setBranchSales] = useState<Array<{
+    branchId: string;
+    branchName: string;
+    totalSales: number;
+    totalDiscount: number;
+    totalTax: number;
+    netTotal: number;
+    invoiceCount: number;
+  }>>([]);
+  const [branchChartData, setBranchChartData] = useState<Array<{
+    branchName: string;
+    totalSales: number;
+    netTotal: number;
+  }>>([]);
+  // بيانات الرسم البياني السنوي
+  const [annualChartData, setAnnualChartData] = useState<Array<{
+    month: string;
+    totalSales: number;
+    netTotal: number;
+  }>>([]);
+
+  useEffect(() => {
+    // حساب مبيعات الفروع من الفواتير والمرتجعات
+    const branchMap: {
+      [key: string]: {
+        branchId: string;
+        branchName: string;
+        totalSales: number;
+        totalDiscount: number;
+        totalTax: number;
+        netTotal: number;
+        invoiceCount: number;
+      }
+    } = {};
+    salesInvoices.forEach(inv => {
+      const invAny = inv as any;
+      const branchId = invAny.branch || invAny.branchId || '';
+      const branchName = branches.find(b => String(b.id) === String(branchId))?.name || branchId || '---';
+      if (!branchMap[branchId]) {
+        branchMap[branchId] = {
+          branchId,
+          branchName,
+          totalSales: 0,
+          totalDiscount: 0,
+          totalTax: 0,
+          netTotal: 0,
+          invoiceCount: 0
+        };
+      }
+      const totals = invAny.totals || {};
+      branchMap[branchId].totalSales += (totals.beforeDiscount ?? totals.total ?? totals.afterTax ?? invAny.total ?? 0);
+      // جمع الخصم من الأصناف إذا لم يوجد في totals.discount أو invAny.discount
+      let discountValue = totals.discount ?? invAny.discount;
+      if (discountValue == null) {
+        if (Array.isArray(invAny.items)) {
+          discountValue = invAny.items.reduce((acc: number, item: any) => acc + Number(item.discountValue || item.discount || 0), 0);
+        } else {
+          discountValue = 0;
+        }
+      }
+      branchMap[branchId].totalDiscount += discountValue;
+      branchMap[branchId].totalTax += (totals.tax ?? invAny.taxValue ?? 0);
+      // الصافي = إجمالي المبيعات - إجمالي الخصم - إجمالي الضريبة
+      branchMap[branchId].netTotal += ((totals.beforeDiscount ?? totals.total ?? totals.afterTax ?? invAny.total ?? 0) - discountValue - (totals.tax ?? invAny.taxValue ?? 0));
+      branchMap[branchId].invoiceCount += 1;
+    });
+    // تم حذف معالجة المرتجعات
+    const branchSalesArr = Object.values(branchMap);
+    setBranchSales(branchSalesArr);
+    setBranchChartData(
+      branchSalesArr.map(b => ({ branchName: b.branchName, totalSales: b.totalSales, netTotal: b.netTotal }))
+        .sort((a, b) => b.totalSales - a.totalSales)
+    );
+
+    // حساب مبيعات السنة حسب الأشهر
+    const months = [
+      "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
+    ];
+    // مصفوفة 12 شهر
+    const monthlyTotals: Array<{ month: string; totalSales: number; totalDiscount: number; netTotal: number }> = months.map((m, i) => ({ month: m, totalSales: 0, totalDiscount: 0, netTotal: 0 }));
+    // جمع الفواتير
+    salesInvoices.forEach(inv => {
+      const invAny = inv as any;
+      const d = invAny.date ? dayjs(invAny.date) : null;
+      if (d && d.isValid()) {
+        const monthIdx = d.month(); // 0-11
+        const totals = invAny.totals || {};
+        monthlyTotals[monthIdx].totalSales += (totals.beforeDiscount ?? totals.total ?? totals.afterTax ?? invAny.total ?? 0);
+        // جمع الخصم من الأصناف إذا لم يوجد في totals.discount أو invAny.discount
+        let discountValue = totals.discount ?? invAny.discount;
+        if (discountValue == null) {
+          if (Array.isArray(invAny.items)) {
+            discountValue = invAny.items.reduce((acc: number, item: any) => acc + Number(item.discountValue || item.discount || 0), 0);
+          } else {
+            discountValue = 0;
+          }
+        }
+        monthlyTotals[monthIdx].totalDiscount += discountValue;
+        // الصافي = إجمالي المبيعات - إجمالي الخصم - إجمالي الضريبة
+        monthlyTotals[monthIdx].netTotal += ((totals.beforeDiscount ?? totals.total ?? totals.afterTax ?? invAny.total ?? 0) - discountValue - (totals.tax ?? invAny.taxValue ?? 0));
+      }
+    });
+    // تم حذف خصم المرتجعات من تجميع الأشهر
+    setAnnualChartData(monthlyTotals);
+    // حساب مبيعات الأصناف الأكثر مبيعاً
+    const itemMap: { [key: string]: { itemName: string; totalQty: number; totalSales: number } } = {};
+    salesInvoices.forEach(inv => {
+      if (Array.isArray(inv.items)) {
+        inv.items.forEach((item: any) => {
+          const name = item.name || item.itemName || item.title || '---';
+          const qty = Number(item.qty || item.quantity || 0);
+          const total = Number(item.total || item.priceTotal || item.amount || 0);
+          if (!itemMap[name]) {
+            itemMap[name] = { itemName: name, totalQty: 0, totalSales: 0 };
+          }
+          itemMap[name].totalQty += qty;
+          itemMap[name].totalSales += total;
+        });
+      }
+    });
+    // تحويل إلى مصفوفة وترتيب حسب الكمية أو المبيعات
+    const itemsArr = Object.values(itemMap)
+      .sort((a, b) => b.totalQty - a.totalQty)
+      .slice(0, 15); // عرض أعلى 15 صنف فقط
+    setItemChartData(itemsArr);
+    // حساب مبيعات المناديب
+    const repMap: { [key: string]: { repName: string; totalSales: number; invoiceCount: number } } = {};
+    salesInvoices.forEach(inv => {
+      // استخراج معرف المندوب من جميع الحقول الممكنة
+      let repId = inv.salesRep || inv.repName || inv.salesman || inv.salesRepName || '';
+      let repName = '';
+      // إذا كان repId كائن (بعض الأنظمة تحفظ المندوب ككائن)، خذ الاسم والمعرف
+      if (typeof repId === 'object' && repId !== null) {
+        const repObj = repId as Record<string, any>;
+        repName = repObj.name || repObj.fullName || repObj.title || '';
+        repId = repObj.id || repObj._id || repName;
+      }
+      // إذا لم يوجد اسم، ابحث في قائمة المندوبين
+      if (!repName || String(repName).trim() === '' || String(repName).trim() === '---') {
+        const foundRep = salesReps.find(r => String(r.id) === String(repId));
+        repName = foundRep ? (foundRep.name || foundRep.fullName || foundRep.title || String(repId)) : String(repId);
+      }
+      // إذا بقي فارغاً، ضع 'غير محدد' مع إظهار معرف المندوب أو معرف الفاتورة
+      if (!repName || String(repName).trim() === '' || String(repName).trim() === '---') {
+        // إذا وجد معرف مندوب حقيقي
+        if (repId && String(repId).trim() !== '') {
+          repName = `غير محدد (${repId})`;
+        } else if (inv.id) {
+          repName = `غير محدد (فاتورة ${inv.id})`;
+        } else {
+          repName = 'غير محدد';
+        }
+      }
+      const total = Number((inv.totals && (inv.totals as Record<string, any>).afterTax) || 0);
+      if (!repMap[repName]) {
+        repMap[repName] = { repName: repName, totalSales: 0, invoiceCount: 0 };
+      }
+      repMap[repName].totalSales += total;
+      repMap[repName].invoiceCount += 1;
+    });
+    // ترتيب حسب إجمالي المبيعات
+    const repsArr = Object.values(repMap)
+      .sort((a, b) => b.totalSales - a.totalSales)
+      .slice(0, 15); // عرض أعلى 15 مندوب فقط
+    setRepChartData(repsArr);
+  }, [salesInvoices, salesReturns, branches, salesReps]);
+  // Removed duplicate useState declarations for branches, branchesLoading, salesInvoices, salesReturns
+  // إضافة salesReps إلى التبعيات
+  const [loading, setLoading] = useState<boolean>(false);
+  const [dateFrom, setDateFrom] = useState<Dayjs | null>(null);
+  const [dateTo, setDateTo] = useState<Dayjs | null>(null);
+  const [timeFrom, setTimeFrom] = useState<Dayjs | null>(null);
+  const [timeTo, setTimeTo] = useState<Dayjs | null>(null);
   const [branchId, setBranchId] = useState<string>('');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('');
-  const [companyData, setCompanyData] = useState<any>({});
+  const [companyData, setCompanyData] = useState<Record<string, unknown>>({});
 
   const paymentMethods = usePaymentMethods();
   
@@ -100,8 +295,8 @@ const DailySales: React.FC = () => {
   }, []);
 
   type Filters = {
-    dateFrom?: any;
-    dateTo?: any;
+    dateFrom?: Dayjs | string | Date | null;
+    dateTo?: Dayjs | string | Date | null;
     branchId?: string;
     timeFrom?: Dayjs | null;
     timeTo?: Dayjs | null;
@@ -113,8 +308,7 @@ const DailySales: React.FC = () => {
     try {
       const invoicesSnap = await getDocs(collection(db, 'sales_invoices'));
       let invoices = invoicesSnap.docs.map(doc => doc.data());
-      const returnsSnap = await getDocs(collection(db, 'sales_returns'));
-      let returns = returnsSnap.docs.map(doc => doc.data());
+      // تم حذف جلب المرتجعات
       
       if (filters) {
         let fromDateTime = null;
@@ -136,7 +330,7 @@ const DailySales: React.FC = () => {
           }
         }
         
-        const normalizeDate = (val: any) => {
+        const normalizeDate = (val: unknown) => {
           if (!val) return null;
           if (dayjs.isDayjs(val)) return val;
           if (typeof val === 'string' || val instanceof Date) return dayjs(val);
@@ -236,7 +430,7 @@ const DailySales: React.FC = () => {
         }
       }
       setSalesInvoices(invoices);
-      setSalesReturns(returns);
+      // تم حذف تعيين المرتجعات
     } catch (e) {
       setSalesInvoices([]);
       setSalesReturns([]);
@@ -253,9 +447,8 @@ const DailySales: React.FC = () => {
   }, [fetchData]);
 
   const gridValues = React.useMemo(() => {
-    let cashCount = 0, networkCount = 0, creditCount = 0, returnCount = 0;
+    let cashCount = 0, networkCount = 0, creditCount = 0;
     let cashTotal = 0, networkTotal = 0, creditTotal = 0, transferTotal = 0;
-    let returnCash = 0, returnNetwork = 0, returnCredit = 0, returnTransfer = 0;
     let netCash = 0, netNetwork = 0, netCredit = 0, netTransfer = 0;
 
     const findMethod = (keywords: string[]) =>
@@ -328,60 +521,14 @@ const DailySales: React.FC = () => {
       }
     });
 
-    salesReturns.forEach(ret => {
-      returnCount++;
-      const method = ret.paymentMethod;
-      let retTotal = 0;
-      if (ret.totals && typeof ret.totals.afterTax === 'number') retTotal = ret.totals.afterTax;
-      else if (ret.totals && typeof ret.totals.total === 'number') retTotal = ret.totals.total;
-      else if (typeof ret.amount === 'number') retTotal = ret.amount;
-      else if (typeof ret.total === 'number') retTotal = ret.total;
-      
-      // التحقق من وجود الدفع المتعدد في المرتجعات
-      if (method === 'متعدد' && ret.multiplePayment) {
-        const multiplePayment = ret.multiplePayment;
-        
-        // مرتجعات نقدية من الصناديق
-        if (multiplePayment.cash && parseFloat(multiplePayment.cash.amount || '0') > 0) {
-          returnCash += parseFloat(multiplePayment.cash.amount || '0');
-        }
-        
-        // مرتجعات تحويلات بنكية
-        if (multiplePayment.bank && parseFloat(multiplePayment.bank.amount || '0') > 0) {
-          returnTransfer += parseFloat(multiplePayment.bank.amount || '0');
-        }
-        
-        // مرتجعات شبكة من البنوك
-        if (multiplePayment.card && parseFloat(multiplePayment.card.amount || '0') > 0) {
-          returnNetwork += parseFloat(multiplePayment.card.amount || '0');
-        }
-      } else {
-        // طرق الدفع المفردة للمرتجعات
-        if (cashName && method && /^نقد/.test(method.replace(/\s/g, '').toLowerCase())) {
-          returnCash += retTotal;
-        } else if (networkName && method && method.replace(/\s/g, '').toLowerCase().includes('شبك')) {
-          returnNetwork += retTotal;
-        } else if (
-          creditName &&
-          method &&
-          (method.replace(/\s/g, '').toLowerCase().includes('آجل') || method.replace(/\s/g, '').toLowerCase().includes('اجل'))
-        ) {
-          returnCredit += retTotal; // إضافة مرتجعات آجلة
-        } else if (transferName && method && method.replace(/\s/g, '').toLowerCase().includes('تحويل')) {
-          returnTransfer += retTotal;
-        }
-      }
-    });
-
-    netCash = cashTotal - returnCash;
-    netNetwork = networkTotal - returnNetwork;
-    netCredit = creditTotal - returnCredit;
-    netTransfer = transferTotal - returnTransfer;
+    netCash = cashTotal;
+    netNetwork = networkTotal;
+    netCredit = creditTotal;
+    netTransfer = transferTotal;
 
     return {
-      counts: [cashCount, networkCount, creditCount, returnCount],
+      counts: [cashCount, networkCount, creditCount],
       sales: [cashTotal, networkTotal, creditTotal, transferTotal],
-      returns: [returnCash, returnNetwork, returnCredit, returnTransfer],
       net: [netCash, netNetwork, netCredit, netTransfer]
     };
   }, [salesInvoices, salesReturns, paymentMethods]);
@@ -646,6 +793,7 @@ const DailySales: React.FC = () => {
                   return total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 })()} ريال سعودي</div>
               </div>
+
               <div style="background: #e8f5e9; padding: 10px 20px; border-radius: 5px; text-align: center;">
                 <div style="font-size: 11px; color: #555;">عدد المرتجعات</div>
                 <div style="font-weight: bold; font-size: 16px;">\${gridValues.counts[3] || 0}</div>
@@ -830,40 +978,172 @@ const DailySales: React.FC = () => {
             transition={{ delay: 0.2, duration: 0.5 }}
             className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 border rounded-lg bg-gray-50 p-2"
           >
-            {gridLabels.map((row, rowIdx) =>
-              row.map((label, colIdx) => {
-                const showVisaIcon = label === "مبيعات التحويلات";
-                const value = gridValues[rowIdx === 0 ? 'sales' : rowIdx === 1 ? 'returns' : 'net'][colIdx];
-                const count = gridValues.counts[colIdx];
-                
-                return (
-                  <motion.div
-                    key={label}
-                    whileHover={{ scale: 1.03, boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}
-                    className="flex flex-col items-center justify-center border rounded bg-white min-h-[90px] p-2"
-                  >
-                    <span className="font-bold text-lg md:text-xl text-gray-800 mb-1 flex items-center gap-1">
-                      {typeof value === 'number' ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value}
-                      {showVisaIcon && <CreditCardOutlined className="text-black text-xl" />}
-                    </span>
-                    <span className="text-sm md:text-base text-gray-700 font-bold text-center">{label}</span>
-                    {/* عرض العدد تحت المبلغ للمبيعات فقط */}
-                    {rowIdx === 0 && (
-                      <span className="text-xs text-gray-500 mt-1">
-                        عدد الفواتير: {count || 0}
-                      </span>
-                    )}
-                    {/* عرض عدد المرتجعات في التحويلات */}
-                    {rowIdx === 1 && colIdx === 3 && (
-                      <span className="text-xs text-gray-500 mt-1">
-                        عدد المرتجعات: {gridValues.counts[3] || 0}
-                      </span>
-                    )}
-                  </motion.div>
-                );
-              })
-            )}
+            {gridLabels[0].map((label, colIdx) => {
+              const showVisaIcon = label === "مبيعات التحويلات";
+              const value = gridValues.sales[colIdx];
+              const count = gridValues.counts[colIdx];
+              return (
+                <motion.div
+                  key={label}
+                  whileHover={{ scale: 1.03, boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}
+                  className="flex flex-col items-center justify-center border rounded bg-white min-h-[90px] p-2"
+                >
+                  <span className="font-bold text-lg md:text-xl text-gray-800 mb-1 flex items-center gap-1">
+                    {typeof value === 'number' ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value}
+                    {showVisaIcon && <CreditCardOutlined className="text-black text-xl" />}
+                  </span>
+                  <span className="text-sm md:text-base text-gray-700 font-bold text-center">{label}</span>
+                  <span className="text-xs text-gray-500 mt-1">
+                    عدد الفواتير: {count || 0}
+                  </span>
+                </motion.div>
+              );
+            })}
           </motion.div>
+
+          {/* جدول مبيعات الفروع داخل الصفحة وليس الطباعة */}
+          <div className="mt-8">
+            {/* <h2 className="text-lg font-bold mb-4 text-blue-700">جدول مبيعات الفروع</h2>
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                <thead>
+                  <tr className="bg-blue-50">
+                    <th className="px-3 py-2 border">الفرع</th>
+                    <th className="px-3 py-2 border">إجمالي المبيعات</th>
+                    <th className="px-3 py-2 border">إجمالي الخصم</th>
+                    <th className="px-3 py-2 border">إجمالي الضريبة</th>
+                    <th className="px-3 py-2 border">الصافي</th>
+                    <th className="px-3 py-2 border">عدد الفواتير</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {branchSales.length === 0 ? (
+                    <tr><td colSpan={6} className="text-center py-4 text-gray-400">لا توجد بيانات للفروع</td></tr>
+                  ) : (
+                    branchSales.map((branch, idx) => (
+                      <tr key={branch.branchId || idx} className="hover:bg-blue-50">
+                        <td className="px-3 py-2 border font-bold text-gray-700">{branch.branchName}</td>
+                        <td className="px-3 py-2 border text-green-700 font-semibold">{branch.totalSales.toLocaleString()} ر.س</td>
+                        <td className="px-3 py-2 border text-orange-600 font-semibold">{branch.totalDiscount.toLocaleString()} ر.س</td>
+                        <td className="px-3 py-2 border text-blue-600 font-semibold">{branch.totalTax.toLocaleString()} ر.س</td>
+                        <td className="px-3 py-2 border text-purple-600 font-bold">{branch.netTotal.toLocaleString()} ر.س</td>
+                        <td className="px-3 py-2 border text-gray-700">{branch.invoiceCount}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div> */}
+            {/* رسم بياني لمبيعات الفروع */}
+
+{/* رسم بياني لمبيعات الفروع */}
+{branchChartData.length > 0 && (
+  <div className="mt-8">
+    <h3 className="text-md font-bold mb-4 text-blue-600">
+      رسم بياني لمبيعات الفروع
+    </h3>
+
+    <div style={{ width: '100%', height: 350 }}>
+      <ResponsiveContainer width="100%" height={350}>
+        <LineChart
+          data={branchChartData}
+          margin={{ top: 20, right: 30, left: 0, bottom: 40 }}
+        >
+          <XAxis
+            dataKey="branchName"
+            angle={0}
+            textAnchor="middle"
+            interval={0}
+            height={60}
+            tick={{ fontSize: 14, dy: 10 }}
+          />
+          <YAxis
+            tick={{ fontSize: 16, textAnchor: 'start', dx: 0, dy: 0 }}
+          />
+          <Tooltip formatter={(value) => `${value.toLocaleString()} ر.س`} />
+          <Legend verticalAlign="top" height={36} />
+          <Line type="monotone" dataKey="totalSales" stroke="#0088FE" name="إجمالي المبيعات" strokeWidth={3} dot={{ r: 5 }} />
+          <Line type="monotone" dataKey="netTotal" stroke="#82ca9d" name="الصافي" strokeWidth={3} dot={{ r: 5 }} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  </div>
+)}
+
+            {/* رسم بياني لمبيعات السنة حسب الأشهر */}
+            {annualChartData.length > 0 && (
+              <div className="mt-8">
+                <h3 className="text-md font-bold mb-4 text-blue-700">رسم بياني لمبيعات السنة حسب الأشهر</h3>
+                <div style={{ width: '100%', height: 350 }}>
+                  <ResponsiveContainer width="100%" height={350}>
+                    <BarChart
+                      data={annualChartData}
+                      margin={{ top: 20, right: 30, left: 0, bottom: 40 }}
+                    >
+                      <XAxis dataKey="month" tick={{ fontSize: 14 }} />
+                      <YAxis tick={{ fontSize: 16, textAnchor: 'start', dx: 0, dy: 0 }} />
+                      <Tooltip formatter={(value: number, name: string) => name === 'totalSales' || name === 'netTotal' ? value.toLocaleString() + ' ر.س' : value.toLocaleString()} />
+                      <Legend />
+                      <Bar dataKey="totalSales" fill="#4CAF50" name="إجمالي المبيعات" />
+                      <Bar dataKey="netTotal" fill="#0088FE" name="الصافي" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* رسم بياني لمبيعات الأصناف الأكثر مبيعاً */}
+            {itemChartData.length > 0 && (
+              <div className="mt-8">
+                <h3 className="text-md font-bold mb-2 text-orange-600">رسم بياني لأكثر الأصناف مبيعاً</h3>
+                <div style={{ width: '100%', height: 350 }}>
+                  <ResponsiveContainer width="100%" height={350}>
+                    <BarChart
+                      data={itemChartData}
+                      layout="vertical"
+                      margin={{ top: 20, right: 30, left: 40, bottom: 40 }}
+                    >
+                      <XAxis type="number" tick={{ fontSize: 14 }} />
+                      <YAxis dataKey="itemName" type="category" width={220} tick={{ fontSize: 16, textAnchor: 'start', dx: 0, dy: 0 }} tickFormatter={(name) => name.length > 25 ? name.slice(0, 25) + '...' : name} />
+                      {/* Tooltip لعرض الاسم الكامل عند المرور */}
+                      <Tooltip formatter={(value: number, name: string, props) => {
+                        if (props && props.payload && props.payload.itemName) {
+                          return [name === 'totalSales' ? value.toLocaleString() + ' ر.س' : value.toLocaleString(), props.payload.itemName];
+                        }
+                        return name === 'totalSales' ? value.toLocaleString() + ' ر.س' : value.toLocaleString();
+                      }} labelFormatter={(label) => label} />
+                      <Tooltip formatter={(value: number, name: string) => name === 'totalSales' ? value.toLocaleString() + ' ر.س' : value.toLocaleString()} />
+                      <Legend />
+                      <Bar dataKey="totalQty" fill="#0088FE" name="الكمية المباعة" />
+                      <Bar dataKey="totalSales" fill="#FF9800" name="إجمالي المبيعات" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+            {/* رسم بياني لمبيعات المناديب الأكثر نشاطاً */}
+            {repChartData.length > 0 && (
+              <div className="mt-8">
+                <h3 className="text-md font-bold mb-2 text-purple-600">رسم بياني لمبيعات المناديب الأكثر نشاطاً</h3>
+                <div style={{ width: '100%', height: 350 }}>
+                  <ResponsiveContainer width="100%" height={350}>
+                    <BarChart
+                      data={repChartData}
+                      layout="vertical"
+                      margin={{ top: 20, right: 30, left: 40, bottom: 40 }}
+                    >
+                      <XAxis type="number" tick={{ fontSize: 14 }} />
+                      <YAxis dataKey="repName" type="category" width={120} tick={{ fontSize: 14 }} />
+                      <Tooltip formatter={(value: number, name: string) => name === 'totalSales' ? value.toLocaleString() + ' ر.س' : value.toLocaleString()} />
+                      <Legend />
+                      <Bar dataKey="totalSales" fill="#7C3AED" name="إجمالي المبيعات" />
+                      <Bar dataKey="invoiceCount" fill="#F59E42" name="عدد الفواتير" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </motion.div>
     </>
