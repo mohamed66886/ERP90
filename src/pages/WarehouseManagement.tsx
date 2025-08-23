@@ -7,57 +7,72 @@ import Breadcrumb from '../components/Breadcrumb';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
 
 const warehouseSettingsCards = [
-//   {
-//     title: "إعدادات المستودعات",
-//     description: "إدارة إعدادات المستودعات",
-//     icon: <Settings className="h-6 w-6" />,
-//     color: "bg-blue-500"
-//   },
-//   {
-//     title: "أنواع المستودعات",
-//     description: "إدارة أنواع المستودعات",
-//     icon: <Warehouse className="h-6 w-6" />,
-//     color: "bg-green-500"
-//   },
-//   {
-//     title: "إعدادات الأصناف",
-//     description: "إدارة إعدادات الأصناف",
-//     icon: <Boxes className="h-6 w-6" />,
-//     color: "bg-emerald-500"
-//   }
+  {
+    title: "إضافة الوحدات",
+    description: "إدارة وحدات القياس",
+    icon: <Settings className="h-6 w-6" />,
+    color: "bg-blue-500"
+  },
+  {
+    title: "إضافة المخازن",
+    description: "إدارة المخازن",
+    icon: <Warehouse className="h-6 w-6" />,
+    color: "bg-green-500"
+  },
+  {
+    title: "الأصناف",
+    description: "إدارة الأصناف",
+    icon: <Boxes className="h-6 w-6" />,
+    color: "bg-emerald-500"
+  }
 ];
 
 function useWarehouseOperationsCards() {
   const navigate = useNavigate();
   return [
     {
-      title: "إضافة مستودع جديد",
-      description: "إنشاء مستودع جديد",
+      title: "إذن إضافة مخزن",
+      description: "إضافة مخزن جديد للنظام",
       icon: <Plus className="h-6 w-6" />,
       color: "bg-blue-600",
       onClick: () => {
-        navigate("/stores/advanced-warehouse");
+        navigate("/stores/add-warehouse");
       }
     },
-    // {
-    //   title: "إدخال أصناف",
-    //   description: "إدخال أصناف إلى المستودع",
-    //   icon: <FileText className="h-6 w-6" />,
-    //   color: "bg-green-600"
-    // },
-    // {
-    //   title: "إخراج أصناف",
-    //   description: "إخراج أصناف من المستودع",
-    //   icon: <Truck className="h-6 w-6" />,
-    //   color: "bg-orange-600"
-    // },
     {
-      title: "جرد المستودع",
-      description: "جرد الأصناف والمخزون",
-      icon: <ClipboardList className="h-6 w-6" />,
+      title: "إذن صرف مخزن",
+      description: "صرف أصناف من المخزن",
+      icon: <Truck className="h-6 w-6" />,
+      color: "bg-orange-600",
+      onClick: () => {
+        navigate("/stores/issue-warehouse");
+      }
+    },
+    {
+      title: "تحويلات بين المخازن",
+      description: "تحويل أصناف بين المخازن",
+      icon: <TrendingUp className="h-6 w-6" />,
+      color: "bg-green-600",
+      onClick: () => {
+        navigate("/stores/transfer");
+      }
+    },
+    {
+      title: "إذن استلام بضاعة",
+      description: "استلام بضاعة في المخزن",
+      icon: <FileText className="h-6 w-6" />,
       color: "bg-purple-600",
       onClick: () => {
-        navigate("/stores/stock");
+        navigate("/stores/receive-goods");
+      }
+    },
+    {
+      title: "إذن تسليم بضاعة",
+      description: "تسليم بضاعة من المخزن",
+      icon: <ClipboardList className="h-6 w-6" />,
+      color: "bg-emerald-600",
+      onClick: () => {
+        navigate("/stores/deliver-goods");
       }
     }
   ];
