@@ -43,7 +43,7 @@ const Sidebar = () => {
   const location = useLocation();
 
   // الحصول على قائمة الأصناف بناءً على القسم الحالي
-  const menuItems = getSidebarMenus(currentSection);
+  const menuItems = getSidebarMenus(currentSection) || [];
 
   return (
     <div className="relative hidden md:flex" ref={sidebarRef}>

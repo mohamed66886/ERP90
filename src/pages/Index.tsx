@@ -51,12 +51,12 @@ import {
   ProjectManagement,
   SalesManagement,
   PurchaseManagement,
-  EquipmentManagement
+  EquipmentManagement,
+  WarehouseManagement
 } from "../pages/management";
 
 import { Player } from '@lottiefiles/react-lottie-player';
-import WarehouseManagement from "./WarehouseManagement";
-
+import IssueWarehousePage from "./warehouses/issue-warehouse";
 // Accounting Pages
 import AccountsSettlementPage from "./accounting/AccountsSettlementPage";
 import AddAccountPage from "./accounting/AddAccountPage";
@@ -268,6 +268,10 @@ const Index = () => {
               <Route path="/suppliers" element={<Suppliers />} />
               <Route path="/" element={<Dashboard />} />
               <Route path="*" element={<NotFound />} />
+
+              {/* warehouse Management Routes */}
+              <Route path="/warehouses/issue-warehouse" element={<IssueWarehousePage />} />
+
             </Routes>
           </main>
           <Footer />

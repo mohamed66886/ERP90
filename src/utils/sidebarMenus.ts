@@ -164,7 +164,6 @@ export const getSidebarMenus = (section: SectionType): MenuItem[] => {
         }
       ];
 
-    case 'warehouse':
       return [
         ...commonItems,
         { 
@@ -440,38 +439,7 @@ export const getSidebarMenus = (section: SectionType): MenuItem[] => {
             { label: "الاسئله الشائعه", icon: React.createElement(FaQuestionCircle), path: "/help" }
           ]
         },
-        { 
-          label: "العمليات", 
-          icon: React.createElement(FaExchangeAlt, { className: "text-green-500" }), 
-          hasSubmenu: true,
-          submenu: [
-            { label: "فاتورة مبيعات", icon: React.createElement(FaFileInvoiceDollar), path: "/stores/sales" },
-            { label: "مرتجع مبيعات", icon: React.createElement(FaUndo), path: "/stores/sales-return" },
-            { label: "فاتورة مشتريات", icon: React.createElement(FaFileInvoice), path: "/stores/purchases" },
-            { label: "مرتجع مشتريات", icon: React.createElement(FaUndoAlt), path: "/stores/purchases-return" }
-          ]
-        },
-        { 
-          label: "ادارة الأفراد", 
-          icon: React.createElement(FaUsers, { className: "text-purple-500" }), 
-          hasSubmenu: true,
-          submenu: [
-            { label: "ادارة الموظفين", icon: React.createElement(FaUserTie), path: "/admin/employees" },
-            { label: "ادارة العملاء", icon: React.createElement(FaUserFriends), path: "/customers" },
-            { label: "ادارة الموردين", icon: React.createElement(FaUserCheck), path: "/suppliers" },
-            { label: "اداره مديرين الفروع", icon: React.createElement(FaUserShield), path: "/admin/admins" }
-          ]
-        },
-        { 
-          label: "المخازن", 
-          icon: React.createElement(FaWarehouse, { className: "text-orange-500" }), 
-          hasSubmenu: true,
-          submenu: [
-            { label: "ادارة المخازن", icon: React.createElement(FaWarehouse), path: "/stores/advanced-warehouse" },
-            { label: "ادارة الاصناف", icon: React.createElement(FaBoxes), path: "/stores/item" },
-            { label: "المخزون", icon: React.createElement(FaCubes), path: "/stores/stock" }
-          ]
-        }
+        
       ];
   }
 };
