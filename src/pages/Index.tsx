@@ -57,6 +57,7 @@ import {
 
 import { Player } from '@lottiefiles/react-lottie-player';
 import IssueWarehousePage from "./warehouses/issue-warehouse";
+import ListWarehouse from "./warehouses/ListWarehouse";
 // Accounting Pages
 import AccountsSettlementPage from "./accounting/AccountsSettlementPage";
 import AddAccountPage from "./accounting/AddAccountPage";
@@ -84,7 +85,6 @@ import ReceiptVouchersDirectory from "./stores/ReceiptVouchersDirectory";
 import SoldItems from "./reports/sold-items";
 import BranchSales from "./reports/branch-sales";
 import SalesRepresentativeSales from "./reports/sales-representative-sales";
-
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -271,6 +271,7 @@ const Index = () => {
 
               {/* warehouse Management Routes */}
               <Route path="/warehouses/issue-warehouse" element={<IssueWarehousePage />} />
+              <Route path="/warehouses/list-warehouse" element={<ListWarehouse />} />
 
             </Routes>
           </main>

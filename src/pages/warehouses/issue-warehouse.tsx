@@ -13,16 +13,19 @@ interface Warehouse {
   allowedBranches?: string[]; // الفروع المسموح بها
 }
 import dayjs from "dayjs";
+import * as XLSX from "xlsx";
 import { useFinancialYear } from "@/hooks/useFinancialYear";
 import { Button, Input, Select, DatePicker, Tabs, Upload, message } from "antd";
-import { UploadOutlined } from "@ant-design/icons";
+import styles from './ReceiptVoucher.module.css';
+import { FileTextOutlined, UploadOutlined } from "@ant-design/icons";
 import { GiMagicBroom } from "react-icons/gi";
 import ItemSearchModal from "@/components/ItemSearchModal";
+import Breadcrumb from "@/components/Breadcrumb";
 const { TabPane } = Tabs;
 
 const IssueWarehousePage = () => {
   // حالة الأصناف المضافة
-  const [addedItems, setAddedItems] = useState([]);
+  const [addedItems, setAddedItems] = useState<Array<{ itemCode: string; itemName: string; quantity: string; unit: string; price: string; costCenterName: string }>>([]);
 
   // أعمدة الجدول
   const itemColumns = [
@@ -32,7 +35,7 @@ const IssueWarehousePage = () => {
     { title: 'الوحدة', dataIndex: 'unit', key: 'unit', width: 80 },
     { title: 'السعر', dataIndex: 'price', key: 'price', width: 100 },
     { title: 'مركز التكلفة', dataIndex: 'costCenterName', key: 'costCenterName', width: 120 },
-    { title: 'إجراءات', key: 'actions', width: 80, render: (_: any, record: any, idx: number) => (
+    { title: 'إجراءات', key: 'actions', width: 80, render: (_: unknown, record: { itemCode: string }, idx: number) => (
       <Button danger size="small" onClick={() => {
         setAddedItems(items => items.filter((_, i) => i !== idx));
       }}>حذف</Button>
@@ -41,8 +44,17 @@ const IssueWarehousePage = () => {
 
   // إضافة صنف للجدول
   const handleAddItem = () => {
-    if (!itemCode || !itemName || !quantity || !unit || !price) return message.error('يرجى إدخال جميع بيانات الصنف');
-    setAddedItems(items => [...items, { itemCode, itemName, quantity, unit, price, costCenterName }]);
+    const finalUnit = unit && unit.trim() ? unit : "قطعة";
+    if (
+      !itemCode.trim() ||
+      !itemName.trim() ||
+      !finalUnit.trim() ||
+      !quantity || Number(quantity) <= 0 ||
+      !price || Number(price) <= 0
+    ) {
+      return message.error('يرجى إدخال جميع بيانات الصنف بشكل صحيح');
+    }
+    setAddedItems(items => [...items, { itemCode, itemName, quantity, unit: finalUnit, price, costCenterName }]);
     setItemCode('');
     setItemName('');
     setQuantity('1');
@@ -51,11 +63,51 @@ const IssueWarehousePage = () => {
     setCostCenterName('');
   };
 
-  // حفظ وطباعة
+  // حفظ وطباعة مع تحقق من المدخلات المطلوبة
   const handleSaveAndPrint = () => {
-    // هنا يمكن إضافة منطق الحفظ في قاعدة البيانات أو الطباعة
-    message.success('تم حفظ البيانات بنجاح');
-    setAddedItems([]); // تفريغ الجدول
+    if (!branch) return message.error('يرجى اختيار الفرع');
+    if (!warehouse) return message.error('يرجى اختيار المخزن');
+    if (!accountType) return message.error('يرجى اختيار نوع الحساب');
+    if (!accountNumber) return message.error('يرجى إدخال رقم الحساب');
+    if (!accountName) return message.error('يرجى إدخال اسم الحساب');
+    if (!addedItems.length) return message.error('يرجى إضافة الأصناف');
+
+    // تحويل التواريخ إلى نصوص قبل الحفظ
+    const saveData = {
+      entryNumber,
+      periodRange: [
+        periodRange[0] ? periodRange[0].format('YYYY-MM-DD') : null,
+        periodRange[1] ? periodRange[1].format('YYYY-MM-DD') : null
+      ],
+      issueNumber,
+      issueDate: issueDate ? issueDate.format('YYYY-MM-DD') : null,
+      refNumber,
+      refDate: refDate ? refDate.format('YYYY-MM-DD') : null,
+      branch,
+      warehouse,
+      movementType,
+      accountType,
+      accountNumber,
+      accountName,
+      sideType,
+      sideNumber,
+      sideName,
+      operationClass,
+      statement,
+      items: addedItems
+    };
+    console.log('بيانات الحفظ المرسلة إلى :', saveData);
+    import("@/services/warehouseIssueFirebaseService").then(({ saveWarehouseIssueToFirebase }) => {
+      saveWarehouseIssueToFirebase(saveData)
+      .then(() => {
+        message.success('تم حفظ البيانات بنجاح');
+        setAddedItems([]);
+      })
+      .catch((err) => {
+        console.error('خطأ :', err);
+        message.error('حدث خطأ أثناء حفظ البيانات: ' + (err?.message || '')); 
+      });
+    });
   };
   // بيانات إذن الصرف
   // رقم القيد تلقائي
@@ -67,7 +119,7 @@ const IssueWarehousePage = () => {
     const autoNumber = `EN-${Date.now().toString().slice(-6)}`;
     setEntryNumber(autoNumber);
   }, []);
-  const [periodRange, setPeriodRange] = useState<any>([null, null]);
+  const [periodRange, setPeriodRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([null, null]);
 
   // السنة المالية من السياق
   const { currentFinancialYear } = useFinancialYear();
@@ -96,13 +148,13 @@ const IssueWarehousePage = () => {
   const [branches, setBranches] = useState<Branch[]>([]);
   // جلب بيانات الفروع الحقيقية
   useEffect(() => {
-    fetchBranches().then(setBranches).catch(() => setBranches([]));
+    fetchBranches().then((branches: Branch[]) => setBranches(branches)).catch(() => setBranches([]));
   }, []);
   const [warehouse, setWarehouse] = useState(null);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   // جلب بيانات المخازن الحقيقية
   useEffect(() => {
-    fetchWarehouses().then(setWarehouses).catch(() => setWarehouses([]));
+    fetchWarehouses().then((warehouses: Warehouse[]) => setWarehouses(warehouses)).catch(() => setWarehouses([]));
   }, []);
 
   // عند تغيير الفرع، فلترة المخازن واختيار أول مخزن مرتبط
@@ -113,8 +165,9 @@ const IssueWarehousePage = () => {
     const filtered = warehouses.filter(w => {
       if (w.branch) return w.branch === branch;
       if (w.allowedBranches && Array.isArray(w.allowedBranches)) return w.allowedBranches.includes(branch);
-      if ((w as any).branchCode) return (w as any).branchCode === branch;
-      if ((w as any).allowedBranchCodes && Array.isArray((w as any).allowedBranchCodes)) return (w as any).allowedBranchCodes.includes(branch);
+      // دعم branchCode و allowedBranchCodes لو موجودين
+      if ('branchCode' in w && typeof (w as any).branchCode === 'string') return (w as any).branchCode === branch;
+      if ('allowedBranchCodes' in w && Array.isArray((w as any).allowedBranchCodes)) return (w as any).allowedBranchCodes.includes(branch);
       return false;
     });
     if (filtered.length) {
@@ -194,13 +247,40 @@ const IssueWarehousePage = () => {
   // استيراد من ملف إكسل
   const [excelFile, setExcelFile] = useState(null);
 
-  const handleExcelUpload = (info: any) => {
-    if (info.file.status === "done") {
-      message.success(`${info.file.name} تم رفع الملف بنجاح`);
-      setExcelFile(info.file.originFileObj);
-    } else if (info.file.status === "error") {
-      message.error(`${info.file.name} حدث خطأ أثناء رفع الملف`);
-    }
+  const handleExcelUpload = (info: { file: { status: string; name: string; originFileObj: File } }) => {
+  if (info.file.status === "done") {
+    message.success(`${info.file.name} تم رفع الملف بنجاح`);
+    setExcelFile(info.file.originFileObj);
+    // قراءة ملف الإكسل وتحويله إلى أصناف
+    const reader = new FileReader();
+    reader.onload = (e: ProgressEvent<FileReader>) => {
+      const data = new Uint8Array(e.target!.result as ArrayBuffer);
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
+      // توقع أن أول صف هو رؤوس الأعمدة أو بيانات مباشرة
+      const items = rows
+        .filter((row: string[]) => Array.isArray(row) && row.length >= 6)
+        .map((row: string[]) => ({
+          itemCode: String(row[0] || ""),
+          itemName: String(row[1] || ""),
+          quantity: String(row[2] || "1"),
+          unit: String(row[3] || "قطعة"),
+          price: String(row[4] || ""),
+          costCenterName: String(row[5] || "")
+        }))
+        .filter(item => item.itemCode && item.itemName && item.quantity && item.unit && item.price);
+      if (!items.length) {
+        message.error("لم يتم العثور على أصناف صالحة في الملف");
+        return;
+      }
+      setAddedItems(prev => [...prev, ...items]);
+    };
+    reader.readAsArrayBuffer(info.file.originFileObj);
+  } else if (info.file.status === "error") {
+    message.error(`${info.file.name} حدث خطأ أثناء رفع الملف`);
+  }
   };
 
   // ستايل مشابه لسند القبض
@@ -218,15 +298,22 @@ const IssueWarehousePage = () => {
 
   return (
     <div className="p-4 space-y-6 font-['Tajawal'] bg-gray-50 min-h-screen">
-      {/* بيانات إذن الصرف */}
-      <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+           <div className="p-3 sm:p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
         <div className="flex items-center">
-          <span className="h-8 w-8 bg-orange-600 rounded-full flex items-center justify-center text-white font-bold ml-3">إ</span>
-          <h1 className="text-2xl font-bold text-gray-800">إضافة إذن صرف</h1>
+          <FileTextOutlined className="h-5 w-5 sm:h-8 sm:w-8 text-emerald-600 ml-1 sm:ml-3" />
+          <h1 className="text-lg sm:text-2xl font-bold text-gray-800">اضافة اذن صرف</h1>
         </div>
-        <p className="text-gray-600 mt-2">بيانات إذن الصرف</p>
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-orange-400 to-purple-500"></div>
+        <p className="text-xs sm:text-base text-gray-600 mt-2">إدارة وعرض أذونات الصرف</p>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 to-green-500"></div>
       </div>
+      <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "إدارة المخازن", to: "/management/warehouse" },
+          { label: "أذونات الصرف" , to: "/warehouses/list-warehouse" },
+          { label: "اضافة اذن صرف   " }
+        ]}
+      />
       <div className="bg-white rounded-lg shadow-lg p-6 space-y-4">
         <div className="grid grid-cols-4 gap-6 mb-4">
           <div className="flex flex-col gap-2">
@@ -274,6 +361,7 @@ const IssueWarehousePage = () => {
               size="large"
               showSearch
               optionFilterProp="children"
+              className={`${styles.dropdown} ${styles.noAntBorder}`}
             >
               {branches.map(b => (
                 <Select.Option key={b.id || b.code} value={b.id}>
@@ -293,6 +381,7 @@ const IssueWarehousePage = () => {
               size="large"
               showSearch
               optionFilterProp="children"
+              className={`${styles.dropdown} ${styles.noAntBorder}`}
             >
               {warehouses.map(w => (
                 <Select.Option key={w.id} value={w.id}>
@@ -305,7 +394,10 @@ const IssueWarehousePage = () => {
         <div className="grid grid-cols-4 gap-6 mb-4">
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>نوع الحركة</label>
-            <Select value={movementType} onChange={setMovementType} placeholder="اختر نوع الحركة" allowClear style={largeControlStyle} size="large">
+            <Select value={movementType} onChange={setMovementType} placeholder="اختر نوع الحركة" allowClear style={largeControlStyle} size="large"
+                          className={`${styles.dropdown} ${styles.noAntBorder}`}
+
+            >
               <Select.Option value="صرف">صرف - Out</Select.Option>
               <Select.Option value="مردودات مشتريات">مردودات مشتريات - Returns purchases</Select.Option>
               <Select.Option value="سند تحويل">سند تحويل - Document transfer</Select.Option>
@@ -321,9 +413,13 @@ const IssueWarehousePage = () => {
           </div>
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>نوع الحساب</label>
-            <Select value={accountType} onChange={setAccountType} placeholder="اختر نوع الحساب" allowClear style={largeControlStyle} size="large">
+            <Select value={accountType} onChange={setAccountType} placeholder="اختر نوع الحساب" allowClear style={largeControlStyle} size="large"
+                          className={`${styles.dropdown} ${styles.noAntBorder}`}
+
+            >
               <Select.Option value="مورد">مورد</Select.Option>
               <Select.Option value="عميل">عميل</Select.Option>
+              className={`${styles.dropdown} ${styles.noAntBorder}`}
             </Select>
           </div>
           <div className="flex flex-col gap-2">
@@ -453,12 +549,16 @@ const IssueWarehousePage = () => {
         <div className="grid grid-cols-4 gap-6 mb-4">
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>نوع الجهة</label>
-            <Select value={sideType} onChange={setSideType} placeholder="اختر نوع الجهة" allowClear style={largeControlStyle} size="large">
+            <Select value={sideType} onChange={setSideType} placeholder="اختر نوع الجهة" allowClear style={largeControlStyle} size="large"
+                          className={`${styles.dropdown} ${styles.noAntBorder}`}
+
+            >
               <Select.Option value="موظف">موظف</Select.Option>
               <Select.Option value="إدارة/قسم">إدارة / قسم</Select.Option>
               <Select.Option value="مشروع">مشروع</Select.Option>
               <Select.Option value="موقع">موقع</Select.Option>
               <Select.Option value="جهة أخرى">جهة أخرى</Select.Option>
+              className={`${styles.dropdown} ${styles.noAntBorder}`}
             </Select>
           </div>
           <div className="flex flex-col gap-2">
@@ -471,8 +571,12 @@ const IssueWarehousePage = () => {
           </div>
                     <div className="flex flex-col gap-2">
             <label style={labelStyle}>تصنيف العملية</label>
-            <Select value={operationClass} onChange={setOperationClass} placeholder="اختر التصنيف" allowClear style={largeControlStyle} size="large">
+            <Select value={operationClass} onChange={setOperationClass} placeholder="اختر التصنيف" allowClear style={largeControlStyle} size="large"
+                          className={`${styles.dropdown} ${styles.noAntBorder}`}
+
+            >
               <Select.Option value="إنشاء فاتورة">إنشاء فاتورة</Select.Option>
+              className={`${styles.dropdown} ${styles.noAntBorder}`}
 
             </Select>
           </div>
@@ -560,6 +664,7 @@ const IssueWarehousePage = () => {
                   style={{ ...largeControlStyle, width: 150 }}
                   size="large"
                   defaultValue="قطعة"
+                  className={`${styles.dropdown} ${styles.noAntBorder}`}
                 >
                   <Select.Option value="قطعة">قطعة</Select.Option>
                   <Select.Option value="كرتون">كرتون</Select.Option>
