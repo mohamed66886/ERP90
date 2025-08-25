@@ -1,0 +1,13 @@
+# robots.txt for madani-book.me
+
+User-agent: *
+Allow: /
+
+# استثناء بعض الملفات
+Disallow: /admin/
+Disallow: /login/
+Disallow: /register/
+Disallow: /api/
+
+# خريطة الموقع
+Sitemap: https://madani-book.me/sitemap.xml
