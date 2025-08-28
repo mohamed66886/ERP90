@@ -204,6 +204,16 @@ const SalesManagement: React.FC = () => {
         window.scrollTo(0, 0);
       }
     },
+        {
+      title: "مجموعة الأسعار",
+      description: "إدارة مجموعات الأسعار للمنتجات والخدمات",
+      icon: <DollarSign className="h-5 w-5 sm:h-6 sm:w-6" />, 
+      color: "bg-yellow-600",
+      onClick: () => {
+        navigate('/stores/price-lists');
+        window.scrollTo(0, 0);
+      }
+    },
     // {
     //   title: "إذن بيع",
     //   description: "إصدار أذونات البيع والتسليم",
