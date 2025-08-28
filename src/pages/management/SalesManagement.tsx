@@ -67,6 +67,96 @@ const SalesManagement: React.FC = () => {
   const navigate = useNavigate();
 
   const settingsCards = [
+    {
+      title: "باقات أسعار خاصة",
+      description: "إدارة باقات الأسعار الخاصة للعملاء",
+      icon: <Tag className="h-6 w-6" />,
+      color: "bg-yellow-500",
+      onClick: () => {
+        navigate('/management/special-price-packages');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تحديث باقات الأسعار الخاصة",
+      description: "تحديث وإدارة باقات الأسعار الخاصة",
+      icon: <RefreshCw className="h-6 w-6" />,
+      color: "bg-orange-500",
+      onClick: () => {
+        navigate('/management/update-special-price-packages');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تحديث الأسعار",
+      description: "تحديث أسعار المنتجات والخدمات",
+      icon: <DollarSign className="h-6 w-6" />,
+      color: "bg-green-500",
+      onClick: () => {
+        navigate('/management/update-prices');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "الخصومات والعروض",
+      description: "إدارة نظام الخصومات والعروض",
+      icon: <Percent className="h-6 w-6" />,
+      color: "bg-red-500",
+      onClick: () => {
+        navigate('/management/discounts-offers');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تحديث الخصومات والعروض",
+      description: "تحديث بيانات الخصومات والعروض",
+      icon: <RefreshCw className="h-6 w-6" />,
+      color: "bg-pink-500",
+      onClick: () => {
+        navigate('/management/update-discounts-offers');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "إضافة حسابات مبيعات",
+      description: "إضافة حسابات مبيعات جديدة",
+      icon: <Plus className="h-6 w-6" />,
+      color: "bg-blue-500",
+      onClick: () => {
+        navigate('/management/add-sales-accounts');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "إعدادات الخصومات",
+      description: "إعدادات نظام الخصومات",
+      icon: <Percent className="h-6 w-6" />,
+      color: "bg-indigo-500",
+      onClick: () => {
+        navigate('/management/discounts-settings');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "إعدادات الضرائب",
+      description: "إعدادات نظام الضرائب",
+      icon: <DollarSignIcon className="h-6 w-6" />,
+      color: "bg-gray-500",
+      onClick: () => {
+        navigate('/management/tax-settings');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تكلفة المبيعات",
+      description: "إدارة وتحديث تكلفة المبيعات",
+      icon: <Calculator className="h-6 w-6" />,
+      color: "bg-teal-500",
+      onClick: () => {
+        navigate('/management/sales-cost');
+        window.scrollTo(0, 0);
+      }
+    },
     // {
     //   title: "إدارة العملاء",
     //   description: "إضافة وتعديل بيانات العملاء",
