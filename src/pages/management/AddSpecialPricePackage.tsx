@@ -77,17 +77,20 @@ const AddSpecialPricePackage = () => {
   const [addedItems, setAddedItems] = useState<Array<{ itemCode: string; itemName: string; unit: string; unitPrice: string; maxPrice: string; minPrice: string }>>([]);
 
   // كود الباقة التلقائي
-  const [packageCode, setPackageCode] = useState("");
   const [packageSeq, setPackageSeq] = useState(1);
-  useEffect(() => {
-    // توليد كود تلقائي (مثال: PKG-YYYY-0001)
+  const [packageCode, setPackageCode] = useState(() => {
     const year = dayjs().format('YYYY');
-    setPackageCode(`PKG-${year}-${String(packageSeq).padStart(4, '0')}`);
-  }, [packageSeq]);
+    return `PKG-${year}-${String(1).padStart(4, '0')}`;
+  });
 
-  // عند حفظ الباقة، زيادة الترتيب
+  // عند حفظ الباقة، زيادة الترتيب وتحديث كود الباقة فورًا
   const incrementPackageSeq = () => {
-    setPackageSeq(seq => seq + 1);
+    setPackageSeq(seq => {
+      const newSeq = seq + 1;
+      const year = dayjs().format('YYYY');
+      setPackageCode(`PKG-${year}-${String(newSeq).padStart(4, '0')}`);
+      return newSeq;
+    });
   };
 
   // أعمدة جدول باقة الأسعار

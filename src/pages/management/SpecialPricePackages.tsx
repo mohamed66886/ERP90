@@ -3,8 +3,8 @@ import { Helmet } from "react-helmet";
 import { Link, useNavigate } from 'react-router-dom';
 import { getDocs, query, collection } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
-import { DatePicker, Input, Select, Button, Table, Pagination } from "antd";
-import { SearchOutlined, DownloadOutlined, FileTextOutlined } from '@ant-design/icons';
+import { DatePicker, Input, Select, Button, Table, Pagination, Switch } from "antd";
+import { SearchOutlined, DownloadOutlined, FileTextOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import arEG from 'antd/es/date-picker/locale/ar_EG';
 import { fetchBranches, Branch } from "@/lib/branches";
 import Breadcrumb from "@/components/Breadcrumb";
@@ -26,6 +26,7 @@ const labelStyle: React.CSSProperties = {
 const SpecialPricePackages: React.FC = () => {
   const navigate = useNavigate();
   const [search, setSearch] = useState({ company: '', branch: '', name: '', packageNumber: '' });
+  const [searchLoading, setSearchLoading] = useState(false);
   // Date state
   const [dateFrom, setDateFrom] = useState<dayjs.Dayjs | null>(null);
   // Company state
@@ -93,7 +94,16 @@ const SpecialPricePackages: React.FC = () => {
     // Example: disable future dates
     return current && current > dayjs();
   };
-  const [results, setResults] = useState<any[]>([]);
+  type SpecialPricePackage = {
+    id: string;
+    name: string;
+    nameEn: string;
+    endDate: string;
+    branch: string;
+    company: string;
+    active?: boolean;
+  };
+  const [results, setResults] = useState<SpecialPricePackage[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
 
   // جلب باقات الأسعار من فايربيز مع تحويل الأكواد إلى أسماء
@@ -153,22 +163,25 @@ const SpecialPricePackages: React.FC = () => {
   }
 
   const handleSearch = () => {
-    // بحث فعلي في النتائج المحملة من فايربيز
-    setResults(prev => prev.filter(pkg => {
-      // فلترة الشركة
-      const companyMatch = !search.company || (pkg.company && pkg.company.includes(search.company));
-      // فلترة الفرع
-      const branchMatch = !search.branch || (pkg.branch && pkg.branch.includes(search.branch));
-      // فلترة اسم الباقة بالعربي
-      const nameMatch = !search.name || (pkg.name && pkg.name.includes(search.name));
-      // فلترة اسم الباقة بالإنجليزي
-      const nameEnMatch = !search.name || (pkg.nameEn && pkg.nameEn.includes(search.name));
-      // فلترة رقم الباقة
-      const codeMatch = !search.packageNumber || (pkg.id && pkg.id.includes(search.packageNumber));
-      // فلترة تاريخ الانتهاء
-      const dateMatch = !dateFrom || (pkg.endDate && pkg.endDate.includes(dateFrom.format('YYYY-MM-DD')));
-      return companyMatch && branchMatch && nameMatch && nameEnMatch && codeMatch && dateMatch;
-    }));
+    setSearchLoading(true);
+    setTimeout(() => {
+      setResults(prev => prev.filter(pkg => {
+        // فلترة الشركة
+        const companyMatch = !search.company || (pkg.company && pkg.company.includes(search.company));
+        // فلترة الفرع
+        const branchMatch = !search.branch || (pkg.branch && pkg.branch.includes(search.branch));
+        // فلترة اسم الباقة بالعربي
+        const nameMatch = !search.name || (pkg.name && pkg.name.includes(search.name));
+        // فلترة اسم الباقة بالإنجليزي
+        const nameEnMatch = !search.name || (pkg.nameEn && pkg.nameEn.includes(search.name));
+        // فلترة رقم الباقة
+        const codeMatch = !search.packageNumber || (pkg.id && pkg.id.includes(search.packageNumber));
+        // فلترة تاريخ الانتهاء
+        const dateMatch = !dateFrom || (pkg.endDate && pkg.endDate.includes(dateFrom.format('YYYY-MM-DD')));
+        return companyMatch && branchMatch && nameMatch && nameEnMatch && codeMatch && dateMatch;
+      }));
+      setSearchLoading(false);
+    }, 700); // simulate loading
   };
 
     function getFilteredRows() {
@@ -205,18 +218,17 @@ const SpecialPricePackages: React.FC = () => {
       >
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-green-500"></div>
         {/* عنوان خيارات البحث وزر الإضافة بجانب بعض */}
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-2 justify-between">
           <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2 mb-0">
             <SearchOutlined className="text-emerald-600" /> خيارات البحث
           </h3>
           <Button
             type="primary"
-            className="bg-emerald-600 hover:bg-emerald-700 border-emerald-600 hover:border-emerald-700"
+            className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
             size="large"
-            style={{ marginRight: '8px' }}
             onClick={() => { navigate('/management/sales/add-special-price-package'); }}
           >
-            إضافة
+            إضافة باقة جديدة
           </Button>
         </div>
 
@@ -293,12 +305,14 @@ const SpecialPricePackages: React.FC = () => {
         <div className="flex items-center gap-4 mt-4">
           <Button
             type="primary"
-            icon={<SearchOutlined />}
+            icon={searchLoading ? <span className="ant-spin ant-spin-sm" style={{ marginRight: 6 }}><svg className="ant-spin-dot-spin" viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor"><path d="M512 64a448 448 0 1 0 0 896 448 448 0 0 0 0-896zm0 64a384 384 0 1 1 0 768 384 384 0 0 1 0-768z" opacity=".1"/><path d="M512 64a448 448 0 1 0 0 896V64z"/></svg></span> : <SearchOutlined />}
             onClick={handleSearch}
             className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
             size="large"
+            loading={searchLoading}
+            disabled={searchLoading}
           >
-            بحث 
+            {searchLoading ? "جاري البحث..." : "بحث"}
           </Button>
           <span className="text-gray-500 text-sm">
             نتائج البحث: {
@@ -393,10 +407,32 @@ const SpecialPricePackages: React.FC = () => {
               title: 'الإجراءات',
               key: 'actions',
               minWidth: 120,
-              render: (_: unknown, record: any) => (
+              render: (_: unknown, record: SpecialPricePackage) => (
                 <div className="flex gap-2">
-                  <Button size="small" type="default">تعديل</Button>
-                  <Button size="small" type="primary" danger>حذف</Button>
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<EditOutlined />}
+                    title="تعديل"
+                    style={{ background: '#1677ff', color: '#fff', border: 'none', boxShadow: '0 2px 8px rgba(22,119,255,0.15)' }}
+                  />
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<DeleteOutlined />}
+                    title="حذف"
+                    style={{ background: '#d90429', color: '#fff', border: 'none', boxShadow: '0 2px 8px rgba(217,4,41,0.15)' }}
+                  />
+                  <Switch
+                    checked={!!record.active}
+                    checkedChildren="مفعل"
+                    unCheckedChildren="متوقف"
+                    onChange={(checked) => {
+                      setResults(prev => prev.map(pkg =>
+                        pkg.id === record.id ? { ...pkg, active: checked } : pkg
+                      ));
+                    }}
+                  />
                 </div>
               ),
             },
@@ -407,7 +443,7 @@ const SpecialPricePackages: React.FC = () => {
           scroll={{ x: 800 }}
           size="small"
           bordered
-          className="[&_.ant-table-thead_>_tr_>_th]:bg-gray-400 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-gray-400 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
+          className="[&_.ant-table-thead_>_tr_>_th]:bg-blue-200 [&_.ant-table-thead_>_tr_>_th]:text-gray-800 [&_.ant-table-thead_>_tr_>_th]:border-blue-200 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
           locale={{
             emptyText: (
               <div className="text-gray-400 py-8">لا توجد بيانات</div>
