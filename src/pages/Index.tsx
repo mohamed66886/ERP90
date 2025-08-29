@@ -45,6 +45,8 @@ import SalesRepresentativesManagement from "./management/SalesRepresentativesMan
 import SalesTargetsPage from "./management/SalesTargetsPage";
 import SalesCommissionsPage from "./management/SalesCommissionsPage";
 import PerformanceEvaluationPage from "./management/PerformanceEvaluationPage";
+import SpecialPricePackages from "./management/SpecialPricePackages";
+import AddSpecialPricePackage from "./management/AddSpecialPricePackage";
 import {
   FinancialManagement,
   HumanResources,
@@ -52,7 +54,7 @@ import {
   SalesManagement,
   PurchaseManagement,
   EquipmentManagement,
-  WarehouseManagement
+  WarehouseManagement,
 } from "../pages/management";
 
 import { Player } from '@lottiefiles/react-lottie-player';
@@ -239,6 +241,8 @@ const Index = () => {
               <Route path="/management/warehouse" element={<WarehouseManagement />} />
               <Route path="/management/projects" element={<ProjectManagement />} />
               <Route path="/management/sales" element={<SalesManagement />} />
+            <Route path="/management/special-price-packages" element={<SpecialPricePackages />} />
+            <Route path="/management/sales/add-special-price-package" element={<AddSpecialPricePackage />} />
               <Route path="/management/sales-representatives" element={<SalesRepresentativesPage />} />
               <Route path="/management/sales-targets" element={<SalesTargetsPage />} />
               <Route path="/management/sales-commissions" element={<SalesCommissionsPage />} />
