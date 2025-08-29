@@ -24,7 +24,39 @@ import Breadcrumb from "@/components/Breadcrumb";
 const { TabPane } = Tabs;
 
 const AddSpecialPricePackage = () => {
-  // حالة الأصناف المضافة
+  // تحديد الأصناف في مودال أصناف الفئة
+  const [selectedRows, setSelectedRows] = useState<number[]>([]);
+  // دالة تعديل بيانات صف في جدول الأصناف
+  const handleCategoryItemEdit = (idx: number, field: string, value: any) => {
+    setCategoryItems(items => items.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+  };
+  // حالة مودال اختيار الفئة
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [showItemsModal, setShowItemsModal] = useState(false);
+  const [categoryItems, setCategoryItems] = useState([]);
+  // الأصناف والفئات من صفحة الأصناف
+  const [allItems, setAllItems] = useState([]);
+  const [categories, setCategories] = useState([]);
+
+  // جلب الأصناف والفئات من قاعدة البيانات
+  useEffect(() => {
+    (async () => {
+      try {
+        const { db } = await import("@/lib/firebase");
+        const { getDocs, collection } = await import("firebase/firestore");
+        const snapshot = await getDocs(collection(db, "inventory_items"));
+        const itemsList = snapshot.docs.map(doc => doc.data());
+        setAllItems(itemsList);
+        // استخراج الفئات الفريدة من الأدب الصنف
+        const uniqueCategories = Array.from(new Set(itemsList.map(item => item.type)));
+        setCategories(uniqueCategories);
+      } catch (e) {
+        // يمكن إضافة رسالة خطأ هنا
+      }
+    })();
+  }, []);
+  // حالة الأصناف المadded
   const [addedItems, setAddedItems] = useState<Array<{ itemCode: string; itemName: string; unit: string; unitPrice: string; maxPrice: string; minPrice: string }>>([]);
 
   // كود الباقة التلقائي
@@ -171,6 +203,15 @@ const AddSpecialPricePackage = () => {
   const [costCenterName, setCostCenterName] = useState("");
   const [showItemModal, setShowItemModal] = useState(false);
   const [excelFile, setExcelFile] = useState(null);
+  const [categorySearch, setCategorySearch] = useState("");
+  const [categoryItemsPage, setCategoryItemsPage] = useState(1);
+  const [categoryItemsPageSize, setCategoryItemsPageSize] = useState(10);
+  const [categoryItemsSearch, setCategoryItemsSearch] = useState("");
+  const categoryItemsFiltered = categoryItems.filter(item => {
+    const name = item.nameAr || item.nameEn || item.itemName || item.name || '';
+    const code = item.itemCode || '';
+    return name.toLowerCase().includes(categoryItemsSearch.toLowerCase()) || code.toLowerCase().includes(categoryItemsSearch.toLowerCase());
+  });
 
   // استيراد من ملف إكسل
   const handleExcelUpload = (info: any) => {
@@ -188,14 +229,14 @@ const AddSpecialPricePackage = () => {
         const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
         // توقع أن أول صف هو رؤوس الأعمدة أو بيانات مباشرة
         const items = rows
-          .filter((row: string[]) => Array.isArray(row) && row.length >= 3)
+          .filter((row: string[]) => Array.isArray(row) && row.length >= 6)
           .map((row: string[]) => ({
             itemCode: String(row[0] || ""),
             itemName: String(row[1] || ""),
             unit: String(row[2] || "قطعة"),
-            unitPrice: "",
-            maxPrice: "",
-            minPrice: ""
+            unitPrice: String(row[3] || ""),
+            maxPrice: String(row[4] || ""),
+            minPrice: String(row[5] || "")
           }))
           .filter(item => item.itemCode && item.itemName && item.unit);
         if (!items.length) {
@@ -436,7 +477,7 @@ const AddSpecialPricePackage = () => {
                 <Button type="primary" className="bg-blue-600 w-full" style={{ height: 48, fontSize: 18, borderRadius: 8 }} onClick={handleAddItem}>إضافة الصنف</Button>
               </div>
             </div>
-            {/* جدول الأصناف المضافة */}
+            {/* جدول الأصناف المadded */}
             <div className="mt-8">
               <Table
                 dataSource={addedItems}
@@ -444,7 +485,7 @@ const AddSpecialPricePackage = () => {
                 rowKey={(record, idx) => idx}
                 pagination={false}
                 bordered
-                locale={{ emptyText: 'لا توجد أصناف مضافة بعد' }}
+                locale={{ emptyText: 'لا توجد أصناف مaddedة بعد' }}
               />
               <div className="flex gap-4 mt-4">
                 <Button type="primary" onClick={handleSavePackage}>حفظ الباقة</Button>
@@ -470,11 +511,11 @@ const AddSpecialPricePackage = () => {
               </Upload>
               <div style={{marginTop: 8, color: '#d97706', fontSize: 16, fontWeight: 500, background: '#fffbe6', borderRadius: 6, padding: '8px 12px', border: '1px solid #ffe58f', display: 'flex', alignItems: 'center', gap: 8}}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" style={{flexShrink:0}} xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="#d97706" strokeWidth="2" fill="#fffbe6"/><path d="M12 8v4" stroke="#d97706" strokeWidth="2" strokeLinecap="round"/><circle cx="12" cy="16" r="1" fill="#d97706"/></svg>
-                يجب أن يحتوي ملف الإكسل على الأعمدة التالية بالترتيب: رقم كود الصنف، اسم الصنف، الكمية، الوحدة
+                يجب أن يحتوي ملف الإكسل على الأعمدة التالية بالترتيب: رقم الصنف، اسم الصنف، الوحدة، سعر الوحدة، أعلى سعر، أقل سعر
               </div>
               {excelFile && <span className="text-green-600">تم رفع الملف: {excelFile.name}</span>}
             </div>
-            {/* جدول الأصناف المضافة */}
+            {/* جدول الأصناف المadded */}
             <div className="mt-8">
               <Table
                 dataSource={addedItems}
@@ -482,7 +523,7 @@ const AddSpecialPricePackage = () => {
                 rowKey={(record, idx) => idx}
                 pagination={false}
                 bordered
-                locale={{ emptyText: 'لا توجد أصناف مضافة بعد' }}
+                locale={{ emptyText: 'لا توجد أصناف مaddedة بعد' }}
               />
               <div className="flex gap-4 mt-4">
                 <Button type="primary" onClick={handleSavePackage}>حفظ الباقة</Button>
@@ -491,9 +532,190 @@ const AddSpecialPricePackage = () => {
             </div>
           </TabPane>
           <TabPane tab="استيراد من مجموعة" key="import-items">
-            <div style={{ minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: 18 }}>
-              محتوى الاستيراد من مجموعة هنا
+            <div className="flex gap-4 mb-4">
+              <Button type="primary" onClick={() => setShowCategoryModal(true)}>استيراد</Button>
             </div>
+            {/* مودال اختيار الفئة */}
+            <Modal
+              open={showCategoryModal}
+              onCancel={() => setShowCategoryModal(false)}
+              footer={null}
+              title="اختر الفئة"
+            >
+              <div>
+                <Input
+                  placeholder="ابحث باسم الفئة..."
+                  style={{ marginBottom: 12 }}
+                  onChange={e => setCategorySearch(e.target.value)}
+                />
+                <Table
+                  dataSource={allItems.filter(item => item.type === 'مستوى أول' && (!categorySearch || item.name.toLowerCase().includes(categorySearch.toLowerCase())))}
+                  columns={[{
+                    title: 'اسم الفئة',
+                    dataIndex: 'name',
+                    key: 'name',
+                  }, {
+                    title: 'رقم الفئة',
+                    dataIndex: 'id',
+                    key: 'id',
+                  }, {
+                    title: 'إجراءات',
+                    key: 'actions',
+                    render: (_: any, record: any) => (
+                      <Button type="primary" onClick={() => {
+                        setSelectedCategory(record.name);
+                        const itemsInCat = allItems.filter(i => i.type === 'مستوى ثاني' && i.parentId === record.id);
+                        setCategoryItems(itemsInCat);
+                        setShowCategoryModal(false);
+                        setShowItemsModal(true);
+                      }}>عرض الأصناف</Button>
+                    )
+                  }]}
+                  rowKey={record => record.id}
+                  pagination={false}
+                  locale={{ emptyText: 'لا توجد فئات مطابقة' }}
+                />
+              </div>
+            </Modal>
+            {/* مودال عرض أصناف الفئة */}
+            <Modal
+              open={showItemsModal}
+              onCancel={() => setShowItemsModal(false)}
+              footer={null}
+              title={selectedCategory ? `أصناف الفئة: ${selectedCategory}` : "أصناف الفئة"}
+              width={900}
+            >
+              <div className="mb-3 flex gap-3 items-center">
+                <Input
+                  placeholder="ابحث باسم أو رقم الصنف..."
+                  style={{ width: 220 }}
+                  value={categoryItemsSearch}
+                  onChange={e => {
+                    setCategoryItemsSearch(e.target.value);
+                    setCategoryItemsPage(1);
+                  }}
+                />
+                <Button type="primary" onClick={() => {
+                  setSelectedRows(categoryItemsFiltered.map((_, idx) => idx));
+                }}>تحديد الكل</Button>
+                <Button onClick={() => setSelectedRows([])}>إلغاء التحديد</Button>
+              </div>
+              <Table
+                dataSource={categoryItemsFiltered.slice((categoryItemsPage-1)*categoryItemsPageSize, categoryItemsPage*categoryItemsPageSize).map((item, idx) => ({ ...item, _idx: ((categoryItemsPage-1)*categoryItemsPageSize)+idx }))}
+                columns={[{
+                  title: '',
+                  dataIndex: '_idx',
+                  key: 'select',
+                  width: 40,
+                  render: (_: unknown, record: { _idx: number }) => (
+                    <input type="checkbox" checked={selectedRows.includes(record._idx)} onChange={e => {
+                      if (e.target.checked) {
+                        setSelectedRows(prev => [...prev, record._idx]);
+                      } else {
+                        setSelectedRows(prev => prev.filter(i => i !== record._idx));
+                      }
+                    }} />
+                  )
+                },
+                {
+                  title: 'رقم الصنف',
+                  dataIndex: 'itemCode',
+                  key: 'itemCode',
+                },
+                {
+                  title: 'اسم الصنف',
+                  dataIndex: 'itemName',
+                  key: 'itemName',
+                  render: (_: string, record: any) => (
+                    record.nameAr || record.nameEn || record.itemName || record.name || ''
+                  )
+                },
+                {
+                  title: 'الوحدة',
+                  dataIndex: 'unit',
+                  key: 'unit',
+                  render: (val: string, record: { _idx: number }) => (
+                    <Select
+                      value={val || 'قطعة'}
+                      style={{ width: 90 }}
+                      onChange={v => handleCategoryItemEdit(record._idx, 'unit', v)}
+                    >
+                      <Select.Option value="قطعة">قطعة</Select.Option>
+                      <Select.Option value="كرتون">كرتون</Select.Option>
+                      <Select.Option value="كيلو">كيلو</Select.Option>
+                      <Select.Option value="لتر">لتر</Select.Option>
+                      <Select.Option value="متر">متر</Select.Option>
+                      <Select.Option value="علبة">علبة</Select.Option>
+                      <Select.Option value="رول">رول</Select.Option>
+                      <Select.Option value="صندوق">صندوق</Select.Option>
+                      <Select.Option value="عبوة">عبوة</Select.Option>
+                    </Select>
+                  )
+                },
+                {
+                  title: 'سعر الوحدة',
+                  dataIndex: 'unitPrice',
+                  key: 'unitPrice',
+                  render: (val: string, record: { _idx: number }) => (
+                    <Input type="number" value={val || ''} style={{ width: 90 }} onChange={e => handleCategoryItemEdit(record._idx, 'unitPrice', e.target.value)} />
+                  )
+                },
+                {
+                  title: 'أعلى سعر',
+                  dataIndex: 'maxPrice',
+                  key: 'maxPrice',
+                  render: (val: string, record: { _idx: number }) => (
+                    <Input type="number" value={val || ''} style={{ width: 90 }} onChange={e => handleCategoryItemEdit(record._idx, 'maxPrice', e.target.value)} />
+                  )
+                },
+                {
+                  title: 'أقل سعر',
+                  dataIndex: 'minPrice',
+                  key: 'minPrice',
+                  render: (val: string, record: { _idx: number }) => (
+                    <Input type="number" value={val || ''} style={{ width: 90 }} onChange={e => handleCategoryItemEdit(record._idx, 'minPrice', e.target.value)} />
+                  )
+                }
+                ]}
+                rowKey={record => record._idx}
+                pagination={false}
+                bordered
+                locale={{ emptyText: 'لا توجد أصناف في هذه الفئة' }}
+              />
+              <div className="flex justify-center mt-4">
+                <Button disabled={categoryItemsPage === 1} onClick={() => setCategoryItemsPage(p => p-1)}>السابق</Button>
+                <span style={{margin: '0 16px'}}>صفحة {categoryItemsPage} من {Math.ceil(categoryItemsFiltered.length/categoryItemsPageSize)}</span>
+                <Button disabled={categoryItemsPage >= Math.ceil(categoryItemsFiltered.length/categoryItemsPageSize)} onClick={() => setCategoryItemsPage(p => p+1)}>التالي</Button>
+              </div>
+              <div className="flex gap-4 mt-4">
+                <Button type="primary" onClick={() => {
+                  // إضافة الأصناف المحددة للباقة
+                  const selected = selectedRows.map(idx => {
+                    const item = categoryItems[idx];
+                    return {
+                      itemCode: item.itemCode || '',
+                      itemName: item.nameAr || item.nameEn || item.itemName || item.name || '',
+                      unit: item.unit || 'قطعة',
+                      unitPrice: item.unitPrice || '',
+                      maxPrice: item.maxPrice || '',
+                      minPrice: item.minPrice || ''
+                    };
+                  });
+                  setAddedItems(prev => [...prev, ...selected]);
+                  setShowItemsModal(false);
+                  message.success('تم إضافة الأصناف المحددة للباقة');
+                }}>استيراد الأصناف المحددة</Button>
+                <Button onClick={() => setShowItemsModal(false)}>إغلاق</Button>
+              </div>
+            </Modal>
+            <Table
+              dataSource={addedItems}
+              columns={itemColumns}
+              rowKey={(record, idx) => idx}
+              pagination={false}
+              bordered
+              locale={{ emptyText: 'لا توجد أصناف مaddedة بعد' }}
+            />
           </TabPane>
         </Tabs>
       </div>

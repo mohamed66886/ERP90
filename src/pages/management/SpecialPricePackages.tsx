@@ -76,13 +76,18 @@ const SpecialPricePackages: React.FC = () => {
         setBranchesLoading(false);
       });
   }, []);
-  // Style for large controls
+  // Style for large controls (مطابق لصفحة الإضافة)
   const largeControlStyle: React.CSSProperties = {
-    fontSize: '1rem',
-    padding: '10px',
-    borderRadius: '8px',
-    minHeight: '40px',
+    height: 48,
+    fontSize: 18,
+    borderRadius: 8,
+    padding: "8px 16px",
+    boxShadow: "0 1px 6px rgba(0,0,0,0.07)",
+    background: "#fff",
+    border: "1.5px solid #d9d9d9",
+    transition: "border-color 0.3s",
   };
+  const labelStyle: React.CSSProperties = { fontSize: 18, fontWeight: 500 };
   // Disabled date function for DatePicker
   const disabledDate = (current: dayjs.Dayjs) => {
     // Example: disable future dates
@@ -192,21 +197,32 @@ const SpecialPricePackages: React.FC = () => {
                   { label: "باقات أسعار خاصة" }
                 ]}
               />
-                    <motion.div 
+      <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
         className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm relative"
       >
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-green-500"></div>
-        
-        <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
-          <SearchOutlined className="text-emerald-600" /> خيارات البحث
-        </h3>
+        {/* عنوان خيارات البحث وزر الإضافة بجانب بعض */}
+        <div className="flex items-center gap-2 mb-2">
+          <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2 mb-0">
+            <SearchOutlined className="text-emerald-600" /> خيارات البحث
+          </h3>
+          <Button
+            type="primary"
+            className="bg-emerald-600 hover:bg-emerald-700 border-emerald-600 hover:border-emerald-700"
+            size="large"
+            style={{ marginRight: '8px' }}
+            onClick={() => { navigate('/management/sales/add-special-price-package'); }}
+          >
+            إضافة
+          </Button>
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          <div className="flex flex-col">
-            <span style={labelStyle}> التاريخ </span>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>التاريخ</label>
             <DatePicker 
               value={dateFrom}
               onChange={setDateFrom}
@@ -218,17 +234,17 @@ const SpecialPricePackages: React.FC = () => {
               disabledDate={disabledDate}
             />
           </div>
-          
-          <div className="flex flex-col">
-            <span style={labelStyle}>الشركة</span>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>الشركة</label>
             <Select
               value={companyId}
               onChange={setCompanyId}
               placeholder="اختر الشركة"
-              style={{ width: '100%', ...largeControlStyle }}
+              style={largeControlStyle}
               size="large"
               optionFilterProp="label"
               allowClear
+              showSearch
             >
               {companies.map(company => (
                 <Select.Option key={company.id} value={company.id} label={company.name}>
@@ -237,13 +253,13 @@ const SpecialPricePackages: React.FC = () => {
               ))}
             </Select>
           </div>
-          <div className="flex flex-col">
-            <span style={labelStyle}>الفرع</span>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>الفرع</label>
             <Select
               value={branchId}
               onChange={setBranchId}
               placeholder="اختر الفرع"
-              style={{ width: '100%', ...largeControlStyle }}
+              style={largeControlStyle}
               size="large"
               optionFilterProp="label"
               allowClear
@@ -260,42 +276,29 @@ const SpecialPricePackages: React.FC = () => {
               ))}
             </Select>
           </div>
-            <div className="flex flex-col">
-                <span style={labelStyle}>رقم الباقة</span>
-                <Input
-                    name="packageNumber"
-                    placeholder="رقم الباقة"
-                    value={search.packageNumber}
-                    onChange={handleChange}
-                    style={largeControlStyle}
-                    size="large"
-                    className="text-right"
-                />
-            </div>
-          
-
- 
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>رقم الباقة</label>
+            <Input
+              name="packageNumber"
+              placeholder="رقم الباقة"
+              value={search.packageNumber}
+              onChange={handleChange}
+              style={largeControlStyle}
+              size="large"
+              className="text-right"
+            />
+          </div>
         </div>
-        
+
         <div className="flex items-center gap-4 mt-4">
           <Button
             type="primary"
             icon={<SearchOutlined />}
             onClick={handleSearch}
-  
             className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
             size="large"
           >
             بحث 
-          </Button>
-          <Button
-            type="primary"
-            className="bg-emerald-600 hover:bg-emerald-700 border-emerald-600 hover:border-emerald-700"
-            size="large"
-            style={{ marginRight: '8px' }}
-            onClick={() => { navigate('/management/sales/add-special-price-package'); }}
-          >
-            إضافة
           </Button>
           <span className="text-gray-500 text-sm">
             نتائج البحث: {
@@ -309,7 +312,6 @@ const SpecialPricePackages: React.FC = () => {
             } - عرض الصفحة {currentPage} من {getTotalPages()}
           </span>
         </div>
-        
       </motion.div>
       {/* نتائج البحث */}
       <motion.div 
