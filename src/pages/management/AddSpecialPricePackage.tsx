@@ -28,7 +28,24 @@ const AddSpecialPricePackage = () => {
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   // دالة تعديل بيانات صف في جدول الأصناف
   const handleCategoryItemEdit = (idx: number, field: string, value: any) => {
-    setCategoryItems(items => items.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+    setCategoryItems(items => items.map((item, i) => {
+      if (i !== idx) return item;
+      // عند فقدان التركيز من سعر الوحدة، انسخ القيمة لأعلى وأقل سعر إذا كانوا فاضيين
+      if (field === 'unitPrice') {
+        const newUnitPrice = value;
+        return {
+          ...item,
+          unitPrice: newUnitPrice,
+          maxPrice: (item.maxPrice === '' || item.maxPrice === undefined) ? newUnitPrice : item.maxPrice,
+          minPrice: (item.minPrice === '' || item.minPrice === undefined) ? newUnitPrice : item.minPrice
+        };
+      }
+      // عند الكتابة فقط في سعر الوحدة، حدث القيمة فقط بدون نسخ
+      if (field === 'unitPriceOnly') {
+        return { ...item, unitPrice: value };
+      }
+      return { ...item, [field]: value };
+    }));
   };
   // حالة مودال اختيار الفئة
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -78,14 +95,75 @@ const AddSpecialPricePackage = () => {
     { title: 'رقم الصنف', dataIndex: 'itemCode', key: 'itemCode', width: 100 },
     { title: 'اسم الصنف', dataIndex: 'itemName', key: 'itemName', width: 150 },
     { title: 'الوحدة', dataIndex: 'unit', key: 'unit', width: 80 },
-    { title: 'سعر الوحدة', dataIndex: 'unitPrice', key: 'unitPrice', width: 100 },
-    { title: 'أعلى سعر', dataIndex: 'maxPrice', key: 'maxPrice', width: 100 },
-    { title: 'أقل سعر', dataIndex: 'minPrice', key: 'minPrice', width: 100 },
-    { title: 'إجراءات', key: 'actions', width: 80, render: (_: unknown, record: { itemCode: string }, idx: number) => (
-      <Button danger size="small" onClick={() => {
-        setAddedItems(items => items.filter((_, i) => i !== idx));
-      }}>حذف</Button>
-    ) }
+    {
+      title: 'سعر الوحدة',
+      dataIndex: 'unitPrice',
+      key: 'unitPrice',
+      width: 100,
+      render: (val: string, record: any, idx: number) => (
+        editItemIdx === idx ? (
+          <Input
+            type="number"
+            value={editItemData?.unitPrice ?? val}
+            style={{ width: 90 }}
+            onChange={e => setEditItemData({ ...editItemData, unitPrice: e.target.value })}
+          />
+        ) : val
+      )
+    },
+    {
+      title: 'أعلى سعر',
+      dataIndex: 'maxPrice',
+      key: 'maxPrice',
+      width: 100,
+      render: (val: string, record: any, idx: number) => (
+        editItemIdx === idx ? (
+          <Input
+            type="number"
+            value={editItemData?.maxPrice ?? val}
+            style={{ width: 90 }}
+            onChange={e => setEditItemData({ ...editItemData, maxPrice: e.target.value })}
+          />
+        ) : val
+      )
+    },
+    {
+      title: 'أقل سعر',
+      dataIndex: 'minPrice',
+      key: 'minPrice',
+      width: 100,
+      render: (val: string, record: any, idx: number) => (
+        editItemIdx === idx ? (
+          <Input
+            type="number"
+            value={editItemData?.minPrice ?? val}
+            style={{ width: 90 }}
+            onChange={e => setEditItemData({ ...editItemData, minPrice: e.target.value })}
+          />
+        ) : val
+      )
+    },
+    {
+      title: 'إجراءات',
+      key: 'actions',
+      width: 120,
+      render: (_: unknown, record: { itemCode: string }, idx: number) => (
+        <div className="flex gap-2">
+          {editItemIdx === idx ? (
+            <Button size="small" type="primary" onClick={handleEditItemSave}>تحديث</Button>
+          ) : (
+            <Button size="small" onClick={() => handleEditItem(idx)}>تعديل</Button>
+          )}
+          <Button danger size="small" onClick={() => {
+            setAddedItems(items => items.filter((_, i) => i !== idx));
+            if (editItemIdx === idx) {
+              setEditItemIdx(null);
+              setEditItemData(null);
+            }
+          }}>حذف</Button>
+        </div>
+      )
+    }
   ];
 
   // إضافة صنف للجدول
@@ -108,6 +186,23 @@ const AddSpecialPricePackage = () => {
     setUnitPrice('');
     setMaxPrice('');
     setMinPrice('');
+  };
+
+  // حالة تعديل صنف
+  const [editItemIdx, setEditItemIdx] = useState<number | null>(null);
+  const [editItemData, setEditItemData] = useState<any>(null);
+  const handleEditItem = (idx: number) => {
+    setEditItemIdx(idx);
+    setEditItemData(addedItems[idx]);
+  };
+  const handleEditItemSave = () => {
+    if (!editItemData.itemCode.trim() || !editItemData.itemName.trim() || !editItemData.unit.trim() || !editItemData.unitPrice || Number(editItemData.unitPrice) <= 0 || !editItemData.maxPrice || Number(editItemData.maxPrice) <= 0 || !editItemData.minPrice || Number(editItemData.minPrice) <= 0) {
+      return message.error('يرجى إدخال جميع بيانات الصنف بشكل صحيح');
+    }
+    setAddedItems(items => items.map((item, i) => i === editItemIdx ? editItemData : item));
+    setEditItemIdx(null);
+    setEditItemData(null);
+    message.success('تم تعديل بيانات الصنف بنجاح');
   };
 
   // حفظ باقة الأسعار
@@ -462,15 +557,45 @@ const AddSpecialPricePackage = () => {
               </div>
               <div className="flex flex-col gap-1 w-full">
                 <label style={labelStyle}>سعر الوحدة</label>
-                <Input type="number" value={unitPrice} onChange={e => setUnitPrice(e.target.value)} placeholder="سعر الوحدة" style={{...largeControlStyle, width: '100%'}} size="large" />
+                <Input
+                  type="number"
+                  value={unitPrice}
+                  onChange={e => {
+                    setUnitPrice(e.target.value);
+                  }}
+                  onBlur={e => {
+                    const value = e.target.value;
+                    if (!maxPrice) setMaxPrice(value);
+                    if (!minPrice) setMinPrice(value);
+                  }}
+                  placeholder="سعر الوحدة"
+                  style={{...largeControlStyle, width: '100%'}}
+                  size="large"
+                />
               </div>
               <div className="flex flex-col gap-1 w-full">
                 <label style={labelStyle}>أعلى سعر</label>
-                <Input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="أعلى سعر" style={{...largeControlStyle, width: '100%'}} size="large" />
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={maxPrice}
+                  onChange={e => setMaxPrice(e.target.value)}
+                  placeholder="أعلى سعر"
+                  style={{...largeControlStyle, width: '100%'}}
+                  size="large"
+                />
               </div>
               <div className="flex flex-col gap-1 w-full">
                 <label style={labelStyle}>أقل سعر</label>
-                <Input type="number" value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="أقل سعر" style={{...largeControlStyle, width: '100%'}} size="large" />
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={minPrice}
+                  onChange={e => setMinPrice(e.target.value)}
+                  placeholder="أقل سعر"
+                  style={{...largeControlStyle, width: '100%'}}
+                  size="large"
+                />
               </div>
               <div className="flex flex-col gap-1 w-full">
                 <label style={{ visibility: 'hidden' }}>إضافة</label>
@@ -595,9 +720,19 @@ const AddSpecialPricePackage = () => {
                     setCategoryItemsPage(1);
                   }}
                 />
-                <Button type="primary" onClick={() => {
-                  setSelectedRows(categoryItemsFiltered.map((_, idx) => idx));
-                }}>تحديد الكل</Button>
+                <Button 
+                  type="primary"
+                  onClick={() => {
+                    setSelectedRows(categoryItemsFiltered.map((_, idx) => idx));
+                  }}
+                  style={
+                    selectedRows.length === categoryItemsFiltered.length && categoryItemsFiltered.length > 0
+                      ? { background: '#2563eb', color: '#fff', border: '1px solid #2563eb', fontWeight: 600 }
+                      : { background: '#fff', color: '#2563eb', border: '1px solid #2563eb', fontWeight: 600 }
+                  }
+                >
+                  تحديد الكل
+                </Button>
                 <Button onClick={() => setSelectedRows([])}>إلغاء التحديد</Button>
               </div>
               <Table
@@ -639,6 +774,7 @@ const AddSpecialPricePackage = () => {
                       value={val || 'قطعة'}
                       style={{ width: 90 }}
                       onChange={v => handleCategoryItemEdit(record._idx, 'unit', v)}
+                      disabled={!selectedRows.includes(record._idx)}
                     >
                       <Select.Option value="قطعة">قطعة</Select.Option>
                       <Select.Option value="كرتون">كرتون</Select.Option>
@@ -657,7 +793,14 @@ const AddSpecialPricePackage = () => {
                   dataIndex: 'unitPrice',
                   key: 'unitPrice',
                   render: (val: string, record: { _idx: number }) => (
-                    <Input type="number" value={val || ''} style={{ width: 90 }} onChange={e => handleCategoryItemEdit(record._idx, 'unitPrice', e.target.value)} />
+                    <Input
+                      type="number"
+                      value={val || ''}
+                      style={{ width: 90 }}
+                      disabled={!selectedRows.includes(record._idx)}
+                      onBlur={e => handleCategoryItemEdit(record._idx, 'unitPrice', e.target.value)}
+                      onChange={e => handleCategoryItemEdit(record._idx, 'unitPriceOnly', e.target.value)}
+                    />
                   )
                 },
                 {
@@ -665,7 +808,7 @@ const AddSpecialPricePackage = () => {
                   dataIndex: 'maxPrice',
                   key: 'maxPrice',
                   render: (val: string, record: { _idx: number }) => (
-                    <Input type="number" value={val || ''} style={{ width: 90 }} onChange={e => handleCategoryItemEdit(record._idx, 'maxPrice', e.target.value)} />
+                    <Input type="number" value={val || ''} style={{ width: 90 }} onChange={e => handleCategoryItemEdit(record._idx, 'maxPrice', e.target.value)} disabled={!selectedRows.includes(record._idx)} />
                   )
                 },
                 {
@@ -673,7 +816,7 @@ const AddSpecialPricePackage = () => {
                   dataIndex: 'minPrice',
                   key: 'minPrice',
                   render: (val: string, record: { _idx: number }) => (
-                    <Input type="number" value={val || ''} style={{ width: 90 }} onChange={e => handleCategoryItemEdit(record._idx, 'minPrice', e.target.value)} />
+                    <Input type="number" value={val || ''} style={{ width: 90 }} onChange={e => handleCategoryItemEdit(record._idx, 'minPrice', e.target.value)} disabled={!selectedRows.includes(record._idx)} />
                   )
                 }
                 ]}
@@ -681,6 +824,7 @@ const AddSpecialPricePackage = () => {
                 pagination={false}
                 bordered
                 locale={{ emptyText: 'لا توجد أصناف في هذه الفئة' }}
+                rowClassName={record => selectedRows.includes(record._idx) ? 'bg-blue-50' : ''}
               />
               <div className="flex justify-center mt-4">
                 <Button disabled={categoryItemsPage === 1} onClick={() => setCategoryItemsPage(p => p-1)}>السابق</Button>
@@ -704,7 +848,7 @@ const AddSpecialPricePackage = () => {
                   setAddedItems(prev => [...prev, ...selected]);
                   setShowItemsModal(false);
                   message.success('تم إضافة الأصناف المحددة للباقة');
-                }}>استيراد الأصناف المحددة</Button>
+                }}>اعتماد الأصناف المحددة</Button>
                 <Button onClick={() => setShowItemsModal(false)}>إغلاق</Button>
               </div>
             </Modal>
@@ -716,6 +860,11 @@ const AddSpecialPricePackage = () => {
               bordered
               locale={{ emptyText: 'لا توجد أصناف مaddedة بعد' }}
             />
+ 
+            <div className="flex gap-4 mt-4">
+              <Button type="primary" onClick={handleSavePackage}>حفظ الباقة</Button>
+              <Button onClick={() => window.print()}>طباعة</Button>
+            </div>
           </TabPane>
         </Tabs>
       </div>
