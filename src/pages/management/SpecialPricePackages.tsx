@@ -4,10 +4,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { getDocs, query, collection } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
 import { DatePicker, Input, Select, Button, Table, Pagination, Switch } from "antd";
-import { SearchOutlined, DownloadOutlined, FileTextOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { SearchOutlined, DownloadOutlined, FileTextOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import arEG from 'antd/es/date-picker/locale/ar_EG';
 import { fetchBranches, Branch } from "@/lib/branches";
 import Breadcrumb from "@/components/Breadcrumb";
+import styles from './ReceiptVoucher.module.css';
+
 import { useFinancialYear } from "@/hooks/useFinancialYear";
 import dayjs from 'dayjs';
 
@@ -95,7 +97,8 @@ const SpecialPricePackages: React.FC = () => {
     return current && current > dayjs();
   };
   type SpecialPricePackage = {
-    id: string;
+    id: string; // packageCode
+    docId: string; // document id in Firestore
     name: string;
     nameEn: string;
     endDate: string;
@@ -104,6 +107,39 @@ const SpecialPricePackages: React.FC = () => {
     active?: boolean;
   };
   const [results, setResults] = useState<SpecialPricePackage[]>([]);
+  const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
+  const [toggleLoadingId, setToggleLoadingId] = useState<string | null>(null);
+
+  // تفعيل/إلغاء تفعيل الباقة
+  const handleToggleActive = async (docId: string, currentActive?: boolean) => {
+    setToggleLoadingId(docId);
+    try {
+      const { db } = await import("@/lib/firebase");
+      const { doc, updateDoc } = await import("firebase/firestore");
+      await updateDoc(doc(db, "specialPricePackages", docId), { active: !currentActive });
+      setResults(prev => prev.map(pkg => pkg.docId === docId ? { ...pkg, active: !currentActive } : pkg));
+    } catch (e) {
+      // يمكن إضافة رسالة خطأ هنا
+    } finally {
+      setToggleLoadingId(null);
+    }
+  };
+  // حذف باقة من قاعدة البيانات باستخدام docId
+  const handleDelete = async (docId: string) => {
+    setDeleteLoadingId(docId);
+    try {
+      const { db } = await import("@/lib/firebase");
+      const { doc, deleteDoc } = await import("firebase/firestore");
+      // حذف المستند من فايربيز
+      await deleteDoc(doc(db, "specialPricePackages", docId));
+      // تحديث النتائج في الواجهة
+      setResults(prev => prev.filter(pkg => pkg.docId !== docId));
+    } catch (e) {
+      // يمكن إضافة رسالة خطأ هنا
+    } finally {
+      setDeleteLoadingId(null);
+    }
+  };
   const [currentPage, setCurrentPage] = useState(1);
 
   // جلب باقات الأسعار من فايربيز مع تحويل الأكواد إلى أسماء
@@ -137,13 +173,23 @@ const SpecialPricePackages: React.FC = () => {
           }
           // تحويل كود الشركة إلى اسم
           const companyName = companiesMap[data.company] || data.company || "";
+          // إذا لم يوجد حقل active في المستند، احفظه في قاعدة البيانات كـ true
+          if (typeof data.active !== 'boolean') {
+            (async () => {
+              const { db } = await import("@/lib/firebase");
+              const { doc, updateDoc } = await import("firebase/firestore");
+              await updateDoc(doc(db, "specialPricePackages", doc.id), { active: true });
+            })();
+          }
           return {
             id: data.packageCode || doc.id,
+            docId: doc.id,
             name: data.packageNameAr || "",
             nameEn: data.packageNameEn || "",
             endDate: data.endDate || "",
             branch: branchNames,
-            company: companyName
+            company: companyName,
+            active: typeof data.active === 'boolean' ? data.active : true
           };
         });
         setResults(packages);
@@ -226,7 +272,11 @@ const SpecialPricePackages: React.FC = () => {
             type="primary"
             className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
             size="large"
-            onClick={() => { navigate('/management/sales/add-special-price-package'); }}
+            icon={<PlusOutlined />}
+            onClick={() => {
+              navigate('/management/sales/add-special-price-package');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
           >
             إضافة باقة جديدة
           </Button>
@@ -254,6 +304,7 @@ const SpecialPricePackages: React.FC = () => {
               placeholder="اختر الشركة"
               style={largeControlStyle}
               size="large"
+               className={styles.dropdown}
               optionFilterProp="label"
               allowClear
               showSearch
@@ -275,6 +326,7 @@ const SpecialPricePackages: React.FC = () => {
               size="large"
               optionFilterProp="label"
               allowClear
+               className={styles.dropdown}
               showSearch
               loading={branchesLoading}
               filterOption={(input, option) =>
@@ -408,13 +460,18 @@ const SpecialPricePackages: React.FC = () => {
               key: 'actions',
               minWidth: 120,
               render: (_: unknown, record: SpecialPricePackage) => (
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                   <Button
                     size="small"
                     type="text"
                     icon={<EditOutlined />}
                     title="تعديل"
                     style={{ background: '#1677ff', color: '#fff', border: 'none', boxShadow: '0 2px 8px rgba(22,119,255,0.15)' }}
+                    onClick={() => {
+                      navigate(`/management/sales/edit-special-price-package/${record.docId}`);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    disabled={!record.active}
                   />
                   <Button
                     size="small"
@@ -422,16 +479,17 @@ const SpecialPricePackages: React.FC = () => {
                     icon={<DeleteOutlined />}
                     title="حذف"
                     style={{ background: '#d90429', color: '#fff', border: 'none', boxShadow: '0 2px 8px rgba(217,4,41,0.15)' }}
+                    loading={deleteLoadingId === record.docId}
+                    onClick={() => handleDelete(record.docId)}
+                    disabled={!record.active}
                   />
                   <Switch
                     checked={!!record.active}
+                    loading={toggleLoadingId === record.docId}
+                    onChange={() => handleToggleActive(record.docId, record.active)}
                     checkedChildren="مفعل"
-                    unCheckedChildren="متوقف"
-                    onChange={(checked) => {
-                      setResults(prev => prev.map(pkg =>
-                        pkg.id === record.id ? { ...pkg, active: checked } : pkg
-                      ));
-                    }}
+                    unCheckedChildren="غير مفعل"
+                    style={{ minWidth: 70 }}
                   />
                 </div>
               ),
@@ -444,6 +502,7 @@ const SpecialPricePackages: React.FC = () => {
           size="small"
           bordered
           className="[&_.ant-table-thead_>_tr_>_th]:bg-blue-200 [&_.ant-table-thead_>_tr_>_th]:text-gray-800 [&_.ant-table-thead_>_tr_>_th]:border-blue-200 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
+          rowClassName={(record) => record.active === false ? 'opacity-60 bg-gray-200' : ''}
           locale={{
             emptyText: (
               <div className="text-gray-400 py-8">لا توجد بيانات</div>

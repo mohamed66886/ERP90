@@ -3,6 +3,7 @@ import { Modal, Table } from "antd";
 import { getAccounts } from "@/lib/accountsService";
 import { fetchBranches, Branch } from "@/lib/branches";
 import { fetchWarehouses } from "@/lib/warehouses";
+import { useParams, useNavigate } from "react-router-dom";
 
 // تعريف نوع Warehouse مع خصائص الربط بالفرع
 interface Warehouse {
@@ -23,7 +24,9 @@ import ItemSearchModal from "@/components/ItemSearchModal";
 import Breadcrumb from "@/components/Breadcrumb";
 const { TabPane } = Tabs;
 
-const AddSpecialPricePackage = () => {
+const EditSpecialPricePackage = () => {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   // تحديد الأصناف في مودال أصناف الفئة
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   // دالة تعديل بيانات صف في جدول الأصناف
@@ -75,19 +78,7 @@ const AddSpecialPricePackage = () => {
   }, []);
   // حالة الأصناف المadded
   const [addedItems, setAddedItems] = useState<Array<{ itemCode: string; itemName: string; unit: string; unitPrice: string; maxPrice: string; minPrice: string }>>([]);
-
-  // كود الباقة التلقائي (PKG-رقم)
-  const [packageSeq, setPackageSeq] = useState(1);
-  const [packageCode, setPackageCode] = useState(() => `PKG-1`);
-
-  // عند حفظ الباقة، زيادة الترتيب وتحديث كود الباقة فورًا
-  const incrementPackageSeq = () => {
-    setPackageSeq(seq => {
-      const newSeq = seq + 1;
-      setPackageCode(`PKG-${newSeq}`);
-      return newSeq;
-    });
-  };
+  // ...existing code...
 
   // أعمدة جدول باقة الأسعار
   const itemColumns = [
@@ -204,19 +195,54 @@ const AddSpecialPricePackage = () => {
     message.success('تم تعديل بيانات الصنف بنجاح');
   };
 
-  // حفظ باقة الأسعار
+  // بيانات الباقة
+  const [packageCode, setPackageCode] = useState("");
   const [packageNameAr, setPackageNameAr] = useState("");
   const [packageNameEn, setPackageNameEn] = useState("");
-  // تاريخ البدء
-  const [startDate, setStartDate] = useState(dayjs());
-  // تاريخ الانتهاء
-  const [endDate, setEndDate] = useState(null);
+  const [startDate, setStartDate] = useState<any>(null);
+  const [endDate, setEndDate] = useState<any>(null);
   const [company, setCompany] = useState("");
   const [branchesSelected, setBranchesSelected] = useState<string[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
-  // جلب الشركات من Firestore
   const [companies, setCompanies] = useState<{ id: string; arabicName: string; englishName?: string }[]>([]);
+  // جلب بيانات الباقة عند فتح الصفحة
+  useEffect(() => {
+    if (!id) {
+      console.warn('لا يوجد معرف للباقة (id) في الرابط.');
+      return;
+    }
+    (async () => {
+      try {
+        const { db } = await import("@/lib/firebase");
+        const { doc, getDoc } = await import("firebase/firestore");
+        const docRef = doc(db, "specialPricePackages", id);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          console.log("بيانات الباقة كاملة:", data);
+          if (!data.items || !Array.isArray(data.items) || data.items.length === 0) {
+            console.warn('لا توجد أصناف في هذه الباقة أو الحقل items غير موجود.');
+          }
+          setPackageCode(data.packageCode || id);
+          setPackageNameAr(data.packageNameAr || "");
+          setPackageNameEn(data.packageNameEn || "");
+          setStartDate(data.startDate ? dayjs(data.startDate) : null);
+          setEndDate(data.endDate ? dayjs(data.endDate) : null);
+          setCompany(data.company || "");
+          setBranchesSelected(Array.isArray(data.branches) ? data.branches : []);
+          setAddedItems(Array.isArray(data.items) ? data.items : []);
+        } else {
+          console.error('لم يتم العثور على وثيقة الباقة بهذا المعرف:', id);
+          message.error("لم يتم العثور على بيانات الباقة بهذا المعرف.");
+        }
+      } catch (e) {
+        console.error('خطأ أثناء جلب بيانات الباقة:', e);
+        message.error("حدث خطأ أثناء جلب بيانات الباقة");
+      }
+    })();
+  }, [id]);
 
+  // جلب الشركات من Firestore
   useEffect(() => {
     // جلب الشركات من قاعدة البيانات
     const fetchCompanies = async () => {
@@ -249,6 +275,7 @@ const AddSpecialPricePackage = () => {
       setBranches(allBranches);
     }).catch(() => setBranches([]));
   }, [company]);
+  // حفظ التعديلات على الباقة
   const handleSavePackage = () => {
     if (!packageNameAr.trim()) return message.error('يرجى إدخال اسم الباقة بالعربي');
     if (!packageNameEn.trim()) return message.error('يرجى إدخال اسم الباقة بالإنجليزي');
@@ -265,23 +292,17 @@ const AddSpecialPricePackage = () => {
       branches: branchesSelected,
       items: addedItems
     };
-    // حفظ البيانات في فايربيز
+    // تحديث البيانات في فايربيز
     (async () => {
       try {
         const { db } = await import("@/lib/firebase");
-        const { collection, addDoc } = await import("firebase/firestore");
-        await addDoc(collection(db, "specialPricePackages"), saveData);
-        message.success('تم حفظ باقة الأسعار بنجاح ');
-        incrementPackageSeq();
-        setAddedItems([]);
-        setPackageNameAr("");
-        setPackageNameEn("");
-        setStartDate(dayjs());
-        setEndDate(null);
-        setCompany("");
-        setBranchesSelected([]);
+        const { doc, updateDoc } = await import("firebase/firestore");
+        await updateDoc(doc(db, "specialPricePackages", id!), saveData);
+        message.success('تم تحديث بيانات الباقة بنجاح');
+        navigate('/management/special-price-packages');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       } catch (e) {
-        message.error('حدث خطأ أثناء حفظ البيانات ');
+        message.error('حدث خطأ أثناء تحديث البيانات');
       }
     })();
   };
@@ -363,9 +384,9 @@ const AddSpecialPricePackage = () => {
       <div className="p-3 sm:p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
         <div className="flex items-center">
           <FileTextOutlined className="h-5 w-5 sm:h-8 sm:w-8 text-emerald-600 ml-1 sm:ml-3" />
-          <h1 className="text-lg sm:text-2xl font-bold text-gray-800">إضافة باقة سعر خاص</h1>
+          <h1 className="text-lg sm:text-2xl font-bold text-gray-800">تعديل باقة سعر خاص</h1>
         </div>
-        <p className="text-xs sm:text-base text-gray-600 mt-2">إدارة وعرض باقات الأسعار الخاصة</p>
+        <p className="text-xs sm:text-base text-gray-600 mt-2">يمكنك تعديل بيانات الباقة هنا</p>
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 to-green-500"></div>
       </div>
       <Breadcrumb
@@ -373,7 +394,7 @@ const AddSpecialPricePackage = () => {
           { label: "الرئيسية", to: "/" },
           { label: "إدارة المبيعات", to: "/management/sales" },
           { label: "باقات السعر " , to: "/management/special-price-packages" },
-          { label: "إضافة باقة سعر خاص" }
+          { label: "تعديل باقة سعر خاص" }
         ]}
       />
       <div className="bg-white rounded-lg shadow-lg p-6 space-y-4">
@@ -606,7 +627,7 @@ const AddSpecialPricePackage = () => {
               <Table
                 dataSource={addedItems}
                 columns={itemColumns}
-                rowKey={(record, idx) => idx}
+                rowKey={record => record.itemCode}
                 pagination={false}
                 bordered
                 locale={{ emptyText: 'لا توجد أصناف مaddedة بعد' }}
@@ -871,5 +892,5 @@ const AddSpecialPricePackage = () => {
   );
 };
 
-export default AddSpecialPricePackage;
+export default EditSpecialPricePackage;
 

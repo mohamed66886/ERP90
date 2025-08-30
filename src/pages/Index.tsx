@@ -47,6 +47,7 @@ import SalesCommissionsPage from "./management/SalesCommissionsPage";
 import PerformanceEvaluationPage from "./management/PerformanceEvaluationPage";
 import SpecialPricePackages from "./management/SpecialPricePackages";
 import AddSpecialPricePackage from "./management/AddSpecialPricePackage";
+import EditSpecialPricePackage from "./management/EditSpecialPricePackage";
 import {
   FinancialManagement,
   HumanResources,
@@ -243,6 +244,7 @@ const Index = () => {
               <Route path="/management/sales" element={<SalesManagement />} />
             <Route path="/management/special-price-packages" element={<SpecialPricePackages />} />
             <Route path="/management/sales/add-special-price-package" element={<AddSpecialPricePackage />} />
+            <Route path="/management/sales/edit-special-price-package/:id" element={<EditSpecialPricePackage />} />
               <Route path="/management/sales-representatives" element={<SalesRepresentativesPage />} />
               <Route path="/management/sales-targets" element={<SalesTargetsPage />} />
               <Route path="/management/sales-commissions" element={<SalesCommissionsPage />} />
